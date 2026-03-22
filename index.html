@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0a0a0a">
+<title>JB Finance</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ── RESET & BASE ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg:       #0a0a0a;
+  --bg2:      #141414;
+  --bg3:      #1c1c1c;
+  --bg4:      #242424;
+  --border:   #2a2a2a;
+  --border2:  #333;
+  --text:     #f0f0f0;
+  --text2:    #999;
+  --text3:    #555;
+  --green:    #22c55e;
+  --green-bg: #052012;
+  --red:      #ef4444;
+  --red-bg:   #1a0505;
+  --amber:    #f59e0b;
+  --amber-bg: #1a1005;
+  --blue:     #3b82f6;
+  --blue-bg:  #05102a;
+  --mono:     'IBM Plex Mono', monospace;
+  --sans:     'IBM Plex Sans', sans-serif;
+  --radius:   10px;
+  --tab-h:    60px;
+  --safe-b:   env(safe-area-inset-bottom, 0px);
+}
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
+#root { height: 100%; display: flex; flex-direction: column; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── HEADER ── */
+.header {
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.header-title { font-family: var(--mono); font-size: 13px; font-weight: 600; letter-spacing: 0.1em; color: var(--text2); text-transform: uppercase; }
+.header-bal { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--green); }
+
+/* ── MAIN SCROLL AREA ── */
+.main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--tab-h) + var(--safe-b) + 8px); }
+
+/* ── TABS ── */
+.tabs {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--tab-h) + var(--safe-b));
+  padding-bottom: var(--safe-b);
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  display: flex;
+  z-index: 100;
+}
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: none;
+  background: none;
+  color: var(--text3);
+  font-size: 9px;
+  font-family: var(--mono);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.2s;
+  padding: 0;
+}
+.tab-btn.active { color: var(--green); }
+.tab-btn svg { width: 20px; height: 20px; }
+
+/* ── CARDS ── */
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); }
+.card-p { padding: 12px 14px; }
+
+/* ── SECTION LABEL ── */
+.sec-label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.12em; color: var(--text3); text-transform: uppercase; padding: 16px 16px 8px; }
+
+/* ── AMOUNT DISPLAY ── */
+.amt-display {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin: 12px 16px;
+  padding: 20px 16px 16px;
+  text-align: center;
+}
+.amt-label { font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.amt-value { font-family: var(--mono); font-size: 40px; font-weight: 600; color: var(--text); letter-spacing: -1px; min-height: 48px; }
+.amt-value.has-val { color: var(--green); }
+
+/* ── KEYPAD ── */
+.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); margin: 0 16px; overflow: hidden; }
+.key { background: var(--bg2); border: none; color: var(--text); font-family: var(--mono); font-size: 20px; font-weight: 500; padding: 18px 0; cursor: pointer; transition: background 0.1s; -webkit-tap-highlight-color: transparent; }
+.key:active { background: var(--bg4); }
+.key.action { color: var(--text2); font-size: 14px; }
+.key.del { color: var(--red); font-size: 16px; }
+
+/* ── CHIP SELECTOR ── */
+.chip-row { display: flex; gap: 6px; padding: 0 16px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--border2); border-radius: 20px; padding: 7px 14px; font-family: var(--mono); font-size: 11px; color: var(--text2); cursor: pointer; transition: all 0.15s; white-space: nowrap; background: var(--bg2); -webkit-tap-highlight-color: transparent; }
+.chip.sel { border-color: var(--green); color: var(--green); background: var(--green-bg); }
+.chip.sel-amber { border-color: var(--amber); color: var(--amber); background: var(--amber-bg); }
+
+/* ── DESC INPUT ── */
+.desc-input { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; font-family: var(--sans); font-size: 14px; color: var(--text); width: calc(100% - 32px); margin: 0 16px; outline: none; -webkit-appearance: none; }
+.desc-input::placeholder { color: var(--text3); }
+.desc-input:focus { border-color: var(--border2); }
+
+/* ── SAVE BUTTON ── */
+.save-btn { background: var(--green); color: #000; font-family: var(--mono); font-size: 14px; font-weight: 600; border: none; border-radius: var(--radius); padding: 16px; width: calc(100% - 32px); margin: 0 16px; cursor: pointer; letter-spacing: 0.05em; -webkit-tap-highlight-color: transparent; transition: opacity 0.15s; }
+.save-btn:disabled { opacity: 0.3; }
+.save-btn:active { opacity: 0.8; }
+
+/* ── TRANSACTION ROW ── */
+.txn-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.txn-row:last-child { border-bottom: none; }
+.txn-left { flex: 1; min-width: 0; }
+.txn-cat { font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 2px; }
+.txn-desc { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.txn-meta { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 2px; }
+.txn-right { text-align: right; flex-shrink: 0; margin-left: 12px; }
+.txn-amt { font-family: var(--mono); font-size: 15px; font-weight: 600; }
+.txn-amt.out { color: var(--red); }
+.txn-amt.in  { color: var(--green); }
+.txn-amt.ua  { color: var(--amber); }
+.txn-acct { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 2px; }
+
+/* ── BADGE ── */
+.badge { font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase; display: inline-block; }
+.badge-pending { background: var(--amber-bg); color: var(--amber); border: 1px solid #3a2500; }
+.badge-ua      { background: var(--amber-bg); color: var(--amber); border: 1px solid #3a2500; }
+.badge-in      { background: var(--green-bg); color: var(--green); border: 1px solid #052012; }
+
+/* ── METRIC CARD ── */
+.metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
+.metric { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.metric-label { font-family: var(--mono); font-size: 9px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+.metric-value { font-family: var(--mono); font-size: 22px; font-weight: 600; }
+.metric-sub { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 3px; }
+
+/* ── PROGRESS BAR ── */
+.progress-wrap { padding: 0 16px; margin-bottom: 4px; }
+.progress-label { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 10px; color: var(--text2); margin-bottom: 5px; }
+.progress-bg { background: var(--bg3); border-radius: 3px; height: 5px; }
+.progress-fill { height: 5px; border-radius: 3px; background: var(--green); transition: width 0.4s; }
+.progress-fill.warn { background: var(--amber); }
+.progress-fill.danger { background: var(--red); }
+
+/* ── DIVIDER ── */
+.divider { height: 1px; background: var(--border); margin: 0 16px; }
+
+/* ── EMPTY STATE ── */
+.empty { text-align: center; padding: 48px 24px; color: var(--text3); font-family: var(--mono); font-size: 12px; line-height: 2; }
+
+/* ── TOAST ── */
+.toast { position: fixed; bottom: calc(var(--tab-h) + var(--safe-b) + 12px); left: 50%; transform: translateX(-50%); background: var(--bg4); border: 1px solid var(--border2); border-radius: var(--radius); padding: 10px 18px; font-family: var(--mono); font-size: 12px; color: var(--text); z-index: 999; white-space: nowrap; animation: toastIn 0.2s ease; }
+@keyframes toastIn { from { opacity:0; transform: translateX(-50%) translateY(8px); } to { opacity:1; transform: translateX(-50%) translateY(0); } }
+
+/* ── MODAL OVERLAY ── */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 200; display: flex; align-items: flex-end; }
+.bottom-sheet { background: var(--bg2); border: 1px solid var(--border); border-radius: 16px 16px 0 0; width: 100%; padding: 16px; max-height: 80vh; overflow-y: auto; }
+.sheet-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 16px; }
+.sheet-title { font-family: var(--mono); font-size: 11px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 12px; }
+
+/* ── ANIMATIONS ── */
+.fade-in { animation: fadeIn 0.2s ease; }
+@keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+
+/* ── SETTINGS ── */
+.settings-row { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.settings-val { font-family: var(--mono); font-size: 13px; color: var(--text2); }
+input[type=number], input[type=text] { background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 10px; color: var(--text); font-family: var(--mono); font-size: 13px; outline: none; width: 100%; -webkit-appearance: none; }
+input[type=number]:focus, input[type=text]:focus { border-color: var(--green); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+const { createClient } = supabase;
+
+// ── SUPABASE CONFIG ─────────────────────────────────
+const SUPA_URL = 'https://ayzlaumbrntpqfemnxao.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5emxhdW1icm50cHFmZW1ueGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjQwNTAsImV4cCI6MjA4OTc0MDA1MH0.VEYId6dpxCvmTArXq-FVZqy5WTgl0QTcLamYMovaqgE';
+const db = createClient(SUPA_URL, SUPA_KEY);
+
+// ── CONSTANTS ────────────────────────────────────────
+const ACCOUNTS = ['Cash','KB','UB','YB','SBI CC','HDFC CC','RBL CC','AXIS CC'];
+const BANKS    = ['Cash','KB','UB','YB'];
+const CC_ACCTS = ['SBI CC','HDFC CC','RBL CC','AXIS CC'];
+
+const CATEGORIES = [
+  { id:'Fuel',           emoji:'⛽', color:'amber' },
+  { id:'Food',           emoji:'🍱', color:'green' },
+  { id:'Household',      emoji:'🏠', color:'blue'  },
+  { id:'Child Education',emoji:'📚', color:'blue'  },
+  { id:'Insurance',      emoji:'🛡', color:'green', it:'80C' },
+  { id:'Mediclaim',      emoji:'💊', color:'green', it:'80D' },
+  { id:'Investment',     emoji:'📈', color:'green' },
+  { id:'Maintenance',    emoji:'🔧', color:'amber' },
+  { id:'Travelling',     emoji:'🚗', color:'amber' },
+  { id:'Lifestyle',      emoji:'🛍', color:'red'   },
+  { id:'Social',         emoji:'🤝', color:'amber' },
+  { id:'Donation',       emoji:'🙏', color:'green', it:'80G' },
+  { id:'Mobile Recharge',emoji:'📱', color:'blue'  },
+  { id:'UDHARI',         emoji:'↗',  color:'amber' },
+  { id:'UA Expense',     emoji:'🏗',  color:'amber', ua:true },
+  { id:'Misc',           emoji:'•',  color:'none'  },
+];
+
+const TYPES = ['Expense','Income','Bank→CC','Bank→Bank','UA Expense','UA Received'];
+
+// Default opening balances — update in Settings
+const DEFAULT_OPENING = {
+  Cash:0, KB:0, UB:0, YB:0,
+  'SBI CC':0, 'HDFC CC':0, 'RBL CC':0, 'AXIS CC':0
+};
+
+// ── FORMAT HELPERS ───────────────────────────────────
+const fmt    = n => Math.abs(Math.round(n)).toLocaleString('en-IN');
+const fmtAmt = n => '₹' + fmt(n);
+const fmtDate = d => {
+  const dt = new Date(d);
+  return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+};
+const fmtTime = d => {
+  const dt = new Date(d);
+  return dt.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+};
+
+// ── SUPABASE SQL SETUP (run once) ────────────────────
+// CREATE TABLE transactions (
+//   id uuid default gen_random_uuid() primary key,
+//   created_at timestamptz default now(),
+//   txn_date date default current_date,
+//   type text,
+//   amount numeric,
+//   category text,
+//   from_account text,
+//   to_account text,
+//   particulars text,
+//   tower text,
+//   it_section text,
+//   status text default 'complete',
+//   source text default 'app'
+// );
+// CREATE TABLE settings (key text primary key, value text);
+
+// ── MAIN APP ─────────────────────────────────────────
+function App() {
+  const [tab, setTab]       = useState('add');
+  const [txns, setTxns]     = useState([]);
+  const [opening, setOpening] = useState(DEFAULT_OPENING);
+  const [toast, setToast]   = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const showToast = msg => {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
+  };
+
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await db.from('transactions').select('*').order('created_at', { ascending: false }).limit(500);
+      setTxns(data || []);
+
+      const { data: s } = await db.from('settings').select('*');
+      if (s) {
+        const ob = s.find(r => r.key === 'opening_balances');
+        if (ob) setOpening(JSON.parse(ob.value));
+      }
+    } catch(e) { console.error(e); }
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Compute balances from opening + transactions
+  const balances = computeBalances(opening, txns);
+
+  const addTxn = async (txn) => {
+    const { error } = await db.from('transactions').insert([txn]);
+    if (!error) {
+      showToast('✓ ' + fmtAmt(txn.amount) + ' logged');
+      loadData();
+    } else {
+      showToast('⚠ Error saving');
+    }
+  };
+
+  const deleteTxn = async (id) => {
+    await db.from('transactions').delete().eq('id', id);
+    showToast('↩ Deleted');
+    loadData();
+  };
+
+  const saveOpening = async (ob) => {
+    await db.from('settings').upsert({ key: 'opening_balances', value: JSON.stringify(ob) });
+    setOpening(ob);
+    showToast('✓ Balances saved');
+  };
+
+  const liquid = BANKS.reduce((s, a) => s + (balances[a] || 0), 0);
+
+  return (
+    <div id="root">
+      <Header liquid={liquid} tab={tab} />
+
+      <div className="main">
+        {loading && <div className="empty">Loading...</div>}
+        {!loading && tab === 'add'      && <AddScreen onSave={addTxn} showToast={showToast} />}
+        {!loading && tab === 'txns'     && <TxnsScreen txns={txns} onDelete={deleteTxn} />}
+        {!loading && tab === 'dash'     && <DashScreen balances={balances} txns={txns} liquid={liquid} />}
+        {!loading && tab === 'settings' && <SettingsScreen opening={opening} onSave={saveOpening} />}
+      </div>
+
+      <TabBar tab={tab} setTab={setTab} txns={txns} />
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+// ── BALANCE COMPUTATION ──────────────────────────────
+function computeBalances(opening, txns) {
+  const bal = { ...opening };
+  txns.forEach(t => {
+    const amt  = parseFloat(t.amount) || 0;
+    const from = t.from_account;
+    const to   = t.to_account;
+    const type = t.type;
+
+    if (type === 'Expense' || type === 'UA Expense') {
+      if (from) bal[from] = (bal[from] || 0) - amt;
+    }
+    if (type === 'Income' || type === 'UA Received') {
+      if (to) bal[to] = (bal[to] || 0) + amt;
+    }
+    if (type === 'Bank→Bank') {
+      if (from) bal[from] = (bal[from] || 0) - amt;
+      if (to)   bal[to]   = (bal[to]   || 0) + amt;
+    }
+    if (type === 'Bank→CC') {
+      if (from) bal[from] = (bal[from] || 0) - amt;
+      if (to)   bal[to]   = (bal[to]   || 0) + amt;
+    }
+  });
+  return bal;
+}
+
+// ── HEADER ───────────────────────────────────────────
+function Header({ liquid, tab }) {
+  const titles = { add:'Quick Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings' };
+  return (
+    <div className="header">
+      <span className="header-title">{titles[tab] || 'JB Finance'}</span>
+      {tab !== 'settings' && (
+        <span className="header-bal">{fmtAmt(liquid)}</span>
+      )}
+    </div>
+  );
+}
+
+// ── TAB BAR ──────────────────────────────────────────
+function TabBar({ tab, setTab, txns }) {
+  const pending = txns.filter(t => t.status === 'pending').length;
+  const tabs = [
+    { id:'add',  label:'Add',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
+    { id:'txns', label:'Log',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="14" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/></svg> },
+    { id:'dash', label:'Dash',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="13" width="6" height="8" rx="1"/><rect x="10" y="8" width="5" height="13" rx="1"/><rect x="16" y="4" width="5" height="17" rx="1"/></svg> },
+    { id:'settings', label:'Setup',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
+  ];
+  return (
+    <div className="tabs">
+      {tabs.map(t => (
+        <button key={t.id} className={'tab-btn' + (tab===t.id?' active':'')} onClick={() => setTab(t.id)}>
+          {t.icon}
+          {t.id === 'txns' && pending > 0
+            ? <span style={{color:'var(--amber)',fontSize:9}}>{t.label} ({pending})</span>
+            : t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ── ADD SCREEN ───────────────────────────────────────
+function AddScreen({ onSave, showToast }) {
+  const [amt, setAmt]   = useState('');
+  const [desc, setDesc] = useState('');
+  const [type, setType] = useState('Expense');
+  const [cat, setCat]   = useState('');
+  const [from, setFrom] = useState('Cash');
+  const [to, setTo]     = useState('');
+  const [tower, setTower] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleKey = k => {
+    if (k === '⌫') { setAmt(a => a.slice(0,-1)); return; }
+    if (k === '.' && amt.includes('.')) return;
+    if (amt.length >= 9) return;
+    setAmt(a => a + k);
+  };
+
+  const catInfo = CATEGORIES.find(c => c.id === cat);
+  const isUAType = type === 'UA Expense' || type === 'UA Received';
+
+  const canSave = amt && parseFloat(amt) > 0 && (
+    type === 'Expense'    ? (cat && from) :
+    type === 'UA Expense' ? (from) :
+    type === 'Income'     ? (to) :
+    type === 'UA Received'? (to) :
+    type === 'Bank→CC'    ? (from && to) :
+    type === 'Bank→Bank'  ? (from && to) : false
+  );
+
+  const handleSave = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    const itSec = catInfo?.it || '';
+
+    await onSave({
+      type,
+      amount:       parseFloat(amt),
+      category:     type === 'UA Expense' ? 'UA Expense' : (cat || type),
+      from_account: from || null,
+      to_account:   to || null,
+      particulars:  desc || cat || type,
+      tower:        tower || null,
+      it_section:   itSec || null,
+      status:       'complete',
+      source:       'app',
+    });
+
+    // Reset
+    setAmt(''); setDesc(''); setCat(''); setTower('');
+    setSaving(false);
+  };
+
+  return (
+    <div className="fade-in">
+      {/* Amount display */}
+      <div className="amt-display">
+        <div className="amt-label">Amount (₹)</div>
+        <div className={'amt-value' + (amt ? ' has-val' : '')}>
+          {amt || '0'}
+        </div>
+      </div>
+
+      {/* Type selector */}
+      <p className="sec-label">Type</p>
+      <div className="chip-row" style={{marginBottom:12}}>
+        {TYPES.map(t => (
+          <div key={t} className={'chip'+(type===t?' sel':'')} onClick={() => { setType(t); setCat(''); setFrom('Cash'); setTo(''); }}>
+            {t}
+          </div>
+        ))}
+      </div>
+
+      {/* Keypad */}
+      <div className="keypad" style={{marginBottom:12}}>
+        {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+          <button key={k} className={'key' + (k==='⌫'?' del':'')} onClick={() => handleKey(k)}>
+            {k}
+          </button>
+        ))}
+      </div>
+
+      {/* Description */}
+      <input
+        className="desc-input"
+        style={{marginBottom:12}}
+        placeholder="Description (optional)"
+        value={desc}
+        onChange={e => setDesc(e.target.value)}
+      />
+
+      {/* Category — only for Expense */}
+      {(type === 'Expense') && (
+        <>
+          <p className="sec-label">Category</p>
+          <div className="chip-row" style={{marginBottom:12}}>
+            {CATEGORIES.filter(c => c.id !== 'UA Expense').map(c => (
+              <div key={c.id} className={'chip'+(cat===c.id?' sel':'')} onClick={() => setCat(c.id)}>
+                {c.emoji} {c.id}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* UA Tower tag */}
+      {(type === 'UA Expense') && (
+        <>
+          <p className="sec-label">Tower (optional)</p>
+          <div className="chip-row" style={{marginBottom:12}}>
+            {['D5','E2','C3','Common'].map(tw => (
+              <div key={tw} className={'chip'+(tower===tw?' sel-amber':'')} onClick={() => setTower(tw===tower?'':tw)}>
+                {tw}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* From account */}
+      {['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) && (
+        <>
+          <p className="sec-label">{type==='Bank→CC'||type==='Bank→Bank'?'From Account':'Paid From'}</p>
+          <div className="chip-row" style={{marginBottom:12}}>
+            {(type==='Bank→CC'||type==='Bank→Bank'?BANKS:ACCOUNTS).map(a => (
+              <div key={a} className={'chip'+(from===a?' sel':'')} onClick={() => setFrom(a)}>
+                {a}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* To account */}
+      {['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) && (
+        <>
+          <p className="sec-label">{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p>
+          <div className="chip-row" style={{marginBottom:12}}>
+            {(type==='Bank→CC'?CC_ACCTS:type==='Bank→Bank'?BANKS:BANKS).map(a => (
+              <div key={a} className={'chip'+(to===a?' sel':'')} onClick={() => setTo(a)}>
+                {a}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* IT badge if applicable */}
+      {catInfo?.it && (
+        <div style={{padding:'0 16px',marginBottom:8}}>
+          <span className="badge badge-in">IT: {catInfo.it} Eligible</span>
+        </div>
+      )}
+
+      {/* Bank mismatch warning */}
+      {type === 'UA Expense' && from && from !== 'Cash' && (
+        <div style={{margin:'0 16px 10px',background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,padding:'8px 12px',fontSize:12,color:'var(--amber)'}}>
+          ⚠ {from} se pay kiya — recover bhi bank se hi karo
+        </div>
+      )}
+
+      {/* Save */}
+      <button className="save-btn" disabled={!canSave||saving} onClick={handleSave} style={{marginBottom:8}}>
+        {saving ? 'Saving...' : `Save  ₹${fmt(parseFloat(amt)||0)}`}
+      </button>
+    </div>
+  );
+}
+
+// ── TRANSACTIONS SCREEN ──────────────────────────────
+function TxnsScreen({ txns, onDelete }) {
+  const [filter, setFilter] = useState('All');
+  const [selected, setSelected] = useState(null);
+
+  const filters = ['All','Today','Pending','UA','Income'];
+  const today = new Date().toDateString();
+
+  const filtered = txns.filter(t => {
+    if (filter === 'Today')   return new Date(t.created_at).toDateString() === today;
+    if (filter === 'Pending') return t.status === 'pending';
+    if (filter === 'UA')      return t.type === 'UA Expense' || t.type === 'UA Received';
+    if (filter === 'Income')  return t.type === 'Income' || t.type === 'UA Received';
+    return true;
+  });
+
+  const amtColor = t => {
+    if (t.type === 'Income' || t.type === 'UA Received') return 'in';
+    if (t.type === 'UA Expense') return 'ua';
+    if (t.type === 'Bank→Bank' || t.type === 'Bank→CC') return '';
+    return 'out';
+  };
+
+  const amtSign = t => {
+    if (t.type === 'Income' || t.type === 'UA Received') return '+';
+    return '−';
+  };
+
+  return (
+    <div className="fade-in">
+      {/* Filter chips */}
+      <div className="chip-row" style={{padding:'12px 16px 0'}}>
+        {filters.map(f => (
+          <div key={f} className={'chip'+(filter===f?' sel':'')} onClick={() => setFilter(f)}>{f}</div>
+        ))}
+      </div>
+
+      {filtered.length === 0 && <div className="empty">No transactions found.</div>}
+
+      <div style={{marginTop:8}}>
+        {filtered.map(t => (
+          <div key={t.id} className="txn-row" onClick={() => setSelected(selected===t.id?null:t.id)}>
+            <div className="txn-left">
+              <div className="txn-cat">{t.type}{t.tower ? ' · ' + t.tower : ''}</div>
+              <div className="txn-desc">{t.particulars || t.category}</div>
+              <div className="txn-meta">
+                {fmtDate(t.created_at)} {fmtTime(t.created_at)}
+                {t.it_section && <span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}
+              </div>
+              {selected === t.id && (
+                <div style={{marginTop:8,display:'flex',gap:8}}>
+                  <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); setSelected(null); }}
+                    style={{background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:6,color:'var(--red)',padding:'4px 12px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>
+                    Delete
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="txn-right">
+              <div className={'txn-amt ' + amtColor(t)}>
+                {amtSign(t)}{fmtAmt(t.amount)}
+              </div>
+              <div className="txn-acct">{t.from_account || t.to_account}</div>
+              {t.status === 'pending' && <span className="badge badge-pending">pending</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── DASHBOARD SCREEN ─────────────────────────────────
+function DashScreen({ balances, txns, liquid }) {
+  const now   = new Date();
+  const month = now.getMonth();
+  const year  = now.getFullYear();
+
+  const thisMonth = txns.filter(t => {
+    const d = new Date(t.created_at);
+    return d.getMonth() === month && d.getFullYear() === year;
+  });
+
+  const income  = thisMonth.filter(t => t.type==='Income').reduce((s,t)=>s+(+t.amount),0);
+  const expense = thisMonth.filter(t => t.type==='Expense').reduce((s,t)=>s+(+t.amount),0);
+  const uaExp   = thisMonth.filter(t => t.type==='UA Expense').reduce((s,t)=>s+(+t.amount),0);
+  const uaRecv  = thisMonth.filter(t => t.type==='UA Received').reduce((s,t)=>s+(+t.amount),0);
+  const uaOut   = uaExp - uaRecv;
+
+  // CC dues
+  const ccDues = CC_ACCTS.map(a => ({ name:a, due: Math.max(0, -(balances[a]||0)) })).filter(x=>x.due>0);
+  const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
+
+  // Category breakdown
+  const cats = {};
+  thisMonth.filter(t=>t.type==='Expense').forEach(t => {
+    const c = t.category || 'Misc';
+    cats[c] = (cats[c]||0) + (+t.amount);
+  });
+  const topCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  const maxCat  = topCats[0]?.[1] || 1;
+
+  // IT deductions
+  const it80C = thisMonth.filter(t=>t.it_section==='80C').reduce((s,t)=>s+(+t.amount),0);
+  const it80D = thisMonth.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  return (
+    <div className="fade-in">
+
+      {/* Month heading */}
+      <p className="sec-label">{months[month]} {year} — Summary</p>
+
+      {/* Top metrics */}
+      <div className="metric-grid" style={{marginBottom:8}}>
+        <div className="metric">
+          <div className="metric-label">Income</div>
+          <div className="metric-value" style={{color:'var(--green)'}}>{fmtAmt(income)}</div>
+        </div>
+        <div className="metric">
+          <div className="metric-label">Expense</div>
+          <div className="metric-value" style={{color:'var(--red)'}}>{fmtAmt(expense)}</div>
+        </div>
+        <div className="metric">
+          <div className="metric-label">Liquid Balance</div>
+          <div className="metric-value">{fmtAmt(liquid)}</div>
+          <div className="metric-sub">Cash+KB+UB+YB</div>
+        </div>
+        <div className="metric">
+          <div className="metric-label">CC Payable</div>
+          <div className="metric-value" style={{color: totalCC>0?'var(--amber)':'var(--green)'}}>{fmtAmt(totalCC)}</div>
+        </div>
+      </div>
+
+      {/* UA Outstanding */}
+      {uaOut !== 0 && (
+        <>
+          <p className="sec-label">UA Outstanding</p>
+          <div style={{margin:'0 16px 8px',background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:10,padding:'12px 14px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:12}}>
+              <span style={{color:'var(--text2)'}}>Spent from personal</span>
+              <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>+{fmtAmt(uaExp)}</span>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,fontSize:12}}>
+              <span style={{color:'var(--text2)'}}>Recovered</span>
+              <span style={{fontFamily:'var(--mono)',color:'var(--green)'}}>−{fmtAmt(uaRecv)}</span>
+            </div>
+            <div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #3a2500',paddingTop:8,fontSize:14,fontWeight:600}}>
+              <span style={{color:'var(--text2)'}}>Outstanding</span>
+              <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>{fmtAmt(uaOut)}</span>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Bank Balances */}
+      <p className="sec-label">Bank Balances</p>
+      {BANKS.map(a => {
+        const b = balances[a] || 0;
+        return (
+          <div key={a} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:13}}>
+            <span style={{fontFamily:'var(--mono)',color:'var(--text2)'}}>{a}</span>
+            <span style={{fontFamily:'var(--mono)',color: b<0?'var(--red)':'var(--text)'}}>{fmtAmt(b)}</span>
+          </div>
+        );
+      })}
+
+      {/* CC Dues */}
+      {ccDues.length > 0 && (
+        <>
+          <p className="sec-label">CC Dues</p>
+          {ccDues.map(x => (
+            <div key={x.name} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:13}}>
+              <span style={{fontFamily:'var(--mono)',color:'var(--text2)'}}>{x.name}</span>
+              <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>{fmtAmt(x.due)}</span>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Top Categories */}
+      {topCats.length > 0 && (
+        <>
+          <p className="sec-label">Top Spend</p>
+          {topCats.map(([c,v]) => (
+            <div key={c} className="progress-wrap" style={{marginBottom:8}}>
+              <div className="progress-label"><span>{c}</span><span>{fmtAmt(v)}</span></div>
+              <div className="progress-bg">
+                <div className="progress-fill" style={{width: Math.round(v/maxCat*100)+'%'}} />
+              </div>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* IT Deductions */}
+      {(it80C > 0 || it80D > 0) && (
+        <>
+          <p className="sec-label">IT Deductions (this month)</p>
+          <div className="metric-grid" style={{marginBottom:16}}>
+            {it80C > 0 && (
+              <div className="metric" style={{borderColor:'var(--green)'}}>
+                <div className="metric-label">Section 80C</div>
+                <div className="metric-value" style={{color:'var(--green)',fontSize:16}}>{fmtAmt(it80C)}</div>
+                <div className="metric-sub">of ₹1,50,000 limit</div>
+              </div>
+            )}
+            {it80D > 0 && (
+              <div className="metric" style={{borderColor:'var(--green)'}}>
+                <div className="metric-label">Section 80D</div>
+                <div className="metric-value" style={{color:'var(--green)',fontSize:16}}>{fmtAmt(it80D)}</div>
+                <div className="metric-sub">of ₹50,000 limit</div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+    </div>
+  );
+}
+
+// ── SETTINGS SCREEN ──────────────────────────────────
+function SettingsScreen({ opening, onSave }) {
+  const [ob, setOb] = useState({ ...opening });
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = async () => {
+    await onSave(ob);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="fade-in">
+      <p className="sec-label">Opening Balances — update at month start</p>
+      <p style={{padding:'0 16px 12px',fontSize:12,color:'var(--text3)',fontFamily:'var(--mono)'}}>
+        CC accounts: enter as negative if you owe money<br/>e.g. SBI CC due ₹9,342 → enter -9342
+      </p>
+
+      {ACCOUNTS.map(a => (
+        <div key={a} className="settings-row">
+          <span style={{fontFamily:'var(--mono)',fontSize:13}}>{a}</span>
+          <input
+            type="number"
+            style={{width:120,textAlign:'right'}}
+            value={ob[a] || ''}
+            placeholder="0"
+            onChange={e => setOb(prev => ({ ...prev, [a]: parseFloat(e.target.value) || 0 }))}
+          />
+        </div>
+      ))}
+
+      <div style={{padding:'16px'}}>
+        <button
+          onClick={handleSave}
+          style={{background: saved?'var(--green-bg)':'var(--green)',border: saved?'1px solid var(--green)':'none',color: saved?'var(--green)':'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,borderRadius:10,padding:14,width:'100%',cursor:'pointer',transition:'all 0.2s'}}>
+          {saved ? '✓ Saved' : 'Save Opening Balances'}
+        </button>
+      </div>
+
+      <p className="sec-label">Supabase Setup — add to code</p>
+      <div style={{margin:'0 16px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:14}}>
+        <p style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
+          1. Create project at supabase.com<br/>
+          2. Run SQL from comments in this file<br/>
+          3. Replace SUPA_URL and SUPA_KEY<br/>
+          4. Add to phone homescreen via Chrome → Share → Add to homescreen
+        </p>
+      </div>
+
+      <p className="sec-label">About</p>
+      <div style={{padding:'0 16px 32px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
+        JB Finance v1.0<br/>
+        Personal expense tracker<br/>
+        Built for Jayesh Bhagat
+      </div>
+    </div>
+  );
+}
+
+// ── RENDER ───────────────────────────────────────────
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
+</body>
+</html>
