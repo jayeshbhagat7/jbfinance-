@@ -862,8 +862,207 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
   );
 }
 
-// ── DASHBOARD SCREEN — FULL ──────────────────────────
+// ── DASHBOARD SCREEN — COMPACT ───────────────────────
 function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets }) {
+  allBanks = allBanks || BANKS;
+  allCC    = allCC    || CC_ACCTS;
+  budgets  = budgets  || {};
+
+  const now    = new Date();
+  const month  = now.getMonth();
+  const year   = now.getFullYear();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const active     = txns.filter(t => t.status !== 'voided');
+  const thisMonth  = active.filter(t => { const d=new Date(t.created_at); return d.getMonth()===month&&d.getFullYear()===year; });
+  const lastMonth  = active.filter(t => { const d=new Date(t.created_at); const lm=month===0?11:month-1; const ly=month===0?year-1:year; return d.getMonth()===lm&&d.getFullYear()===ly; });
+
+  const sumType = (list,type) => list.filter(t=>t.type===type).reduce((s,t)=>s+(+t.amount),0);
+  const sumCat  = (list,cat)  => list.filter(t=>t.type==='Expense'&&t.category===cat).reduce((s,t)=>s+(+t.amount),0);
+
+  const income  = sumType(thisMonth,'Income');
+  const expense = sumType(thisMonth,'Expense');
+  const uaExp   = sumType(thisMonth,'UA Expense');
+  const uaRecv  = sumType(thisMonth,'UA Received');
+  const uaOut   = uaExp - uaRecv;
+
+  const ccDues  = allCC.map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
+  const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
+  const spendable = Math.max(0, liquid - totalCC);
+
+  // Category spend this month
+  const cats = {};
+  thisMonth.filter(t=>t.type==='Expense').forEach(t=>{ const c=t.category||'Misc'; cats[c]=(cats[c]||0)+(+t.amount); });
+  const topCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // IT — full year
+  const fy = active.filter(t=>{ const d=new Date(t.created_at); const yr=d.getFullYear(),mo=d.getMonth(); return (yr===year&&mo>=3)||(yr===year+1&&mo<3); });
+  const it80C = fy.filter(t=>t.it_section==='80C').reduce((s,t)=>s+(+t.amount),0);
+  const it80D = fy.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
+  const gap80C = Math.max(0,150000-it80C);
+  const gap80D = Math.max(0,50000-it80D);
+  const taxSave = Math.round((gap80C)*0.3);
+
+  // Alerts — only real ones
+  const alerts = [];
+  ccDues.forEach(x => alerts.push({ r:'red', t: x.name+' — '+fmtAmt(x.due)+' due' }));
+  if (uaOut>0) alerts.push({ r:'amber', t:'UA outstanding — '+fmtAmt(uaOut) });
+  topCats.forEach(([c,v])=>{ if(budgets[c]&&v>budgets[c]) alerts.push({ r:'amber', t:c+' over budget — '+fmtAmt(v)+'/'+fmtAmt(budgets[c]) }); });
+  if (gap80C>0 && month>=1 && month<=2) alerts.push({ r:'blue', t:'80C gap ₹'+Math.round(gap80C/1000)+'k — invest before 31 Mar' });
+
+  const D = ({label,val,col,sub}) => (
+    <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px'}}>
+      <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3,textTransform:'uppercase',letterSpacing:'0.06em'}}>{label}</div>
+      <div style={{fontSize:17,fontWeight:600,fontFamily:'var(--mono)',color:col||'var(--text)'}}>{val}</div>
+      {sub&&<div style={{fontSize:9,color:'var(--text3)',marginTop:2}}>{sub}</div>}
+    </div>
+  );
+
+  const Row = ({a,b,c,dim,red,grn,amb}) => (
+    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 12px',borderBottom:'1px solid var(--border)',fontSize:12,alignItems:'center'}}>
+      <span style={{color:dim?'var(--text3)':'var(--text2)'}}>{a}</span>
+      <div style={{display:'flex',gap:12,alignItems:'center'}}>
+        {c&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{c}</span>}
+        <span style={{fontFamily:'var(--mono)',fontWeight:600,color:red?'var(--red)':grn?'var(--green)':amb?'var(--amber)':'var(--text)'}}>{b}</span>
+      </div>
+    </div>
+  );
+
+  const Hdr = ({t,v,col}) => (
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)'}}>
+      <span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.08em',color:'var(--text3)',textTransform:'uppercase'}}>{t}</span>
+      {v&&<span style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:600,color:col||'var(--text)'}}>{v}</span>}
+    </div>
+  );
+
+  const Card = ({children}) => (
+    <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',marginBottom:8}}>{children}</div>
+  );
+
+  return (
+    <div className="fade-in" style={{padding:'8px 12px'}}>
+
+      {/* ── ALERTS — compact pills */}
+      {alerts.length>0 && (
+        <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:8}}>
+          {alerts.map((a,i)=>(
+            <div key={i} style={{background:a.r==='red'?'var(--red-bg)':a.r==='blue'?'var(--blue-bg)':'var(--amber-bg)',border:'1px solid '+(a.r==='red'?'#3a0a0a':a.r==='blue'?'#0a1a3a':'#3a2500'),borderRadius:6,padding:'6px 10px',fontSize:11,color:a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)',fontFamily:'var(--mono)'}}>
+              {a.r==='red'?'⚠ ':a.r==='blue'?'◈ ':'● '}{a.t}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── TOP 4 METRICS */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+        <D label="Liquid balance" val={fmtAmt(liquid)} grn/>
+        <D label={`Spendable (−CC)`} val={fmtAmt(spendable)} col={spendable<10000?'var(--red)':spendable<30000?'var(--amber)':'var(--green)'} sub="after CC dues"/>
+        <D label={MONTHS[month]+' income'} val={income>0?fmtAmt(income):'—'} col="var(--green)"/>
+        <D label={MONTHS[month]+' expense'} val={expense>0?fmtAmt(expense):'—'} col="var(--red)"/>
+      </div>
+
+      {/* ── BANKS + CC in one card */}
+      <Card>
+        <Hdr t="Accounts" v={fmtAmt(liquid)} col="var(--green)"/>
+        {allBanks.map(a=>{
+          const b=balances[a]||0;
+          return <Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0}/>;
+        })}
+        {ccDues.length>0 && (
+          <>
+            <div style={{padding:'5px 12px',background:'var(--bg3)',fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>CC PAYABLE</div>
+            {ccDues.map(x=><Row key={x.name} a={x.name} b={fmtAmt(x.due)} amb/>)}
+            <div style={{padding:'6px 12px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontSize:11,fontFamily:'var(--mono)'}}>
+              <span style={{color:'var(--text3)'}}>Total payable</span>
+              <span style={{color:'var(--amber)',fontWeight:600}}>{fmtAmt(totalCC)}</span>
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* ── EXPENSE + BUDGET in one card */}
+      {topCats.length>0 && (
+        <Card>
+          <Hdr t={MONTHS[month]+' spend'} v={fmtAmt(expense)} col="var(--red)"/>
+          {topCats.map(([c,v])=>{
+            const lim=budgets[c]||0;
+            const over=lim>0&&v>lim;
+            const pct=lim>0?Math.min(Math.round(v/lim*100),100):0;
+            return (
+              <div key={c} style={{padding:'7px 12px',borderBottom:'1px solid var(--border)'}}>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:lim>0?3:0}}>
+                  <span style={{color:'var(--text2)'}}>{c}</span>
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    {lim>0&&<span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>{fmtAmt(lim)}</span>}
+                    <span style={{fontFamily:'var(--mono)',fontWeight:600,color:over?'var(--red)':pct>=80?'var(--amber)':'var(--text)'}}>{fmtAmt(v)}</span>
+                    {over&&<span style={{fontSize:9,color:'var(--red)',fontFamily:'var(--mono)'}}>OVER</span>}
+                  </div>
+                </div>
+                {lim>0&&<div style={{background:'var(--bg3)',borderRadius:2,height:3}}><div style={{height:3,borderRadius:2,width:pct+'%',background:over?'var(--red)':pct>=80?'var(--amber)':'var(--blue)'}}/></div>}
+              </div>
+            );
+          })}
+          {topCats.length===0&&<div style={{padding:'12px',fontSize:11,color:'var(--text3)',textAlign:'center',fontFamily:'var(--mono)'}}>No expenses this month</div>}
+        </Card>
+      )}
+
+      {/* ── UA outstanding — only if exists */}
+      {uaOut>0 && (
+        <Card>
+          <Hdr t="UA outstanding" v={fmtAmt(uaOut)} col="var(--amber)"/>
+          <Row a="Personal money at site" b={fmtAmt(uaExp)} amb/>
+          <Row a="Recovered" b={'−'+fmtAmt(uaRecv)} grn/>
+          <div style={{padding:'6px 12px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontSize:12,fontWeight:600}}>
+            <span style={{color:'var(--text3)'}}>Outstanding</span>
+            <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>{fmtAmt(uaOut)}</span>
+          </div>
+        </Card>
+      )}
+
+      {/* ── IT DEDUCTIONS — compact 2-col */}
+      <Card>
+        <Hdr t={'IT deductions FY'+year+'-'+(year+1).toString().slice(2)} v={taxSave>0?'Save '+fmtAmt(taxSave):undefined} col="var(--green)"/>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
+          {[
+            {s:'80C',u:it80C,l:150000,lbl:'LIC+Edu+ELSS'},
+            {s:'80D',u:it80D,l:50000, lbl:'Mediclaim'},
+          ].map((it,i)=>{
+            const pct=Math.round(it.u/it.l*100);
+            const full=it.u>=it.l;
+            return (
+              <div key={it.s} style={{padding:'9px 12px',borderBottom:'1px solid var(--border)',borderRight:i===0?'1px solid var(--border)':'none'}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:3}}>{it.s} · {it.lbl}</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:4}}>
+                  <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:full?'var(--green)':'var(--text)'}}>{fmtAmt(it.u)}</span>
+                  <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>/{fmtAmt(it.l)}</span>
+                </div>
+                <div style={{background:'var(--bg3)',borderRadius:2,height:3}}><div style={{height:3,borderRadius:2,width:Math.min(pct,100)+'%',background:full?'var(--green)':'var(--blue)'}}/></div>
+                {!full&&<div style={{fontSize:9,color:'var(--amber)',fontFamily:'var(--mono)',marginTop:3}}>gap {fmtAmt(Math.max(0,it.l-it.u))}</div>}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* ── CASHFLOW — only if income exists */}
+      {income>0 && (
+        <Card>
+          <Hdr t="Next month estimate"/>
+          <Row a="Income (expected)" b={'+'+fmtAmt(income)} grn/>
+          <Row a="CC dues" b={'−'+fmtAmt(totalCC)} red/>
+          <Row a="Variable (this mo.)" b={'−'+fmtAmt(Math.round(expense*0.85))} amb dim/>
+          <div style={{padding:'7px 12px',display:'flex',justifyContent:'space-between',fontSize:12,fontWeight:600}}>
+            <span style={{color:'var(--text3)'}}>Est. surplus</span>
+            <span style={{fontFamily:'var(--mono)',color:income-totalCC-expense*0.85>0?'var(--green)':'var(--red)'}}>
+              {fmtAmt(income-totalCC-Math.round(expense*0.85))}
+            </span>
+          </div>
+        </Card>
+      )}
+
+    </div>
+  );
+}
   allBanks = allBanks || BANKS;
   allCC    = allCC    || CC_ACCTS;
   budgets  = budgets  || {};
