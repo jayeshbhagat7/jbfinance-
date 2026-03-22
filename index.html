@@ -290,6 +290,7 @@ function App() {
   const [opening, setOpening]               = useState(DEFAULT_OPENING);
   const [customAccounts, setCustomAccounts] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
+  const [budgets, setBudgets]               = useState({});
   const [toast, setToast]                   = useState(null);
   const [loading, setLoading]               = useState(true);
 
@@ -312,6 +313,8 @@ function App() {
         if (ob) setOpening(JSON.parse(ob.value));
         if (ca) setCustomAccounts(JSON.parse(ca.value));
         if (cc) setCustomCategories(JSON.parse(cc.value));
+        const bg = s.find(r => r.key === 'budgets');
+        if (bg) setBudgets(JSON.parse(bg.value));
       }
     } catch(e) { console.error(e); }
     setLoading(false);
@@ -378,7 +381,11 @@ function App() {
     showToast('✓ Accounts updated');
   };
 
-  const saveCustomCategories = async (list) => {
+  const saveBudgets = async (bg) => {
+    await db.from('settings').upsert({ key: 'budgets', value: JSON.stringify(bg) });
+    setBudgets(bg);
+    showToast('✓ Budgets saved');
+  };
     await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
     setCustomCategories(list);
     showToast('✓ Categories updated');
@@ -398,7 +405,7 @@ function App() {
         )}
         {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} />}
         {!loading && tab === 'dash' && (
-          <DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} />
+          <DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} budgets={budgets} />
         )}
         {!loading && tab === 'settings' && (
           <SettingsScreen
@@ -406,6 +413,7 @@ function App() {
             allAccounts={allAccounts}
             customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts}
             customCategories={customCategories} onSaveCategories={saveCustomCategories}
+            budgets={budgets} onSaveBudgets={saveBudgets}
           />
         )}
       </div>
@@ -790,51 +798,132 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
   );
 }
 
-// ── DASHBOARD SCREEN ─────────────────────────────────
-function DashScreen({ balances, txns, liquid, allBanks, allCC }) {
+// ── DASHBOARD SCREEN — FULL ──────────────────────────
+function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets }) {
   allBanks = allBanks || BANKS;
   allCC    = allCC    || CC_ACCTS;
-  const now   = new Date();
-  const month = now.getMonth();
-  const year  = now.getFullYear();
+  budgets  = budgets  || {};
 
-  const thisMonth = txns.filter(t => {
+  const now    = new Date();
+  const month  = now.getMonth();
+  const year   = now.getFullYear();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // ── Active transactions only
+  const active = txns.filter(t => t.status !== 'voided');
+
+  // ── This month
+  const thisMonth = active.filter(t => {
     const d = new Date(t.created_at);
-    return d.getMonth() === month && d.getFullYear() === year;
+    return d.getMonth()===month && d.getFullYear()===year;
   });
 
-  const income  = thisMonth.filter(t => t.type==='Income').reduce((s,t)=>s+(+t.amount),0);
-  const expense = thisMonth.filter(t => t.type==='Expense').reduce((s,t)=>s+(+t.amount),0);
-  const uaExp   = thisMonth.filter(t => t.type==='UA Expense').reduce((s,t)=>s+(+t.amount),0);
-  const uaRecv  = thisMonth.filter(t => t.type==='UA Received').reduce((s,t)=>s+(+t.amount),0);
+  // ── Last 2 months for pattern
+  const prevMonth = (m, y) => active.filter(t => {
+    const d = new Date(t.created_at);
+    return d.getMonth()===m && d.getFullYear()===y;
+  });
+  const m1 = month===0 ? prevMonth(11,year-1) : prevMonth(month-1,year);
+  const m2 = month<=1  ? prevMonth(month===0?10:11, month===0?year-1:year-1) : prevMonth(month-2,year);
+
+  const sumCat = (list,cat) => list.filter(t=>t.type==='Expense'&&t.category===cat).reduce((s,t)=>s+(+t.amount),0);
+  const sumType = (list,type) => list.filter(t=>t.type===type).reduce((s,t)=>s+(+t.amount),0);
+
+  const income  = sumType(thisMonth,'Income');
+  const expense = sumType(thisMonth,'Expense');
+  const uaExp   = sumType(thisMonth,'UA Expense');
+  const uaRecv  = sumType(thisMonth,'UA Received');
   const uaOut   = uaExp - uaRecv;
 
-  // CC dues
-  const ccDues = allCC.map(a => ({ name:a, due: Math.max(0, -(balances[a]||0)) })).filter(x=>x.due>0);
-  const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
+  // ── CC dues + due dates (from recurring settings)
+  const ccDues   = allCC.map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
+  const totalCC  = ccDues.reduce((s,x)=>s+x.due,0);
 
-  // Category breakdown
-  const cats = {};
-  thisMonth.filter(t=>t.type==='Expense').forEach(t => {
-    const c = t.category || 'Misc';
-    cats[c] = (cats[c]||0) + (+t.amount);
+  // ── Provisions = CC dues total (always committed)
+  const provisions   = totalCC;
+  const spendable    = Math.max(0, liquid - provisions);
+
+  // ── Alerts
+  const alerts = [];
+  ccDues.forEach(x => {
+    alerts.push({ level:'red', msg: x.name+' due — '+fmtAmt(x.due), sub:'Pay before due date · UB balance check' });
   });
-  const topCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5);
-  const maxCat  = topCats[0]?.[1] || 1;
+  if (uaOut > 0 && uaExp > 0) {
+    const uaDays = Math.round((now - new Date(thisMonth.filter(t=>t.type==='UA Expense').slice(-1)[0]?.created_at||now))/(1000*60*60*24));
+    if (uaDays > 25) alerts.push({ level:'amber', msg:'UA outstanding — '+fmtAmt(uaOut)+' pending 25+ days', sub:'Follow up with site accounts' });
+  }
 
-  // IT deductions
-  const it80C = thisMonth.filter(t=>t.it_section==='80C').reduce((s,t)=>s+(+t.amount),0);
-  const it80D = thisMonth.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
+  // ── Category spend + budget bars
+  const cats = {};
+  thisMonth.filter(t=>t.type==='Expense'&&t.status!=='voided').forEach(t=>{
+    const c = t.category||'Misc';
+    cats[c] = (cats[c]||0)+(+t.amount);
+  });
+  const topCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,7);
 
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // Budget alerts
+  topCats.forEach(([c,v]) => {
+    const lim = budgets[c];
+    if (lim && v > lim) alerts.push({ level:'amber', msg: c+' budget exceeded — '+fmtAmt(v)+' / '+fmtAmt(lim), sub: 'Over by '+fmtAmt(v-lim) });
+  });
+
+  // ── 3-month spending pattern
+  const patternCats = ['Household','Lifestyle','Fuel','Food','Maintenance'];
+  const pattern = patternCats.map(c => ({
+    cat: c,
+    m2:  sumCat(m2,c),
+    m1:  sumCat(m1,c),
+    now: sumCat(thisMonth,c),
+  })).filter(p => p.m2>0||p.m1>0||p.now>0);
+
+  // ── IT deductions (full year)
+  const fy = active.filter(t => {
+    const d = new Date(t.created_at);
+    const yr = d.getFullYear(), mo = d.getMonth();
+    return (yr===year && mo>=3) || (yr===year+1 && mo<3);
+  });
+  const it80C  = fy.filter(t=>t.it_section==='80C').reduce((s,t)=>s+(+t.amount),0);
+  const it80D  = fy.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
+  const it80G  = fy.filter(t=>t.it_section==='80G').reduce((s,t)=>s+(+t.amount),0);
+  const itNPS  = fy.filter(t=>t.it_section==='80CCD').reduce((s,t)=>s+(+t.amount),0);
+  const gap80C = Math.max(0, 150000 - it80C);
+  const gap80D = Math.max(0, 50000  - it80D);
+  const gapNPS = Math.max(0, 50000  - itNPS);
+  const potentialSaving = Math.round((gap80C + gapNPS) * 0.3);
+
+  // ── Cashflow projection next month
+  const avgVar = expense > 0 ? Math.round(expense * 0.85) : 0;
+  const projSurplus = income > 0 ? Math.round(income - totalCC - avgVar) : 0;
+
+  // ── Section style helpers
+  const SL = ({children}) => <p className="sec-label" style={{marginTop:14}}>{children}</p>;
+  const Card = ({children,style}) => <div style={{margin:'0 0 8px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'var(--radius)',...style}}>{children}</div>;
+  const Row  = ({left,right,sub,color}) => (
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 14px',borderBottom:'1px solid var(--border)'}}>
+      <div><div style={{fontSize:13}}>{left}</div>{sub&&<div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{sub}</div>}</div>
+      <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:color||'var(--text)',flexShrink:0,marginLeft:8}}>{right}</span>
+    </div>
+  );
+  const lastRow = {borderBottom:'none'};
 
   return (
-    <div className="fade-in">
+    <div className="fade-in" style={{paddingBottom:8}}>
 
-      {/* Month heading */}
-      <p className="sec-label">{months[month]} {year} — Summary</p>
+      {/* ── ALERTS */}
+      {alerts.length > 0 && (
+        <>
+          <SL>Alerts</SL>
+          {alerts.map((a,i) => (
+            <div key={i} style={{margin:'0 0 6px',background:a.level==='red'?'var(--red-bg)':'var(--amber-bg)',border:'1px solid '+(a.level==='red'?'#3a0a0a':'#3a2500'),borderRadius:8,padding:'9px 14px'}}>
+              <div style={{fontSize:12,fontWeight:600,color:a.level==='red'?'var(--red)':'var(--amber)'}}>{a.msg}</div>
+              <div style={{fontSize:10,color:'var(--text3)',marginTop:2}}>{a.sub}</div>
+            </div>
+          ))}
+        </>
+      )}
 
-      {/* Top metrics */}
+      {/* ── SUMMARY METRICS */}
+      <SL>{MONTHS[month]} {year} — Summary</SL>
       <div className="metric-grid" style={{marginBottom:8}}>
         <div className="metric">
           <div className="metric-label">Income</div>
@@ -844,109 +933,208 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC }) {
           <div className="metric-label">Expense</div>
           <div className="metric-value" style={{color:'var(--red)'}}>{fmtAmt(expense)}</div>
         </div>
-        <div className="metric">
-          <div className="metric-label">Liquid Balance</div>
-          <div className="metric-value">{fmtAmt(liquid)}</div>
-          <div className="metric-sub">Cash+KB+UB+YB</div>
+        <div className="metric" style={{border:'1px solid var(--green)'}}>
+          <div className="metric-label">Spendable</div>
+          <div className="metric-value" style={{color: spendable<5000?'var(--red)':spendable<15000?'var(--amber)':'var(--green)'}}>{fmtAmt(spendable)}</div>
+          <div className="metric-sub">liquid − CC dues</div>
         </div>
         <div className="metric">
           <div className="metric-label">CC Payable</div>
-          <div className="metric-value" style={{color: totalCC>0?'var(--amber)':'var(--green)'}}>{fmtAmt(totalCC)}</div>
+          <div className="metric-value" style={{color:totalCC>0?'var(--amber)':'var(--green)'}}>{fmtAmt(totalCC)}</div>
         </div>
       </div>
 
-      {/* UA Outstanding */}
-      {uaOut !== 0 && (
+      {/* ── BANK BALANCES */}
+      <SL>Bank Balances</SL>
+      <Card>
+        {allBanks.map((a,i) => {
+          const b = balances[a]||0;
+          const pct = liquid>0 ? Math.round(b/liquid*100) : 0;
+          return (
+            <div key={a} style={{padding:'9px 14px',borderBottom: i<allBanks.length-1?'1px solid var(--border)':'none'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{a}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:b<0?'var(--red)':'var(--text)'}}>{fmtAmt(b)}</span>
+              </div>
+              <div className="progress-bg"><div className="progress-fill" style={{width:Math.max(0,pct)+'%',background:'var(--green)'}}/></div>
+            </div>
+          );
+        })}
+        <div style={{padding:'8px 14px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontSize:11,fontFamily:'var(--mono)'}}>
+          <span style={{color:'var(--text3)'}}>Liquid total</span>
+          <span style={{color:'var(--text)',fontWeight:600}}>{fmtAmt(liquid)}</span>
+        </div>
+      </Card>
+
+      {/* ── CC DUES */}
+      {ccDues.length > 0 && (
         <>
-          <p className="sec-label">UA Outstanding</p>
-          <div style={{margin:'0 16px 8px',background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:10,padding:'12px 14px'}}>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:12}}>
-              <span style={{color:'var(--text2)'}}>Spent from personal</span>
-              <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>+{fmtAmt(uaExp)}</span>
+          <SL>Credit Card Dues</SL>
+          <Card>
+            {ccDues.map((x,i) => (
+              <div key={x.name} style={{padding:'9px 14px',borderBottom:i<ccDues.length-1?'1px solid var(--border)':'none',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{x.name}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--amber)'}}>{fmtAmt(x.due)}</span>
+              </div>
+            ))}
+            <div style={{padding:'8px 14px',borderTop:'1px solid var(--border)',background:'var(--amber-bg)',borderRadius:'0 0 10px 10px',fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)'}}>
+              {Math.round(totalCC/liquid*100)}% of liquid balance committed
             </div>
-            <div style={{display:'flex',justifyContent:'space-between',marginBottom:10,fontSize:12}}>
-              <span style={{color:'var(--text2)'}}>Recovered</span>
-              <span style={{fontFamily:'var(--mono)',color:'var(--green)'}}>−{fmtAmt(uaRecv)}</span>
-            </div>
-            <div style={{display:'flex',justifyContent:'space-between',borderTop:'1px solid #3a2500',paddingTop:8,fontSize:14,fontWeight:600}}>
+          </Card>
+        </>
+      )}
+
+      {/* ── UA OUTSTANDING */}
+      {uaOut > 0 && (
+        <>
+          <SL>UA Outstanding</SL>
+          <Card>
+            <Row left="Personal money at site" right={fmtAmt(uaExp)} color="var(--amber)"/>
+            <Row left="Recovered" right={'−'+fmtAmt(uaRecv)} color="var(--green)"/>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'9px 14px',borderTop:'1px solid var(--border)',fontSize:13,fontWeight:600}}>
               <span style={{color:'var(--text2)'}}>Outstanding</span>
               <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>{fmtAmt(uaOut)}</span>
             </div>
-          </div>
+          </Card>
         </>
       )}
 
-      {/* Bank Balances */}
-      <p className="sec-label">Bank Balances</p>
-      {allBanks.map(a => {
-        const b = balances[a] || 0;
-        return (
-          <div key={a} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:13}}>
-            <span style={{fontFamily:'var(--mono)',color:'var(--text2)'}}>{a}</span>
-            <span style={{fontFamily:'var(--mono)',color: b<0?'var(--red)':'var(--text)'}}>{fmtAmt(b)}</span>
-          </div>
-        );
-      })}
-
-      {/* CC Dues */}
-      {ccDues.length > 0 && (
-        <>
-          <p className="sec-label">CC Dues</p>
-          {ccDues.map(x => (
-            <div key={x.name} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:13}}>
-              <span style={{fontFamily:'var(--mono)',color:'var(--text2)'}}>{x.name}</span>
-              <span style={{fontFamily:'var(--mono)',color:'var(--amber)'}}>{fmtAmt(x.due)}</span>
-            </div>
-          ))}
-        </>
-      )}
-
-      {/* Top Categories */}
-      {topCats.length > 0 && (
-        <>
-          <p className="sec-label">Top Spend</p>
-          {topCats.map(([c,v]) => (
-            <div key={c} className="progress-wrap" style={{marginBottom:8}}>
-              <div className="progress-label"><span>{c}</span><span>{fmtAmt(v)}</span></div>
-              <div className="progress-bg">
-                <div className="progress-fill" style={{width: Math.round(v/maxCat*100)+'%'}} />
+      {/* ── BUDGET VS ACTUAL */}
+      <SL>Budget vs Actual</SL>
+      <Card>
+        {topCats.length === 0 && <div style={{padding:'16px',fontSize:12,color:'var(--text3)',textAlign:'center'}}>No expenses this month yet</div>}
+        {topCats.map(([c,v],i) => {
+          const lim  = budgets[c] || 0;
+          const pct  = lim > 0 ? Math.round(v/lim*100) : 0;
+          const over = lim > 0 && v > lim;
+          const near = lim > 0 && pct >= 80 && !over;
+          const barColor = over?'var(--red)':near?'var(--amber)':'var(--blue)';
+          return (
+            <div key={c} style={{padding:'9px 14px',borderBottom:i<topCats.length-1?'1px solid var(--border)':'none'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:12}}>
+                <span style={{color:'var(--text2)'}}>{c}</span>
+                <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                  <span style={{fontFamily:'var(--mono)',fontWeight:600,color:over?'var(--red)':near?'var(--amber)':'var(--text)'}}>{fmtAmt(v)}</span>
+                  {lim>0 && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>/ {fmtAmt(lim)}</span>}
+                  {over && <span style={{fontSize:9,background:'var(--red-bg)',color:'var(--red)',padding:'1px 5px',borderRadius:4,fontFamily:'var(--mono)'}}>OVER</span>}
+                </div>
               </div>
+              {lim>0 && (
+                <div className="progress-bg">
+                  <div className="progress-fill" style={{width:Math.min(pct,100)+'%',background:barColor}}/>
+                </div>
+              )}
+              {!lim && <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>no budget set — go to Setup</div>}
             </div>
-          ))}
+          );
+        })}
+      </Card>
+
+      {/* ── 3-MONTH SPENDING PATTERN */}
+      {pattern.length > 0 && (
+        <>
+          <SL>Spending Pattern — 3 months</SL>
+          <Card>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 56px 56px 56px',padding:'6px 14px',borderBottom:'1px solid var(--border)'}}>
+              <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>Category</span>
+              <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',textAlign:'right'}}>{MONTHS[month<=1?10+month:month-2]}</span>
+              <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',textAlign:'right'}}>{MONTHS[month===0?11:month-1]}</span>
+              <span style={{fontSize:10,color:'var(--text)',fontFamily:'var(--mono)',textAlign:'right',fontWeight:600}}>{MONTHS[month]}</span>
+            </div>
+            {pattern.map((p,i) => {
+              const trend = p.now > p.m1 && p.m1 > p.m2;
+              const drop  = p.now < p.m1;
+              return (
+                <div key={p.cat} style={{display:'grid',gridTemplateColumns:'1fr 56px 56px 56px',padding:'8px 14px',borderBottom:i<pattern.length-1?'1px solid var(--border)':'none',alignItems:'center'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontSize:12,color:'var(--text2)'}}>{p.cat}</span>
+                    {trend && <span style={{fontSize:9,color:'var(--red)'}}>↑↑</span>}
+                    {drop  && <span style={{fontSize:9,color:'var(--green)'}}>↓</span>}
+                  </div>
+                  <span style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',textAlign:'right'}}>{p.m2>0?fmtAmt(p.m2):'—'}</span>
+                  <span style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',textAlign:'right'}}>{p.m1>0?fmtAmt(p.m1):'—'}</span>
+                  <span style={{fontSize:12,color:trend?'var(--red)':drop?'var(--green)':'var(--text)',fontFamily:'var(--mono)',textAlign:'right',fontWeight:600}}>{p.now>0?fmtAmt(p.now):'—'}</span>
+                </div>
+              );
+            })}
+          </Card>
         </>
       )}
 
-      {/* IT Deductions */}
-      {(it80C > 0 || it80D > 0) && (
+      {/* ── CASHFLOW PROJECTION */}
+      {income > 0 && (
         <>
-          <p className="sec-label">IT Deductions (this month)</p>
-          <div className="metric-grid" style={{marginBottom:16}}>
-            {it80C > 0 && (
-              <div className="metric" style={{borderColor:'var(--green)'}}>
-                <div className="metric-label">Section 80C</div>
-                <div className="metric-value" style={{color:'var(--green)',fontSize:16}}>{fmtAmt(it80C)}</div>
-                <div className="metric-sub">of ₹1,50,000 limit</div>
+          <SL>Next Month Projection</SL>
+          <Card>
+            <Row left="Expected income (salary)" right={'+'+fmtAmt(income)} color="var(--green)"/>
+            <Row left="CC dues to pay" right={'−'+fmtAmt(totalCC)} color="var(--red)"/>
+            <Row left="Est. variable (this month avg)" right={'−'+fmtAmt(avgVar)} color="var(--amber)" sub="85% of current month spend"/>
+            <div style={{display:'flex',justifyContent:'space-between',padding:'10px 14px',borderTop:'1px solid var(--border)',fontSize:14,fontWeight:600}}>
+              <span style={{color:'var(--text2)'}}>Projected surplus</span>
+              <span style={{fontFamily:'var(--mono)',color:projSurplus>0?'var(--green)':'var(--red)'}}>{projSurplus>=0?'+':''}{fmtAmt(projSurplus)}</span>
+            </div>
+            {projSurplus > 0 && gap80C > 0 && month === 2 && (
+              <div style={{padding:'8px 14px',background:'var(--blue-bg)',borderRadius:'0 0 10px 10px',fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)'}}>
+                Route {fmtAmt(Math.min(projSurplus,gap80C))} to ELSS before 31 Mar — saves tax
               </div>
             )}
-            {it80D > 0 && (
-              <div className="metric" style={{borderColor:'var(--green)'}}>
-                <div className="metric-label">Section 80D</div>
-                <div className="metric-value" style={{color:'var(--green)',fontSize:16}}>{fmtAmt(it80D)}</div>
-                <div className="metric-sub">of ₹50,000 limit</div>
-              </div>
-            )}
-          </div>
+          </Card>
         </>
       )}
+
+      {/* ── IT DEDUCTIONS TRACKER */}
+      <SL>IT Deductions — FY {year}-{(year+1).toString().slice(2)}</SL>
+      <Card>
+        {[
+          {sec:'80C',  used:it80C,  lim:150000, label:'LIC + Edu + ELSS'},
+          {sec:'80D',  used:it80D,  lim:50000,  label:'Mediclaim premium'},
+          {sec:'80G',  used:it80G,  lim:0,      label:'Donations (verify cert)'},
+          {sec:'NPS',  used:itNPS,  lim:50000,  label:'80CCD(1B) — extra over 80C'},
+        ].map((it,i) => {
+          const pct  = it.lim>0 ? Math.round(it.used/it.lim*100) : 100;
+          const gap  = it.lim>0 ? Math.max(0, it.lim-it.used) : 0;
+          const full = it.lim>0 && it.used>=it.lim;
+          return (
+            <div key={it.sec} style={{padding:'10px 14px',borderBottom:i<3?'1px solid var(--border)':'none'}}>
+              <div style={{display:'flex',justifyContent:'space-between',marginBottom:it.lim>0?5:2,fontSize:12}}>
+                <div>
+                  <span style={{fontFamily:'var(--mono)',fontWeight:600,color:full?'var(--green)':gap>0?'var(--amber)':'var(--text)'}}>{it.sec}</span>
+                  <span style={{fontSize:10,color:'var(--text3)',marginLeft:6}}>{it.label}</span>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <span style={{fontFamily:'var(--mono)',fontWeight:600,color:full?'var(--green)':'var(--text)'}}>{fmtAmt(it.used)}</span>
+                  {it.lim>0 && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}> / {fmtAmt(it.lim)}</span>}
+                </div>
+              </div>
+              {it.lim>0 && (
+                <>
+                  <div className="progress-bg">
+                    <div className="progress-fill" style={{width:Math.min(pct,100)+'%',background:full?'var(--green)':'var(--blue)'}}/>
+                  </div>
+                  {gap>0 && <div style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)',marginTop:3}}>Gap: {fmtAmt(gap)} remaining</div>}
+                  {full  && <div style={{fontSize:10,color:'var(--green)',fontFamily:'var(--mono)',marginTop:3}}>✓ Fully utilised</div>}
+                </>
+              )}
+            </div>
+          );
+        })}
+        {potentialSaving > 0 && (
+          <div style={{padding:'8px 14px',background:'var(--green-bg)',borderRadius:'0 0 10px 10px',display:'flex',justifyContent:'space-between',fontSize:12}}>
+            <span style={{color:'var(--green)'}}>Potential tax saving if gaps filled</span>
+            <span style={{fontFamily:'var(--mono)',fontWeight:600,color:'var(--green)'}}>{fmtAmt(potentialSaving)}</span>
+          </div>
+        )}
+      </Card>
 
     </div>
   );
 }
 
 // ── SETTINGS SCREEN ──────────────────────────────────
-function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAccounts, customCategories, onSaveCategories }) {
+function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAccounts, customCategories, onSaveCategories, budgets, onSaveBudgets }) {
   const [ob, setOb]             = useState({ ...opening });
   const [savedBal, setSavedBal] = useState(false);
+  const [bg, setBg]             = useState({ ...budgets });
 
   // New account form
   const [newAccName, setNewAccName] = useState('');
@@ -993,6 +1181,13 @@ function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAc
 
   const inputStyle = { background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:8, padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)', fontSize:12, outline:'none', width:'100%' };
   const smallBtn   = (col) => ({ background:'none', border:`1px solid ${col}`, borderRadius:6, color:col, padding:'6px 12px', fontFamily:'var(--mono)', fontSize:11, cursor:'pointer' });
+
+  const DEFAULT_BUDGET_CATS = ['Household','Fuel','Food','Lifestyle','Maintenance','Travelling','Social','Donation','Child Education','Mobile Recharge'];
+  const budgetCats = [...new Set([...DEFAULT_BUDGET_CATS, ...Object.keys(budgets)])];
+
+  const handleSaveBudgets = async () => {
+    await onSaveBudgets(bg);
+  };
 
   return (
     <div className="fade-in">
@@ -1067,8 +1262,27 @@ function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAc
         </>
       )}
 
+      {/* ── MONTHLY BUDGETS ── */}
+      <p className="sec-label" style={{marginTop:8}}>Monthly Budgets</p>
+      <p style={{padding:'0 16px 8px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>
+        Set limit per category. Dashboard shows red when exceeded, amber at 80%.
+      </p>
+      {budgetCats.map(c => (
+        <div key={c} className="settings-row">
+          <span style={{fontFamily:'var(--mono)',fontSize:12}}>{c}</span>
+          <input type="number" style={{width:120,textAlign:'right'}} value={bg[c]||''} placeholder="no limit"
+            onChange={e=>setBg(prev=>({...prev,[c]:parseFloat(e.target.value)||0}))} />
+        </div>
+      ))}
+      <div style={{padding:'10px 16px 14px'}}>
+        <button onClick={handleSaveBudgets}
+          style={{background:'var(--blue)',border:'none',color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,borderRadius:8,padding:12,width:'100%',cursor:'pointer'}}>
+          Save Budgets
+        </button>
+      </div>
+
       {/* ── OPENING BALANCES ── */}
-      <p className="sec-label" style={{marginTop:8}}>Opening Balances — month start</p>
+      <p className="sec-label" style={{marginTop:4}}>Opening Balances — month start</p>
       <p style={{padding:'0 16px 10px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>
         CC me jo amount aap owe karte ho wo negative enter karo. e.g. SBI CC due ₹9,342 → -9342
       </p>
@@ -1090,7 +1304,7 @@ function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAc
 
       <p className="sec-label">About</p>
       <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
-        JB Finance v1.1<br/>
+        JB Finance v1.3<br/>
         Built for Jayesh Bhagat<br/>
         Umiya Associates · Mumbai
       </div>
