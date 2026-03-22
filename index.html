@@ -337,9 +337,33 @@ function App() {
   };
 
   const deleteTxn = async (id) => {
-    await db.from('transactions').delete().eq('id', id);
-    showToast('↩ Deleted');
-    loadData();
+    // Soft delete — mark as voided, don't actually delete
+    const { error } = await db.from('transactions').update({ status: 'voided' }).eq('id', id);
+    if (!error) { showToast('↩ Voided'); loadData(); }
+    else showToast('⚠ Error voiding');
+  };
+
+  const voidAndCorrect = async (original, corrections) => {
+    // Step 1: void the original entry
+    await db.from('transactions').update({ status: 'voided' }).eq('id', original.id);
+
+    // Step 2: insert corrected entry linked to original
+    const corrected = {
+      type:           original.type,
+      amount:         corrections.amount,
+      category:       corrections.category,
+      from_account:   original.from_account,
+      to_account:     original.to_account,
+      particulars:    corrections.particulars,
+      tower:          original.tower,
+      it_section:     original.it_section,
+      status:         'complete',
+      source:         'app-correction',
+      correction_of:  original.id,
+    };
+    const { error } = await db.from('transactions').insert([corrected]);
+    if (!error) { showToast('✓ Corrected — trail preserved'); loadData(); }
+    else showToast('⚠ Error saving correction');
   };
 
   const saveOpening = async (ob) => {
@@ -372,7 +396,7 @@ function App() {
             allAccounts={allAccounts} allBanks={allBanks}
             allCC={allCC} allCategories={allCategories} />
         )}
-        {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn} />}
+        {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} />}
         {!loading && tab === 'dash' && (
           <DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} />
         )}
@@ -396,7 +420,7 @@ function computeBalances(opening, txns, allBanks, allCC) {
   allBanks = allBanks || BANKS;
   allCC    = allCC    || CC_ACCTS;
   const bal = { ...opening };
-  txns.forEach(t => {
+  txns.filter(t => t.status !== 'voided').forEach(t => {
     const amt  = parseFloat(t.amount) || 0;
     const from = t.from_account;
     const to   = t.to_account;
@@ -630,22 +654,29 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
 }
 
 // ── TRANSACTIONS SCREEN ──────────────────────────────
-function TxnsScreen({ txns, onDelete }) {
-  const [filter, setFilter] = useState('All');
+function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
+  const [filter, setFilter]     = useState('All');
   const [selected, setSelected] = useState(null);
+  const [editMode, setEditMode] = useState(null); // txn being corrected
+  const [corrAmt, setCorrAmt]   = useState('');
+  const [corrDesc, setCorrDesc] = useState('');
+  const [corrCat, setCorrCat]   = useState('');
+  const [saving, setSaving]     = useState(false);
 
-  const filters = ['All','Today','Pending','UA','Income'];
-  const today = new Date().toDateString();
+  const filters = ['All','Today','Voided','UA','Income'];
+  const today   = new Date().toDateString();
 
+  // Hide voided entries by default — show only in Voided filter
   const filtered = txns.filter(t => {
-    if (filter === 'Today')   return new Date(t.created_at).toDateString() === today;
-    if (filter === 'Pending') return t.status === 'pending';
-    if (filter === 'UA')      return t.type === 'UA Expense' || t.type === 'UA Received';
-    if (filter === 'Income')  return t.type === 'Income' || t.type === 'UA Received';
-    return true;
+    if (filter === 'Today')  return new Date(t.created_at).toDateString() === today && t.status !== 'voided';
+    if (filter === 'Voided') return t.status === 'voided';
+    if (filter === 'UA')     return (t.type === 'UA Expense' || t.type === 'UA Received') && t.status !== 'voided';
+    if (filter === 'Income') return (t.type === 'Income' || t.type === 'UA Received') && t.status !== 'voided';
+    return t.status !== 'voided'; // All = active only
   });
 
   const amtColor = t => {
+    if (t.status === 'voided') return '';
     if (t.type === 'Income' || t.type === 'UA Received') return 'in';
     if (t.type === 'UA Expense') return 'ua';
     if (t.type === 'Bank→Bank' || t.type === 'Bank→CC') return '';
@@ -657,12 +688,37 @@ function TxnsScreen({ txns, onDelete }) {
     return '−';
   };
 
+  const handleEdit = (t) => {
+    setEditMode(t);
+    setCorrAmt(String(t.amount));
+    setCorrDesc(t.particulars || '');
+    setCorrCat(t.category || '');
+  };
+
+  const handleSaveCorrection = async () => {
+    if (!editMode || !corrAmt || saving) return;
+    setSaving(true);
+    await onVoidAndCorrect(editMode, {
+      amount:      parseFloat(corrAmt),
+      particulars: corrDesc || editMode.particulars,
+      category:    corrCat  || editMode.category,
+    });
+    setEditMode(null);
+    setSelected(null);
+    setSaving(false);
+  };
+
+  const btnStyle = (col) => ({
+    background:'none', border:`1px solid ${col}`,
+    borderRadius:6, color:col, padding:'5px 12px',
+    fontSize:11, fontFamily:'var(--mono)', cursor:'pointer'
+  });
+
   return (
     <div className="fade-in">
-      {/* Filter chips */}
       <div className="chip-row" style={{padding:'12px 16px 0'}}>
         {filters.map(f => (
-          <div key={f} className={'chip'+(filter===f?' sel':'')} onClick={() => setFilter(f)}>{f}</div>
+          <div key={f} className={'chip'+(filter===f?' sel':'')} onClick={() => { setFilter(f); setSelected(null); setEditMode(null); }}>{f}</div>
         ))}
       </div>
 
@@ -670,30 +726,63 @@ function TxnsScreen({ txns, onDelete }) {
 
       <div style={{marginTop:8}}>
         {filtered.map(t => (
-          <div key={t.id} className="txn-row" onClick={() => setSelected(selected===t.id?null:t.id)}>
-            <div className="txn-left">
-              <div className="txn-cat">{t.type}{t.tower ? ' · ' + t.tower : ''}</div>
-              <div className="txn-desc">{t.particulars || t.category}</div>
-              <div className="txn-meta">
-                {fmtDate(t.created_at)} {fmtTime(t.created_at)}
-                {t.it_section && <span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}
-              </div>
-              {selected === t.id && (
-                <div style={{marginTop:8,display:'flex',gap:8}}>
-                  <button onClick={(e) => { e.stopPropagation(); onDelete(t.id); setSelected(null); }}
-                    style={{background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:6,color:'var(--red)',padding:'4px 12px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>
-                    Delete
-                  </button>
+          <div key={t.id}>
+            <div className="txn-row"
+              style={t.status==='voided'?{opacity:0.45}:{}}
+              onClick={() => { setSelected(selected===t.id?null:t.id); setEditMode(null); }}>
+              <div className="txn-left">
+                <div className="txn-cat">
+                  {t.type}{t.tower ? ' · '+t.tower : ''}
+                  {t.status==='voided' && <span style={{marginLeft:6,fontSize:9,color:'var(--red)',fontFamily:'var(--mono)'}}>VOIDED</span>}
+                  {t.correction_of && <span style={{marginLeft:6,fontSize:9,color:'var(--green)',fontFamily:'var(--mono)'}}>CORRECTION</span>}
                 </div>
-              )}
-            </div>
-            <div className="txn-right">
-              <div className={'txn-amt ' + amtColor(t)}>
-                {amtSign(t)}{fmtAmt(t.amount)}
+                <div className="txn-desc" style={t.status==='voided'?{textDecoration:'line-through'}:{}}>{t.particulars || t.category}</div>
+                <div className="txn-meta">
+                  {fmtDate(t.created_at)} {fmtTime(t.created_at)}
+                  {t.it_section && <span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}
+                </div>
+
+                {/* Expanded actions */}
+                {selected === t.id && t.status !== 'voided' && (
+                  <div style={{marginTop:8,display:'flex',gap:8,flexWrap:'wrap'}}>
+                    <button onClick={(e)=>{e.stopPropagation();handleEdit(t);}}
+                      style={btnStyle('var(--blue)')}>Edit</button>
+                    <button onClick={(e)=>{e.stopPropagation();onDelete(t.id);setSelected(null);}}
+                      style={btnStyle('var(--red)')}>Void</button>
+                  </div>
+                )}
               </div>
-              <div className="txn-acct">{t.from_account || t.to_account}</div>
-              {t.status === 'pending' && <span className="badge badge-pending">pending</span>}
+              <div className="txn-right">
+                <div className={'txn-amt '+amtColor(t)} style={t.status==='voided'?{textDecoration:'line-through'}:{}}>
+                  {amtSign(t)}{fmtAmt(t.amount)}
+                </div>
+                <div className="txn-acct">{t.from_account||t.to_account}</div>
+                {t.status==='pending' && <span className="badge badge-pending">pending</span>}
+              </div>
             </div>
+
+            {/* Inline edit form */}
+            {editMode?.id === t.id && (
+              <div style={{background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:8,margin:'0 16px 8px',padding:'12px'}}>
+                <p style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 8px',letterSpacing:'0.08em'}}>CORRECT ENTRY — original will be voided</p>
+                <div style={{display:'flex',gap:8,marginBottom:8}}>
+                  <input value={corrAmt} onChange={e=>setCorrAmt(e.target.value)}
+                    placeholder="Amount" type="number"
+                    style={{flex:1,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
+                  <input value={corrDesc} onChange={e=>setCorrDesc(e.target.value)}
+                    placeholder="Description"
+                    style={{flex:2,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  <button onClick={handleSaveCorrection} disabled={saving}
+                    style={{flex:1,background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',padding:'8px',fontSize:11,fontFamily:'var(--mono)',fontWeight:600,cursor:'pointer'}}>
+                    {saving?'Saving...':'Save correction'}
+                  </button>
+                  <button onClick={()=>setEditMode(null)}
+                    style={btnStyle('var(--text3)')}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
