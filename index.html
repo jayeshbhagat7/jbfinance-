@@ -4,181 +4,104 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JB Finance</title>
+
+  <!-- React -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    .metric { margin-bottom: 10px; }
+    .txn-row { display:flex; justify-content:space-between; margin:5px 0; }
+  </style>
 </head>
+
 <body>
 
-<!-- ONLY showing modified + merged parts to keep it readable -->
-<!-- Replace ONLY the <script type="text/babel"> section in your file -->
+<div id="root"></div>
 
 <script type="text/babel">
 
+// ---------- HELPERS ----------
+function fmtAmt(n) {
+  return "₹ " + Number(n || 0).toLocaleString();
+}
+
+// ---------- TYPES ----------
 const TYPES = [
-  'Expense',
-  'Income',
-  'Bank→CC',
-  'Bank→Bank',
-  'UA Expense',
-  'UA Received'
+  'Expense','Income','Bank→CC','Bank→Bank','UA Expense','UA Received'
 ];
 
-// ── BALANCE LOGIC ─────────────────────────
-function computeBalances(opening, txns, allBanks, allCC) {
+// ---------- SAMPLE DATA (TEMP) ----------
+const sampleTxns = [
+  { type:'Expense', amount:1000, from_account:'Cash', particulars:'Food' },
+  { type:'UA Expense', amount:2000, from_account:'Bank', particulars:'Friend loan' },
+  { type:'UA Received', amount:500, to_account:'Cash', particulars:'Returned' }
+];
+
+const opening = { Cash: 5000, Bank: 10000 };
+
+// ---------- LOGIC ----------
+function computeBalances(opening, txns) {
   const bal = { ...opening };
 
   txns.forEach(t => {
-    const amt  = parseFloat(t.amount) || 0;
-    const from = t.from_account;
-    const to   = t.to_account;
-    const type = t.type;
+    const amt = Number(t.amount) || 0;
 
-    if (type === 'Expense') {
-      if (from) bal[from] -= amt;
+    if (t.type === 'Expense' || t.type === 'UA Expense') {
+      if (t.from_account) bal[t.from_account] -= amt;
     }
 
-    if (type === 'UA Expense') {
-      if (from) bal[from] -= amt;
-    }
-
-    if (type === 'Income') {
-      if (to) bal[to] += amt;
-    }
-
-    if (type === 'UA Received') {
-      if (to) bal[to] += amt;
-    }
-
-    if (type === 'Bank→Bank') {
-      if (from) bal[from] -= amt;
-      if (to)   bal[to]   += amt;
-    }
-
-    if (type === 'Bank→CC') {
-      if (from) bal[from] -= amt;
-      if (to)   bal[to]   += amt;
+    if (t.type === 'Income' || t.type === 'UA Received') {
+      if (t.to_account) bal[t.to_account] += amt;
     }
   });
 
   return bal;
 }
 
-// ── UA CALCULATION ─────────────────────────
 function calculateUA(txns) {
-  const uaExpense = txns
-    .filter(t => t.type === 'UA Expense')
-    .reduce((s, t) => s + Number(t.amount), 0);
+  const exp = txns.filter(t=>t.type==='UA Expense')
+                 .reduce((s,t)=>s+Number(t.amount),0);
 
-  const uaReceived = txns
-    .filter(t => t.type === 'UA Received')
-    .reduce((s, t) => s + Number(t.amount), 0);
+  const rec = txns.filter(t=>t.type==='UA Received')
+                 .reduce((s,t)=>s+Number(t.amount),0);
 
-  return {
-    uaExpense,
-    uaReceived,
-    uaOutstanding: uaExpense - uaReceived
-  };
+  return exp - rec;
 }
 
-// ── REAL EXPENSE ─────────────────────────
-function calculateRealExpense(txns) {
-  return txns
-    .filter(t => t.type === 'Expense')
-    .reduce((s, t) => s + Number(t.amount), 0);
-}
+// ---------- UI ----------
+function App() {
 
-// ── CC PAYABLE ─────────────────────────
-function calculateCC(txns, ccAccounts) {
-  let spend = 0;
-  let paid  = 0;
-
-  txns.forEach(t => {
-    if (t.type === 'Expense' && ccAccounts.includes(t.from_account)) {
-      spend += Number(t.amount);
-    }
-    if (t.type === 'Bank→CC') {
-      paid += Number(t.amount);
-    }
-  });
-
-  return spend - paid;
-}
-
-// ── DASHBOARD UPDATE ─────────────────────────
-function DashScreen({ balances, txns, liquid, allBanks, allCC }) {
-
-  const ua = calculateUA(txns);
-  const realExpense = calculateRealExpense(txns);
-  const ccOutstanding = calculateCC(txns, allCC);
+  const balances = computeBalances(opening, sampleTxns);
+  const ua = calculateUA(sampleTxns);
 
   return (
-    <>
-      <div className="sec-label">Summary</div>
+    <div>
+      <h2>JB Finance Dashboard</h2>
 
-      <div className="metric-grid">
-
-        <div className="metric">
-          <div className="metric-label">Liquid Balance</div>
-          <div className="metric-value">{fmtAmt(liquid)}</div>
-        </div>
-
-        <div className="metric">
-          <div className="metric-label">Real Expense</div>
-          <div className="metric-value" style={{color:'var(--red)'}}>
-            {fmtAmt(realExpense)}
-          </div>
-        </div>
-
-        <div className="metric">
-          <div className="metric-label">UA Outstanding</div>
-          <div className="metric-value" style={{color:'var(--amber)'}}>
-            {fmtAmt(ua.uaOutstanding)}
-          </div>
-        </div>
-
-        <div className="metric">
-          <div className="metric-label">CC Payable</div>
-          <div className="metric-value" style={{color:'var(--amber)'}}>
-            {fmtAmt(ccOutstanding)}
-          </div>
-        </div>
-
+      <div className="metric">
+        UA Outstanding: {fmtAmt(ua)}
       </div>
 
-      <div className="sec-label">Accounts</div>
-
-      {Object.entries(balances).map(([k,v]) => (
+      <h3>Balances</h3>
+      {Object.entries(balances).map(([k,v])=>(
         <div key={k} className="txn-row">
           <div>{k}</div>
-          <div className="txn-amt">{fmtAmt(v)}</div>
+          <div>{fmtAmt(v)}</div>
         </div>
       ))}
-    </>
-  );
-}
-
-// ── TXN TAG UPDATE ─────────────────────────
-function TxnRow({ t }) {
-  return (
-    <div className="txn-row">
-      <div className="txn-left">
-        <div className="txn-desc">
-          {t.particulars}
-
-          {t.type === 'UA Expense' &&
-            <span className="badge badge-ua" style={{marginLeft:6}}>UA</span>
-          }
-
-          {t.type === 'UA Received' &&
-            <span className="badge badge-in" style={{marginLeft:6}}>REC</span>
-          }
-
-        </div>
-      </div>
-
-      <div className="txn-right">
-        <div className="txn-amt">{fmtAmt(t.amount)}</div>
-      </div>
     </div>
   );
 }
 
+// ---------- RENDER ----------
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
 </script>
+
+</body>
+</html>
