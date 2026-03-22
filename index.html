@@ -285,11 +285,13 @@ const fmtTime = d => {
 
 // ── MAIN APP ─────────────────────────────────────────
 function App() {
-  const [tab, setTab]       = useState('add');
-  const [txns, setTxns]     = useState([]);
-  const [opening, setOpening] = useState(DEFAULT_OPENING);
-  const [toast, setToast]   = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [tab, setTab]                       = useState('add');
+  const [txns, setTxns]                     = useState([]);
+  const [opening, setOpening]               = useState(DEFAULT_OPENING);
+  const [customAccounts, setCustomAccounts] = useState([]);
+  const [customCategories, setCustomCategories] = useState([]);
+  const [toast, setToast]                   = useState(null);
+  const [loading, setLoading]               = useState(true);
 
   const showToast = msg => {
     setToast(msg);
@@ -305,7 +307,11 @@ function App() {
       const { data: s } = await db.from('settings').select('*');
       if (s) {
         const ob = s.find(r => r.key === 'opening_balances');
+        const ca = s.find(r => r.key === 'custom_accounts');
+        const cc = s.find(r => r.key === 'custom_categories');
         if (ob) setOpening(JSON.parse(ob.value));
+        if (ca) setCustomAccounts(JSON.parse(ca.value));
+        if (cc) setCustomCategories(JSON.parse(cc.value));
       }
     } catch(e) { console.error(e); }
     setLoading(false);
@@ -313,8 +319,12 @@ function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Compute balances from opening + transactions
-  const balances = computeBalances(opening, txns);
+  const allAccounts   = [...ACCOUNTS,   ...customAccounts.filter(a=>a.type==='cc'||a.type==='bank').map(a=>a.name)];
+  const allBanks      = [...BANKS,      ...customAccounts.filter(a=>a.type==='bank').map(a=>a.name)];
+  const allCC         = [...CC_ACCTS,   ...customAccounts.filter(a=>a.type==='cc').map(a=>a.name)];
+  const allCategories = [...CATEGORIES, ...customCategories.map(c=>({ id:c.name, emoji:c.emoji||'•', color:'none', it:c.it||'' }))];
+
+  const balances = computeBalances(opening, txns, allBanks, allCC);
 
   const addTxn = async (txn) => {
     const { error } = await db.from('transactions').insert([txn]);
@@ -322,7 +332,7 @@ function App() {
       showToast('✓ ' + fmtAmt(txn.amount) + ' logged');
       loadData();
     } else {
-      showToast('⚠ Error saving');
+      showToast('⚠ Error: ' + (error.message || 'saving failed'));
     }
   };
 
@@ -338,20 +348,43 @@ function App() {
     showToast('✓ Balances saved');
   };
 
-  const liquid = BANKS.reduce((s, a) => s + (balances[a] || 0), 0);
+  const saveCustomAccounts = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_accounts', value: JSON.stringify(list) });
+    setCustomAccounts(list);
+    showToast('✓ Accounts updated');
+  };
+
+  const saveCustomCategories = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
+    setCustomCategories(list);
+    showToast('✓ Categories updated');
+  };
+
+  const liquid = allBanks.reduce((s, a) => s + (balances[a] || 0), 0);
 
   return (
     <div id="root">
       <Header liquid={liquid} tab={tab} />
-
       <div className="main">
         {loading && <div className="empty">Loading...</div>}
-        {!loading && tab === 'add'      && <AddScreen onSave={addTxn} showToast={showToast} />}
-        {!loading && tab === 'txns'     && <TxnsScreen txns={txns} onDelete={deleteTxn} />}
-        {!loading && tab === 'dash'     && <DashScreen balances={balances} txns={txns} liquid={liquid} />}
-        {!loading && tab === 'settings' && <SettingsScreen opening={opening} onSave={saveOpening} />}
+        {!loading && tab === 'add'  && (
+          <AddScreen onSave={addTxn} showToast={showToast}
+            allAccounts={allAccounts} allBanks={allBanks}
+            allCC={allCC} allCategories={allCategories} />
+        )}
+        {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn} />}
+        {!loading && tab === 'dash' && (
+          <DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} />
+        )}
+        {!loading && tab === 'settings' && (
+          <SettingsScreen
+            opening={opening} onSave={saveOpening}
+            allAccounts={allAccounts}
+            customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts}
+            customCategories={customCategories} onSaveCategories={saveCustomCategories}
+          />
+        )}
       </div>
-
       <TabBar tab={tab} setTab={setTab} txns={txns} />
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -359,7 +392,9 @@ function App() {
 }
 
 // ── BALANCE COMPUTATION ──────────────────────────────
-function computeBalances(opening, txns) {
+function computeBalances(opening, txns, allBanks, allCC) {
+  allBanks = allBanks || BANKS;
+  allCC    = allCC    || CC_ACCTS;
   const bal = { ...opening };
   txns.forEach(t => {
     const amt  = parseFloat(t.amount) || 0;
@@ -426,7 +461,7 @@ function TabBar({ tab, setTab, txns }) {
 }
 
 // ── ADD SCREEN ───────────────────────────────────────
-function AddScreen({ onSave, showToast }) {
+function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategories }) {
   const [amt, setAmt]   = useState('');
   const [desc, setDesc] = useState('');
   const [type, setType] = useState('Expense');
@@ -443,7 +478,7 @@ function AddScreen({ onSave, showToast }) {
     setAmt(a => a + k);
   };
 
-  const catInfo = CATEGORIES.find(c => c.id === cat);
+  const catInfo  = allCategories.find(c => c.id === cat);
   const isUAType = type === 'UA Expense' || type === 'UA Received';
 
   const canSave = amt && parseFloat(amt) > 0 && (
@@ -521,7 +556,7 @@ function AddScreen({ onSave, showToast }) {
         <>
           <p className="sec-label">Category</p>
           <div className="chip-row" style={{marginBottom:12}}>
-            {CATEGORIES.filter(c => c.id !== 'UA Expense').map(c => (
+            {allCategories.filter(c => c.id !== 'UA Expense').map(c => (
               <div key={c.id} className={'chip'+(cat===c.id?' sel':'')} onClick={() => setCat(c.id)}>
                 {c.emoji} {c.id}
               </div>
@@ -549,7 +584,7 @@ function AddScreen({ onSave, showToast }) {
         <>
           <p className="sec-label">{type==='Bank→CC'||type==='Bank→Bank'?'From Account':'Paid From'}</p>
           <div className="chip-row" style={{marginBottom:12}}>
-            {(type==='Bank→CC'||type==='Bank→Bank'?BANKS:ACCOUNTS).map(a => (
+            {(type==='Bank→CC'||type==='Bank→Bank'?allBanks:allAccounts).map(a => (
               <div key={a} className={'chip'+(from===a?' sel':'')} onClick={() => setFrom(a)}>
                 {a}
               </div>
@@ -563,7 +598,7 @@ function AddScreen({ onSave, showToast }) {
         <>
           <p className="sec-label">{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p>
           <div className="chip-row" style={{marginBottom:12}}>
-            {(type==='Bank→CC'?CC_ACCTS:type==='Bank→Bank'?BANKS:BANKS).map(a => (
+            {(type==='Bank→CC'?allCC:allBanks).map(a => (
               <div key={a} className={'chip'+(to===a?' sel':'')} onClick={() => setTo(a)}>
                 {a}
               </div>
@@ -667,7 +702,9 @@ function TxnsScreen({ txns, onDelete }) {
 }
 
 // ── DASHBOARD SCREEN ─────────────────────────────────
-function DashScreen({ balances, txns, liquid }) {
+function DashScreen({ balances, txns, liquid, allBanks, allCC }) {
+  allBanks = allBanks || BANKS;
+  allCC    = allCC    || CC_ACCTS;
   const now   = new Date();
   const month = now.getMonth();
   const year  = now.getFullYear();
@@ -684,7 +721,7 @@ function DashScreen({ balances, txns, liquid }) {
   const uaOut   = uaExp - uaRecv;
 
   // CC dues
-  const ccDues = CC_ACCTS.map(a => ({ name:a, due: Math.max(0, -(balances[a]||0)) })).filter(x=>x.due>0);
+  const ccDues = allCC.map(a => ({ name:a, due: Math.max(0, -(balances[a]||0)) })).filter(x=>x.due>0);
   const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
 
   // Category breakdown
@@ -752,7 +789,7 @@ function DashScreen({ balances, txns, liquid }) {
 
       {/* Bank Balances */}
       <p className="sec-label">Bank Balances</p>
-      {BANKS.map(a => {
+      {allBanks.map(a => {
         const b = balances[a] || 0;
         return (
           <div key={a} style={{display:'flex',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid var(--border)',fontSize:13}}>
@@ -818,60 +855,157 @@ function DashScreen({ balances, txns, liquid }) {
 }
 
 // ── SETTINGS SCREEN ──────────────────────────────────
-function SettingsScreen({ opening, onSave }) {
-  const [ob, setOb] = useState({ ...opening });
-  const [saved, setSaved] = useState(false);
+function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAccounts, customCategories, onSaveCategories }) {
+  const [ob, setOb]             = useState({ ...opening });
+  const [savedBal, setSavedBal] = useState(false);
 
-  const handleSave = async () => {
+  // New account form
+  const [newAccName, setNewAccName] = useState('');
+  const [newAccType, setNewAccType] = useState('bank');
+
+  // New category form
+  const [newCatName, setNewCatName]   = useState('');
+  const [newCatEmoji, setNewCatEmoji] = useState('');
+  const [newCatIT, setNewCatIT]       = useState('');
+
+  const handleSaveBal = async () => {
     await onSave(ob);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    setSavedBal(true);
+    setTimeout(() => setSavedBal(false), 2000);
   };
+
+  const addAccount = async () => {
+    const name = newAccName.trim().toUpperCase();
+    if (!name) return;
+    if ([...ACCOUNTS, ...customAccounts.map(a=>a.name)].includes(name)) return;
+    const updated = [...customAccounts, { name, type: newAccType }];
+    await onSaveAccounts(updated);
+    setOb(prev => ({ ...prev, [name]: newAccType === 'cc' ? 0 : 0 }));
+    setNewAccName('');
+  };
+
+  const removeAccount = async (name) => {
+    const updated = customAccounts.filter(a => a.name !== name);
+    await onSaveAccounts(updated);
+  };
+
+  const addCategory = async () => {
+    const name = newCatName.trim();
+    if (!name) return;
+    const updated = [...customCategories, { name, emoji: newCatEmoji || '•', it: newCatIT }];
+    await onSaveCategories(updated);
+    setNewCatName(''); setNewCatEmoji(''); setNewCatIT('');
+  };
+
+  const removeCategory = async (name) => {
+    const updated = customCategories.filter(c => c.name !== name);
+    await onSaveCategories(updated);
+  };
+
+  const inputStyle = { background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:8, padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)', fontSize:12, outline:'none', width:'100%' };
+  const smallBtn   = (col) => ({ background:'none', border:`1px solid ${col}`, borderRadius:6, color:col, padding:'6px 12px', fontFamily:'var(--mono)', fontSize:11, cursor:'pointer' });
 
   return (
     <div className="fade-in">
-      <p className="sec-label">Opening Balances — update at month start</p>
-      <p style={{padding:'0 16px 12px',fontSize:12,color:'var(--text3)',fontFamily:'var(--mono)'}}>
-        CC accounts: enter as negative if you owe money<br/>e.g. SBI CC due ₹9,342 → enter -9342
-      </p>
 
-      {ACCOUNTS.map(a => (
-        <div key={a} className="settings-row">
-          <span style={{fontFamily:'var(--mono)',fontSize:13}}>{a}</span>
-          <input
-            type="number"
-            style={{width:120,textAlign:'right'}}
-            value={ob[a] || ''}
-            placeholder="0"
-            onChange={e => setOb(prev => ({ ...prev, [a]: parseFloat(e.target.value) || 0 }))}
-          />
+      {/* ── CUSTOM ACCOUNTS ── */}
+      <p className="sec-label">Accounts — Add New</p>
+      <div style={{margin:'0 16px 12px',display:'flex',flexDirection:'column',gap:8}}>
+        <input style={inputStyle} placeholder="Account name e.g. ICICI CC / KOTAK" value={newAccName} onChange={e=>setNewAccName(e.target.value.toUpperCase())} />
+        <div style={{display:'flex',gap:8}}>
+          <div className={'chip'+(newAccType==='bank'?' sel':'')} style={{flex:1,textAlign:'center'}} onClick={()=>setNewAccType('bank')}>Bank / Cash</div>
+          <div className={'chip'+(newAccType==='cc'?' sel':'')} style={{flex:1,textAlign:'center'}} onClick={()=>setNewAccType('cc')}>Credit Card</div>
         </div>
-      ))}
-
-      <div style={{padding:'16px'}}>
-        <button
-          onClick={handleSave}
-          style={{background: saved?'var(--green-bg)':'var(--green)',border: saved?'1px solid var(--green)':'none',color: saved?'var(--green)':'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,borderRadius:10,padding:14,width:'100%',cursor:'pointer',transition:'all 0.2s'}}>
-          {saved ? '✓ Saved' : 'Save Opening Balances'}
+        <button onClick={addAccount} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer'}}>
+          + Add Account
         </button>
       </div>
 
-      <p className="sec-label">Supabase Setup — add to code</p>
-      <div style={{margin:'0 16px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:14}}>
-        <p style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
-          1. Create project at supabase.com<br/>
-          2. Run SQL from comments in this file<br/>
-          3. Replace SUPA_URL and SUPA_KEY<br/>
-          4. Add to phone homescreen via Chrome → Share → Add to homescreen
-        </p>
+      {/* Custom accounts list */}
+      {customAccounts.length > 0 && (
+        <>
+          <p className="sec-label">Custom Accounts</p>
+          {customAccounts.map(a => (
+            <div key={a.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+              <div>
+                <span style={{fontFamily:'var(--mono)',fontSize:13}}>{a.name}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginLeft:8}}>{a.type === 'cc' ? 'Credit Card' : 'Bank'}</span>
+              </div>
+              <button onClick={()=>removeAccount(a.name)} style={smallBtn('var(--red)')}>Remove</button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* ── CUSTOM CATEGORIES ── */}
+      <p className="sec-label" style={{marginTop:8}}>Categories — Add New</p>
+      <div style={{margin:'0 16px 12px',display:'flex',flexDirection:'column',gap:8}}>
+        <input style={inputStyle} placeholder="Category name e.g. Site Expense" value={newCatName} onChange={e=>setNewCatName(e.target.value)} />
+        <div style={{display:'flex',gap:8}}>
+          <input style={{...inputStyle,width:80,flexShrink:0}} placeholder="Emoji" value={newCatEmoji} onChange={e=>setNewCatEmoji(e.target.value)} maxLength={2} />
+          <div style={{flex:1}}>
+            <select value={newCatIT} onChange={e=>setNewCatIT(e.target.value)}
+              style={{...inputStyle,width:'100%',appearance:'none'}}>
+              <option value="">No IT section</option>
+              <option value="80C">80C</option>
+              <option value="80D">80D</option>
+              <option value="80G">80G</option>
+              <option value="80CCD">80CCD(1B) — NPS</option>
+              <option value="24b">24(b) — Home loan interest</option>
+              <option value="Declare">Declare in ITR</option>
+            </select>
+          </div>
+        </div>
+        <button onClick={addCategory} style={{background:'var(--blue)',border:'none',borderRadius:8,color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer'}}>
+          + Add Category
+        </button>
+      </div>
+
+      {/* Custom categories list */}
+      {customCategories.length > 0 && (
+        <>
+          <p className="sec-label">Custom Categories</p>
+          {customCategories.map(c => (
+            <div key={c.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+              <div>
+                <span style={{marginRight:6}}>{c.emoji}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:13}}>{c.name}</span>
+                {c.it && <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--green)',marginLeft:8}}>{c.it}</span>}
+              </div>
+              <button onClick={()=>removeCategory(c.name)} style={smallBtn('var(--red)')}>Remove</button>
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* ── OPENING BALANCES ── */}
+      <p className="sec-label" style={{marginTop:8}}>Opening Balances — month start</p>
+      <p style={{padding:'0 16px 10px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>
+        CC me jo amount aap owe karte ho wo negative enter karo. e.g. SBI CC due ₹9,342 → -9342
+      </p>
+
+      {allAccounts.map(a => (
+        <div key={a} className="settings-row">
+          <span style={{fontFamily:'var(--mono)',fontSize:12}}>{a}</span>
+          <input type="number" style={{width:120,textAlign:'right'}} value={ob[a]||''} placeholder="0"
+            onChange={e=>setOb(prev=>({...prev,[a]:parseFloat(e.target.value)||0}))} />
+        </div>
+      ))}
+
+      <div style={{padding:'14px 16px'}}>
+        <button onClick={handleSaveBal}
+          style={{background:savedBal?'var(--green-bg)':'var(--green)',border:savedBal?'1px solid var(--green)':'none',color:savedBal?'var(--green)':'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,borderRadius:10,padding:14,width:'100%',cursor:'pointer',transition:'all 0.2s'}}>
+          {savedBal ? '✓ Saved' : 'Save Opening Balances'}
+        </button>
       </div>
 
       <p className="sec-label">About</p>
-      <div style={{padding:'0 16px 32px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
-        JB Finance v1.0<br/>
-        Personal expense tracker<br/>
-        Built for Jayesh Bhagat
+      <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
+        JB Finance v1.1<br/>
+        Built for Jayesh Bhagat<br/>
+        Umiya Associates · Mumbai
       </div>
+
     </div>
   );
 }
