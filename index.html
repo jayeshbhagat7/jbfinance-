@@ -386,6 +386,8 @@ function App() {
     setBudgets(bg);
     showToast('✓ Budgets saved');
   };
+
+  const saveCustomCategories = async (list) => {
     await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
     setCustomCategories(list);
     showToast('✓ Categories updated');
