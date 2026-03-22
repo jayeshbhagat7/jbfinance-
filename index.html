@@ -496,14 +496,15 @@ function TabBar({ tab, setTab, txns }) {
 
 // ── ADD SCREEN ───────────────────────────────────────
 function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategories }) {
-  const [amt, setAmt]   = useState('');
-  const [desc, setDesc] = useState('');
-  const [type, setType] = useState('Expense');
-  const [cat, setCat]   = useState('');
-  const [from, setFrom] = useState('Cash');
-  const [to, setTo]     = useState('');
-  const [tower, setTower] = useState('');
+  const [amt, setAmt]       = useState('');
+  const [desc, setDesc]     = useState('');
+  const [type, setType]     = useState('Expense');
+  const [cat, setCat]       = useState('');
+  const [from, setFrom]     = useState('Cash');
+  const [to, setTo]         = useState('');
+  const [tower, setTower]   = useState('');
   const [saving, setSaving] = useState(false);
+  const [mode, setMode]     = useState('form'); // 'keypad' | 'form'
 
   const handleKey = k => {
     if (k === '⌫') { setAmt(a => a.slice(0,-1)); return; }
@@ -513,7 +514,6 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   };
 
   const catInfo  = allCategories.find(c => c.id === cat);
-  const isUAType = type === 'UA Expense' || type === 'UA Received';
 
   const canSave = amt && parseFloat(amt) > 0 && (
     type === 'Expense'    ? (cat && from) :
@@ -527,8 +527,6 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
-    const itSec = catInfo?.it || '';
-
     await onSave({
       type,
       amount:       parseFloat(amt),
@@ -537,128 +535,192 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
       to_account:   to || null,
       particulars:  desc || cat || type,
       tower:        tower || null,
-      it_section:   itSec || null,
+      it_section:   catInfo?.it || null,
       status:       'complete',
       source:       'app',
     });
-
-    // Reset
     setAmt(''); setDesc(''); setCat(''); setTower('');
     setSaving(false);
   };
 
-  return (
-    <div className="fade-in">
-      {/* Amount display */}
-      <div className="amt-display">
-        <div className="amt-label">Amount (₹)</div>
-        <div className={'amt-value' + (amt ? ' has-val' : '')}>
-          {amt || '0'}
+  const reset = () => { setType('Expense'); setCat(''); setFrom('Cash'); setTo(''); };
+
+  // Shared sections used in both modes
+  const TypeChips = () => (
+    <div className="chip-row" style={{marginBottom:10}}>
+      {TYPES.map(t => (
+        <div key={t} className={'chip'+(type===t?' sel':'')} onClick={() => { setType(t); reset(); }}>
+          {t}
         </div>
-      </div>
+      ))}
+    </div>
+  );
 
-      {/* Type selector */}
-      <p className="sec-label">Type</p>
-      <div className="chip-row" style={{marginBottom:12}}>
-        {TYPES.map(t => (
-          <div key={t} className={'chip'+(type===t?' sel':'')} onClick={() => { setType(t); setCat(''); setFrom('Cash'); setTo(''); }}>
-            {t}
-          </div>
-        ))}
-      </div>
-
-      {/* Keypad */}
-      <div className="keypad" style={{marginBottom:12}}>
-        {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
-          <button key={k} className={'key' + (k==='⌫'?' del':'')} onClick={() => handleKey(k)}>
-            {k}
-          </button>
-        ))}
-      </div>
-
-      {/* Description */}
-      <input
-        className="desc-input"
-        style={{marginBottom:12}}
-        placeholder="Description (optional)"
-        value={desc}
-        onChange={e => setDesc(e.target.value)}
-      />
-
-      {/* Category — only for Expense */}
-      {(type === 'Expense') && (
-        <>
-          <p className="sec-label">Category</p>
-          <div className="chip-row" style={{marginBottom:12}}>
-            {allCategories.filter(c => c.id !== 'UA Expense').map(c => (
-              <div key={c.id} className={'chip'+(cat===c.id?' sel':'')} onClick={() => setCat(c.id)}>
-                {c.emoji} {c.id}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* UA Tower tag */}
-      {(type === 'UA Expense') && (
-        <>
-          <p className="sec-label">Tower (optional)</p>
-          <div className="chip-row" style={{marginBottom:12}}>
-            {['D5','E2','C3','Common'].map(tw => (
-              <div key={tw} className={'chip'+(tower===tw?' sel-amber':'')} onClick={() => setTower(tw===tower?'':tw)}>
-                {tw}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* From account */}
-      {['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) && (
-        <>
-          <p className="sec-label">{type==='Bank→CC'||type==='Bank→Bank'?'From Account':'Paid From'}</p>
-          <div className="chip-row" style={{marginBottom:12}}>
-            {(type==='Bank→CC'||type==='Bank→Bank'?allBanks:allAccounts).map(a => (
-              <div key={a} className={'chip'+(from===a?' sel':'')} onClick={() => setFrom(a)}>
-                {a}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* To account */}
-      {['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) && (
-        <>
-          <p className="sec-label">{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p>
-          <div className="chip-row" style={{marginBottom:12}}>
-            {(type==='Bank→CC'?allCC:allBanks).map(a => (
-              <div key={a} className={'chip'+(to===a?' sel':'')} onClick={() => setTo(a)}>
-                {a}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* IT badge if applicable */}
-      {catInfo?.it && (
-        <div style={{padding:'0 16px',marginBottom:8}}>
-          <span className="badge badge-in">IT: {catInfo.it} Eligible</span>
+  const CatChips = () => type === 'Expense' ? (
+    <div className="chip-row" style={{marginBottom:10}}>
+      {allCategories.filter(c => c.id !== 'UA Expense').map(c => (
+        <div key={c.id} className={'chip'+(cat===c.id?' sel':'')} onClick={() => setCat(c.id)}>
+          {c.emoji} {c.id}
         </div>
-      )}
+      ))}
+    </div>
+  ) : null;
 
-      {/* Bank mismatch warning */}
+  const TowerChips = () => type === 'UA Expense' ? (
+    <div className="chip-row" style={{marginBottom:10}}>
+      {['D5','E2','C3','Common'].map(tw => (
+        <div key={tw} className={'chip'+(tower===tw?' sel-amber':'')} onClick={() => setTower(tw===tower?'':tw)}>
+          {tw}
+        </div>
+      ))}
+    </div>
+  ) : null;
+
+  const FromChips = () => ['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) ? (
+    <div className="chip-row" style={{marginBottom:10}}>
+      {(type==='Bank→CC'||type==='Bank→Bank'?allBanks:allAccounts).map(a => (
+        <div key={a} className={'chip'+(from===a?' sel':'')} onClick={() => setFrom(a)}>{a}</div>
+      ))}
+    </div>
+  ) : null;
+
+  const ToChips = () => ['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) ? (
+    <div className="chip-row" style={{marginBottom:10}}>
+      {(type==='Bank→CC'?allCC:allBanks).map(a => (
+        <div key={a} className={'chip'+(to===a?' sel':'')} onClick={() => setTo(a)}>{a}</div>
+      ))}
+    </div>
+  ) : null;
+
+  const SaveBtn = () => (
+    <>
       {type === 'UA Expense' && from && from !== 'Cash' && (
-        <div style={{margin:'0 16px 10px',background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,padding:'8px 12px',fontSize:12,color:'var(--amber)'}}>
+        <div style={{margin:'0 0 8px',background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,padding:'7px 12px',fontSize:11,color:'var(--amber)'}}>
           ⚠ {from} se pay kiya — recover bhi bank se hi karo
         </div>
       )}
-
-      {/* Save */}
-      <button className="save-btn" disabled={!canSave||saving} onClick={handleSave} style={{marginBottom:8}}>
+      {catInfo?.it && (
+        <div style={{marginBottom:8}}>
+          <span className="badge badge-in">IT: {catInfo.it} Eligible</span>
+        </div>
+      )}
+      <button className="save-btn" disabled={!canSave||saving} onClick={handleSave}>
         {saving ? 'Saving...' : `Save  ₹${fmt(parseFloat(amt)||0)}`}
       </button>
+    </>
+  );
+
+  const modeToggle = (
+    <div style={{display:'flex',justifyContent:'flex-end',padding:'8px 16px 0',gap:8}}>
+      <div className={'chip'+(mode==='form'?' sel':'')} onClick={()=>setMode('form')} style={{fontSize:11}}>
+        Form
+      </div>
+      <div className={'chip'+(mode==='keypad'?' sel':'')} onClick={()=>setMode('keypad')} style={{fontSize:11}}>
+        Keypad
+      </div>
+    </div>
+  );
+
+  // ── FORM MODE — compact, no big keypad
+  if (mode === 'form') {
+    return (
+      <div className="fade-in" style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:10}}>
+        {modeToggle}
+
+        <p className="sec-label" style={{marginBottom:0}}>Type</p>
+        <TypeChips />
+
+        {/* Amount — simple text input */}
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'10px 14px',display:'flex',alignItems:'center',gap:8,flex:1}}>
+            <span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)'}}>₹</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              placeholder="0"
+              value={amt}
+              onChange={e => setAmt(e.target.value)}
+              style={{flex:1,background:'none',border:'none',color:amt?'var(--green)':'var(--text)',fontFamily:'var(--mono)',fontSize:22,fontWeight:600,outline:'none',width:'100%'}}
+              autoFocus
+            />
+          </div>
+          <input
+            className="desc-input"
+            placeholder="Description"
+            value={desc}
+            onChange={e=>setDesc(e.target.value)}
+            style={{flex:1,margin:0}}
+          />
+        </div>
+
+        {type === 'Expense' && (
+          <>
+            <p className="sec-label" style={{marginBottom:0}}>Category</p>
+            <CatChips />
+          </>
+        )}
+
+        {type === 'UA Expense' && (
+          <>
+            <p className="sec-label" style={{marginBottom:0}}>Tower</p>
+            <TowerChips />
+          </>
+        )}
+
+        {['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) && (
+          <>
+            <p className="sec-label" style={{marginBottom:0}}>{type==='Bank→CC'||type==='Bank→Bank'?'From':'Paid From'}</p>
+            <FromChips />
+          </>
+        )}
+
+        {['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) && (
+          <>
+            <p className="sec-label" style={{marginBottom:0}}>{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p>
+            <ToChips />
+          </>
+        )}
+
+        <SaveBtn />
+      </div>
+    );
+  }
+
+  // ── KEYPAD MODE — original full screen
+  return (
+    <div className="fade-in">
+      {modeToggle}
+      <div className="amt-display">
+        <div className="amt-label">Amount (₹)</div>
+        <div className={'amt-value' + (amt ? ' has-val' : '')}>{amt || '0'}</div>
+      </div>
+
+      <p className="sec-label">Type</p>
+      <TypeChips />
+
+      <div className="keypad" style={{marginBottom:12}}>
+        {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
+          <button key={k} className={'key'+(k==='⌫'?' del':'')} onClick={() => handleKey(k)}>{k}</button>
+        ))}
+      </div>
+
+      <input className="desc-input" style={{marginBottom:12}} placeholder="Description (optional)"
+        value={desc} onChange={e=>setDesc(e.target.value)} />
+
+      {type === 'Expense' && (
+        <><p className="sec-label">Category</p><CatChips /></>
+      )}
+      {type === 'UA Expense' && (
+        <><p className="sec-label">Tower (optional)</p><TowerChips /></>
+      )}
+      {['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) && (
+        <><p className="sec-label">{type==='Bank→CC'||type==='Bank→Bank'?'From Account':'Paid From'}</p><FromChips /></>
+      )}
+      {['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) && (
+        <><p className="sec-label">{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p><ToChips /></>
+      )}
+
+      <div style={{padding:'0 16px 16px'}}><SaveBtn /></div>
     </div>
   );
 }
