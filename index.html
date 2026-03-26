@@ -246,6 +246,14 @@ const CATEGORIES = [
 ];
 
 const TYPES = ['Expense','Income','Bank→CC','Bank→Bank','UA Expense','UA Received'];
+const TYPE_LABELS = {
+  'Expense':     'Expense',
+  'Income':      'Income',
+  'Bank→CC':     'Bank→CC',
+  'Bank→Bank':   'Bank→Bank',
+  'UA Expense':  'UA Expense',
+  'UA Received': 'UA Received',
+};
 
 // Default opening balances — update in Settings
 const DEFAULT_OPENING = {
@@ -711,7 +719,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
     setSaving(false);
   };
 
-  const reset = () => { setType('Expense'); setCat(''); setFrom('Cash'); setTo(''); };
+  const reset = () => { setCat(''); setTo(''); };
 
   // Date picker — compact row
   const DateRow = () => {
@@ -739,11 +747,14 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
     );
   };
 
-  // Shared sections used in both modes
   const TypeChips = () => (
-    <div className="chip-row" style={{marginBottom:10}}>
+    <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'0 0 2px'}}>
       {TYPES.map(t => (
-        <div key={t} className={'chip'+(type===t?' sel':'')} onClick={() => { setType(t); reset(); }}>
+        <div key={t}
+          className={'chip'+(type===t?' sel':'')}
+          style={{fontSize:12,padding:'8px 14px',userSelect:'none'}}
+          onTouchEnd={e=>{ e.preventDefault(); setType(t); setCat(''); setFrom(t==='Bank→CC'||t==='Bank→Bank'?'KB':'Cash'); setTo(''); }}
+          onClick={()=>{ setType(t); setCat(''); setFrom(t==='Bank→CC'||t==='Bank→Bank'?'KB':'Cash'); setTo(''); }}>
           {t}
         </div>
       ))}
