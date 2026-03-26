@@ -1,0 +1,1513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>J-OS v3 — Second Brain</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+body{background:#09090F;color:#EEEEF5;font-family:'Sora',sans-serif;height:100vh;overflow:hidden;}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse at 15% 10%,rgba(124,111,255,.07),transparent 50%),radial-gradient(ellipse at 85% 90%,rgba(62,207,164,.05),transparent 50%);pointer-events:none;z-index:0;}
+::-webkit-scrollbar{width:3px;height:3px;}::-webkit-scrollbar-thumb{background:#2C2C3A;border-radius:2px;}
+.screen{flex:1;overflow-y:auto;overflow-x:hidden;position:relative;z-index:1;}
+.nb{background:none;border:none;color:#5A5A78;font-family:'Sora',sans-serif;font-size:12px;font-weight:500;padding:7px 12px;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;transition:all .2s;}
+.nb.on{color:#EEEEF5;border-bottom-color:#7C6FFF;}
+.card{background:#111118;border:1px solid #2C2C3A;border-radius:13px;padding:13px 14px;animation:si .25s ease;position:relative;overflow:hidden;margin-bottom:8px;}
+@keyframes si{from{opacity:0;transform:translateY(-8px);}to{opacity:1;transform:translateY(0);}}
+.badge{font-size:9px;font-family:'Space Mono',monospace;font-weight:700;letter-spacing:.5px;padding:3px 7px;border-radius:5px;}
+.btn{background:#7C6FFF;color:#fff;border:none;border-radius:10px;padding:8px 18px;font-family:'Sora',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;}
+.btn:hover{background:#9688FF;}
+.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-sm{background:#18181F;border:1px solid #2C2C3A;border-radius:8px;padding:5px 12px;color:#7C6FFF;font-size:12px;cursor:pointer;font-family:'Sora',sans-serif;transition:all .2s;}
+.btn-sm:hover{border-color:#7C6FFF;}
+.input{background:#18181F;border:1px solid #2C2C3A;border-radius:9px;padding:10px 12px;color:#EEEEF5;font-family:'Sora',sans-serif;font-size:14px;outline:none;width:100%;}
+.input:focus{border-color:#7C6FFF;}
+.select{background:#18181F;border:1px solid #2C2C3A;border-radius:9px;padding:10px 12px;color:#EEEEF5;font-family:'Sora',sans-serif;font-size:14px;outline:none;width:100%;}
+.lbl{font-size:11px;color:#5A5A78;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px;display:block;font-family:'Space Mono',monospace;}
+.chip{background:#111118;border:1px solid #2C2C3A;border-radius:20px;padding:5px 12px;font-size:11px;color:#5A5A78;cursor:pointer;white-space:nowrap;transition:all .2s;}
+.chip.on{color:#EEEEF5;border-color:#7C6FFF;background:rgba(124,111,255,.14);}
+.chips{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding:10px 16px;}
+.chips::-webkit-scrollbar{display:none;}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:100;display:flex;align-items:flex-end;}
+.modal{background:#18181F;border-radius:18px 18px 0 0;padding:20px 16px 32px;width:100%;border-top:1px solid #2C2C3A;max-height:85vh;overflow-y:auto;}
+.modal-btns{display:flex;gap:8px;margin-top:14px;}
+.modal-cancel{flex:1;background:#22222C;border:1px solid #2C2C3A;border-radius:9px;padding:10px;color:#5A5A78;font-family:'Sora',sans-serif;cursor:pointer;}
+.modal-save{flex:2;background:#7C6FFF;border:none;border-radius:9px;padding:10px;color:#fff;font-family:'Sora',sans-serif;font-weight:600;cursor:pointer;}
+.dots span{width:4px;height:4px;border-radius:50%;display:inline-block;margin:0 2px;animation:dp 1.2s infinite;}
+.dots span:nth-child(2){animation-delay:.2s;}.dots span:nth-child(3){animation-delay:.4s;}
+@keyframes dp{0%,80%,100%{opacity:.2;transform:scale(.8);}40%{opacity:1;transform:scale(1.2);}}
+.sec-title{font-size:11px;font-family:'Space Mono',monospace;text-transform:uppercase;letter-spacing:1px;color:#5A5A78;}
+.field{margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useRef,useCallback}=React;
+
+// ─── LOCAL STORAGE ───────────────────────────────────────
+const LS={
+  get:(k,d=null)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d;}catch{return d;}},
+  set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+};
+
+// ─── DYNAMIC API KEY ─────────────────────────────────────
+const getApiKey=()=>localStorage.getItem("jos_api_key")||"";
+
+// ─── INDEXEDDB — ACTUAL FILE STORAGE ────────────────────
+const IDB={
+  _db:null,
+  open(){
+    if(this._db) return Promise.resolve(this._db);
+    return new Promise((res,rej)=>{
+      const req=indexedDB.open("jos_files_v1",1);
+      req.onupgradeneeded=e=>e.target.result.createObjectStore("files",{keyPath:"id"});
+      req.onsuccess=e=>{this._db=e.target.result;res(this._db);};
+      req.onerror=()=>rej("IDB open failed");
+    });
+  },
+  async save(file){const db=await this.open();return new Promise((res,rej)=>{const tx=db.transaction("files","readwrite");tx.objectStore("files").put(file);tx.oncomplete=()=>res(file);tx.onerror=()=>rej();});},
+  async get(id){const db=await this.open();return new Promise(res=>{const req=db.transaction("files","readonly").objectStore("files").get(id);req.onsuccess=()=>res(req.result);req.onerror=()=>res(null);});},
+  async del(id){const db=await this.open();return new Promise(res=>{const tx=db.transaction("files","readwrite");tx.objectStore("files").delete(id);tx.oncomplete=()=>res();});},
+  async size(){const db=await this.open();return new Promise(res=>{let s=0;const req=db.transaction("files","readonly").objectStore("files").openCursor();req.onsuccess=e=>{const c=e.target.result;if(c){s+=(c.value.data?.length||0);c.continue();}else res(s);};});}
+};
+
+// ─── CLAUDE API ──────────────────────────────────────────
+// ─── APP MEMORY ──────────────────────────────────────────
+const MEM = {
+  add:(type,content,source="app")=>{
+    const mem=LS.get("app_memory",[]);
+    const entry={id:Date.now(),type,content,source,ts:Date.now()};
+    LS.set("app_memory",[entry,...mem].slice(0,300));
+    return entry;
+  },
+  get:(n=50)=>LS.get("app_memory",[]).slice(0,n),
+  context:(n=40)=>{
+    const mem=LS.get("app_memory",[]).slice(0,n);
+    if(!mem.length)return"";
+    return"\n\n--- JAYESH'S ACTIVITY LOG (recent) ---\n"+mem.map(m=>`[${m.type.toUpperCase()}|${new Date(m.ts).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}] ${m.content}`).join("\n");
+  }
+};
+
+const JAYESH_SYSTEM = `You are J-OS — Jayesh Bhagat's personal Second Brain AI. You have deep knowledge of who he is.
+
+━━ IDENTITY ━━
+Name: Jayesh Bhagat
+Role: Civil Engineer · VP & Project Incharge · Umiya Associates, Mumbai
+Education: Diploma in Civil Engineering (field-risen to VP — no shortcuts)
+Languages: Gujarati, Hindi, English, Marathi — match his input language exactly
+
+━━ ACTIVE CONTEXT ━━
+Sites managed simultaneously: D5 (Mumbai), E2 (Dombivli), C3 (Bhiwandi)
+Travel routes: Gujarat — Vapi, Vasad, Bhuj, Mandvi (CNG vehicle)
+Community role: Lakshminarayan Samaj/Mandal — scaling & leadership
+Life streams: Site | Samaj | Personal | Finance
+
+━━ COGNITIVE PROFILE ━━
+Thinking trigger: Spontaneous & event-based — activates on reality contact, not by schedule
+Thinking structure: Layered, not linear — traces problems to root process failure, then designs systems to prevent recurrence
+Decision mode: All-fronts parallel — runs multiple responses simultaneously under pressure
+Crisis first move: Act immediately to regain control
+Mental strength: Pattern recognition across domains; thinks in concepts across 4 languages
+Core design filter: "Would a non-technical person be able to use this? If not — redesign."
+
+━━ LEARNING STYLE ━━
+Mode: Application-first — learns to build or decide, not to know
+Retention: Highest when tied to a real, active problem with immediate application
+Depth preference: Skip basics. Provide depth. Existing intelligence respected.
+Key unsolved gap: Best ideas arrive while traveling — no reliable system to capture them in the moment
+
+━━ STRENGTHS ━━
+Full confidence: Structural design & drawings, Construction planning & scheduling, Material & cost management, Labour & contractor management, Client & stakeholder handling
+Known gaps: Legal & contracts, Financial/accounts side of projects, HR & formal people management
+
+━━ OPERATING PATTERNS ━━
+Energy sources: Solving complex technical problems · System working smoothly · Team executing without you · New idea clicking in transit
+Energy drains: Repeating instructions to same people · Client interference in execution · Team not taking ownership
+Biggest cost: Context-switching across too many things — #1 thing he wants to stop
+
+━━ FAILURE PATTERNS (learned) ━━
+1. Moved too fast without proper planning
+2. Took on too much himself instead of delegating
+3. Trusted the wrong person with responsibility
+Root pattern: Vision moves faster than system-readiness — action precedes structure. Source of both speed AND error.
+
+━━ 5-YEAR VISION ━━
+1. Run own construction firm
+2. Build a tech product for the construction industry (SiteOS ERP — license/sell to industry)
+3. Reach director level
+4. Scale everything in parallel — not choosing between them
+
+━━ YOUR ROLE ━━
+You are simultaneously his:
+🏗️ World-class Construction & Project Consultant
+💼 Senior Business Strategist (McKinsey-level)
+💰 Practical Financial Advisor (not textbook)
+🧠 Direct Life Coach (not soft — honest)
+💻 Full-stack Technology Architect
+⚡ Execution Partner
+
+━━ RULES ━━
+- Direct, honest — brutally so when needed
+- Give the WORLD-BEST answer for HIS specific situation, not generic advice
+- Think 10 steps ahead. Warn about traps he can't see yet.
+- Only show sections relevant to the question — skip irrelevant expert lenses
+- Always end with ONE concrete, specific action he can take TODAY
+- Use memory log below to personalize deeply`;
+
+async function callClaude(prompt, maxTokens=600, skipMemory=false){
+  const key=getApiKey();
+  if(!key) return null;
+  const sys = JAYESH_SYSTEM + (skipMemory?"":MEM.context());
+  try{
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:maxTokens,system:sys,messages:[{role:"user",content:prompt}]})
+    });
+    const d=await res.json();
+    if(d.error){console.warn("Claude API error:",d.error.message);return null;}
+    return d.content?.[0]?.text||"";
+  }catch(e){console.warn("callClaude failed:",e);return null;}
+}
+
+function localClassify(text){
+  const low=text.toLowerCase();
+  const labels=[];
+  if(/karvu|karvanu|call|meet|pay|fix|send|book|contact|javu|levo|remind|schedule|follow.?up/i.test(low)) labels.push("task");
+  if(/saru|khush|great|happy|grateful|anand|maja|proud|winning|excited|awesome/i.test(low)) labels.push("positive");
+  if(/dar|chinta|worry|sad|tensed|problem|nathi|mushkil|pareshan|stuck|fear|frustrated/i.test(low)) labels.push("negative");
+  if(/idea|plan|concept|what if|maybe|shu jo|navu|imagine|vichar|new|build|create/i.test(low)) labels.push("idea");
+  if(/decide|decision|choice|karvu ke nahi|dilemma|option|choose/i.test(low)) labels.push("decision");
+  if(/issue|obstacle|block|error|solve|challenge|kevi rite|how to|fix/i.test(low)) labels.push("problem");
+  if(labels.length===0) labels.push("note");
+  const type=labels[0];
+  const INS={task:"Aa kaam schedule karo ane next step nakkhi karo.",positive:"Aa feeling note karvo — positive moments track karvathi confidence vade che.",negative:"Aa feeling acknowledge karo — shu specific action laine aa resolve thai shake?",idea:"Aa idea capture thai gayo — baad ma expand karjo.",decision:"Pros-cons list banavo ane deadline set karo.",problem:"Problem clearly define karo — pachhi solution visible thashe."};
+  return{type,labels,insight:INS[type]||null};
+}
+
+async function classifyThought(text){
+  const raw=await callClaude(
+    `Classify this thought. Reply with ONLY a raw JSON object — no markdown, no backticks, no explanation.\n\nThought: ${JSON.stringify(text)}\n\nRespond exactly like this example:\n{"type":"task","labels":["task","idea"],"insight":"One sharp sentence in same language as input."}\n\nRules:\n- type: single most dominant label\n- labels: ALL that apply (task / positive / negative / idea / decision / problem / note)\n- insight: 1 sentence personalized to Jayesh's context, in same language as the thought`,
+    400, true
+  );
+  if(raw){
+    try{
+      // Strip any accidental markdown fences
+      const clean=raw.trim().replace(/^```json\s*/i,"").replace(/^```\s*/i,"").replace(/```\s*$/,"").trim();
+      const p=JSON.parse(clean);
+      if(p&&p.type){
+        if(!p.labels||!Array.isArray(p.labels)||p.labels.length===0) p.labels=[p.type];
+        return p;
+      }
+    }catch(e){console.warn("classify parse fail:",e,"\nraw:",raw);}
+  }
+  return localClassify(text);
+}
+
+async function getExpertAdvice(problem){
+  const raw=await callClaude(
+    `Jayesh asks: ${JSON.stringify(problem)}\n\nGive sharp, specific advice. Detect the domain and use ONLY relevant lenses. Skip irrelevant ones entirely.\n\nDomain guide:\n- Site/construction/labour/material → use 🏗️ SITE LENS\n- Emotion/stress/relationship → use 🧠 MIND LENS\n- Strategy/decision/planning → use 📊 STRATEGY LENS\n- Money/cost/investment → use 💰 FINANCE LENS\n- Tech/app/system → use 💻 TECH LENS\n\nFormat — only show 2-3 relevant sections:\n\n[emoji] LENS NAME:\n2-3 specific sentences relevant to HIS exact situation\n\n⚡ DO THIS TODAY:\n1 concrete action — exact, not vague\n\nLanguage: match his input exactly (Gujarati/Hindi/English mix)`,
+    900
+  );
+  if(raw&&raw.trim().length>20) return raw;
+  return `⚠️ API error aavi — browser console check karo (F12).\n\nPossible reasons:\n• API key wrong che — ⚙️ Settings ma check karo\n• Key ma balance nathi\n• Network issue\n\nKey sahi hoy to F12 → Console ma exact error message dikhshe.`;
+}
+
+function localWeeklyInsight(thoughts, tasks, journal, kaizen) {
+  const now = Date.now();
+  const days30 = 30 * 86400000;
+  const recent = thoughts.filter(t => now - t.ts < days30);
+  const typeCounts = recent.reduce((a, t) => { a[t.type] = (a[t.type] || 0) + 1; return a; }, {});
+  const total = recent.length || 1;
+  const topType = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1])[0];
+  const recentTasks = tasks.filter(t => now - t.ts < days30);
+  const streamCounts = recentTasks.reduce((a,t)=>{a[t.stream]=(a[t.stream]||0)+1;return a;},{});
+  const topStream = Object.entries(streamCounts).sort((a,b)=>b[1]-a[1])[0];
+  const positiveRatio = Math.round(((typeCounts.positive||0)/total)*100);
+  const negativeRatio = Math.round(((typeCounts.negative||0)/total)*100);
+  const doneKaizen = kaizen.filter(k=>k.done&&now-k.ts<days30).length;
+  return {
+    themes: [
+      { emoji: "🧠", title: `${topType?topType[0].charAt(0).toUpperCase()+topType[0].slice(1):"Vichar"} Mode Active`, desc: `Tara thoughts ma sabathi vahu ${topType?topType[0]:"notes"} che (${typeCounts[topType?topType[0]:"note"]||0} entries). Aa area focus deserve kare che.` },
+      { emoji: topStream?"📋":"✅", title: topStream ? `${topStream[0]} Stream Heavy` : "Tasks Scattered", desc: topStream ? `${topStream[0]} stream ma sabathi vahu tasks (${topStream[1]}) — energy concentrate che.` : "Tasks stream-wise balanced che — saru sign." },
+      { emoji: positiveRatio > negativeRatio ? "🌱" : "⚠️", title: positiveRatio > negativeRatio ? "Positive Momentum" : "Stress Under Surface", desc: positiveRatio > negativeRatio ? `${positiveRatio}% positive thoughts — momentum saru che. Continue karo.` : `${negativeRatio}% negative thoughts — koi unresolved tension check karo.` },
+    ],
+    emotion: { positive: typeCounts.positive||0, negative: typeCounts.negative||0, neutral: (typeCounts.note||0)+(typeCounts.idea||0)+(typeCounts.task||0), total: total },
+    streams: streamCounts,
+    action: tasks.filter(t=>!t.done).length > 5 ? `${tasks.filter(t=>!t.done).length} pending tasks che — aaj sabathi important 1 task complete karo.` : doneKaizen < 3 ? "Kaizen streak weak che — aaj ek small improvement commit karo." : "Momentum saru che — ek new important task Backlog ma umero.",
+    period: `Last 30 days (${recent.length} thoughts, ${recentTasks.length} tasks)`,
+    generated: Date.now(),
+  };
+}
+
+async function getWeeklyInsight(thoughts, tasks, journal, kaizen) {
+  const now = Date.now();
+  const days30 = 30 * 86400000;
+  const recent = thoughts.filter(t => now - t.ts < days30);
+  const recentTasks = tasks.filter(t => now - t.ts < days30);
+  const recentJournal = journal.filter(j => now - j.ts < days30);
+  const recentKaizen = kaizen.filter(k => now - k.ts < days30);
+
+  const dataStr = JSON.stringify({
+    thoughts: recent.map(t=>({text:t.text,type:t.type})).slice(0,60),
+    tasks: recentTasks.map(t=>({text:t.text,stream:t.stream,done:t.done})).slice(0,30),
+    journal: recentJournal.map(j=>j.answers.filter(Boolean)).slice(0,10),
+    kaizen: recentKaizen.map(k=>({text:k.text,done:k.done})).slice(0,20),
+  });
+
+  const prompt = `You are Jayesh Bhagat's personal Second Brain AI. Analyze his last 30 days of data and give a Weekly Insight.
+
+DATA:
+${dataStr}
+
+Reply ONLY with this exact JSON (no markdown, no extra text):
+{
+  "themes": [
+    {"emoji":"🔥","title":"Theme title (max 5 words)","desc":"2-3 sentence insight in Gujarati/English mix — direct, useful"},
+    {"emoji":"💡","title":"Theme title","desc":"..."},
+    {"emoji":"⚡","title":"Theme title","desc":"..."}
+  ],
+  "emotion": {"positive":N,"negative":N,"neutral":N,"total":N},
+  "streams": {"Site":N,"Samaj":N,"Personal":N,"Finance":N},
+  "action": "Ek specific, actionable step aaj mate — 1-2 sentences",
+  "period": "Summary of data range",
+  "generated": ${Date.now()}
+}`;
+
+  const raw = await callClaude(prompt, 900);
+  if (raw) {
+    try { return JSON.parse(raw.trim()); } catch {}
+  }
+  return localWeeklyInsight(thoughts, tasks, journal, kaizen);
+}
+
+// ─── CONFIG ──────────────────────────────────────────────
+const TC={
+  positive:{label:"POSITIVE",col:"#3ECFA4",bg:"rgba(62,207,164,.12)"},
+  negative:{label:"NEGATIVE",col:"#FF5F7A",bg:"rgba(255,95,122,.12)"},
+  task:{label:"TASK",col:"#FFD166",bg:"rgba(255,209,102,.12)"},
+  idea:{label:"IDEA",col:"#5EAEFF",bg:"rgba(94,174,255,.12)"},
+  decision:{label:"DECISION",col:"#C49BFF",bg:"rgba(196,155,255,.12)"},
+  problem:{label:"PROBLEM",col:"#FF9A56",bg:"rgba(255,154,86,.12)"},
+  note:{label:"NOTE",col:"#5A5A78",bg:"rgba(90,90,120,.12)"},
+};
+const STREAMS=["Site","Samaj","Personal","Finance"];
+const KOLS=["Backlog","Doing","Done","Blocked"];
+const PARA=["Projects","Areas","Resources","Archive"];
+const PARA_DESC={Projects:"Active — deadline che",Areas:"Ongoing responsibility",Resources:"Reference material",Archive:"Completed / Inactive"};
+const PARA_COL={Projects:"#5EAEFF",Areas:"#3ECFA4",Resources:"#C49BFF",Archive:"#5A5A78"};
+const SCOL={Site:"#5EAEFF",Samaj:"#3ECFA4",Personal:"#C49BFF",Finance:"#FFD166"};
+const KCOL={Backlog:"#5A5A78",Doing:"#5EAEFF",Done:"#3ECFA4",Blocked:"#FF5F7A"};
+
+function fmtTime(ts){
+  const diff=Date.now()-ts;
+  if(diff<60000)return"just now";
+  if(diff<3600000)return`${Math.floor(diff/60000)}m ago`;
+  if(diff<86400000)return`${Math.floor(diff/3600000)}h ago`;
+  return new Date(ts).toLocaleDateString("en-IN",{day:"numeric",month:"short"});
+}
+function todayStr(){return new Date().toLocaleDateString("en-IN",{weekday:"long",day:"numeric",month:"long",year:"numeric"});}
+
+// ─── BRAIN DUMP ──────────────────────────────────────────
+function BrainDump(){
+  const [thoughts,setThoughts]=useState(()=>LS.get("thoughts",[]));
+  const [input,setInput]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [filter,setFilter]=useState("all");
+  const [focused,setFocused]=useState(false);
+  const [editing,setEditing]=useState(null); // {id, text}
+  const ref=useRef();
+
+  const dump=useCallback(async()=>{
+    if(!input.trim()||loading)return;
+    const text=input.trim();
+    setInput("");setLoading(true);
+    const{type,insight}=await classifyThought(text);
+    const item={id:Date.now(),text,type:type||"note",insight:insight||null,ts:Date.now(),done:false};
+    setThoughts(prev=>{const u=[item,...prev];LS.set("thoughts",u);return u;});
+    MEM.add("dump",`[${type||"note"}] ${text.slice(0,120)}`,"braindump");
+    setLoading(false);
+    ref.current?.focus();
+  },[input,loading]);
+
+  const del=id=>setThoughts(prev=>{const u=prev.filter(t=>t.id!==id);LS.set("thoughts",u);return u;});
+
+  const toggleDone=id=>{
+    setThoughts(prev=>{
+      const u=prev.map(t=>{
+        if(t.id!==id)return t;
+        const next={...t,done:!t.done};
+        if(next.done) MEM.add("completed",`Task completed: ${t.text.slice(0,100)}`,"braindump");
+        return next;
+      });
+      LS.set("thoughts",u);return u;
+    });
+  };
+
+  const saveEdit=()=>{
+    if(!editing||!editing.text.trim())return;
+    setThoughts(prev=>{const u=prev.map(t=>t.id===editing.id?{...t,text:editing.text.trim()}:t);LS.set("thoughts",u);return u;});
+    setEditing(null);
+  };
+
+  const counts=thoughts.reduce((a,t)=>{
+    (t.labels||[t.type]).forEach(l=>{a[l]=(a[l]||0)+1;});
+    return a;
+  },{});
+  const filtered=filter==="all"?thoughts:filter==="done"?thoughts.filter(t=>t.done):thoughts.filter(t=>(t.labels||[t.type]).includes(filter)&&!t.done);
+  const FILTERS=[{k:"all",l:"બધું"},...Object.keys(TC).map(k=>({k,l:TC[k].label})),{k:"done",l:"DONE ✓"}];
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px",borderBottom:"1px solid #2C2C3A",position:"sticky",top:0,zIndex:5,background:"#09090F"}}>
+        <div style={{background:"#111118",border:`1.5px solid ${focused?"#7C6FFF":loading?"#FF9A56":"#2C2C3A"}`,borderRadius:14,padding:14,transition:"border-color .2s"}}>
+          <textarea ref={ref} value={input} onChange={e=>setInput(e.target.value)}
+            onKeyDown={e=>{if(e.key==="Enter"&&(e.metaKey||e.ctrlKey))dump();}}
+            onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+            placeholder="ગમે તે લખો — task, vichar, dar, idea... System classify karshe."
+            style={{width:"100%",background:"none",border:"none",outline:"none",color:"#EEEEF5",fontFamily:"'Sora',sans-serif",fontSize:15,lineHeight:1.6,resize:"none",minHeight:72}}
+            autoFocus/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:10}}>
+            {loading
+              ?<div style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#FF9A56",fontFamily:"Space Mono,monospace"}}>
+                  <div className="dots"><span style={{background:"#FF9A56"}}/><span style={{background:"#FF9A56"}}/><span style={{background:"#FF9A56"}}/></div>
+                  Classifying...
+                </div>
+              :<span style={{fontSize:11,color:"#5A5A78",fontFamily:"Space Mono,monospace"}}>Ctrl+Enter to dump</span>
+            }
+            <button className="btn" onClick={dump} disabled={!input.trim()||loading}>Dump →</button>
+          </div>
+        </div>
+      </div>
+
+      {thoughts.length>0&&(
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:7,padding:"12px 16px 4px"}}>
+            {[{n:thoughts.length,l:"Total",c:"#EEEEF5"},{n:counts.positive||0,l:"Positive",c:"#3ECFA4"},{n:counts.task||0,l:"Tasks",c:"#FFD166"},{n:thoughts.filter(t=>t.done).length,l:"Done",c:"#7C6FFF"}].map(s=>(
+              <div key={s.l} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:10,padding:"9px 8px",textAlign:"center"}}>
+                <div style={{fontFamily:"Space Mono,monospace",fontSize:18,fontWeight:700,color:s.c}}>{s.n}</div>
+                <div style={{fontSize:9,color:"#5A5A78",textTransform:"uppercase",letterSpacing:.4,marginTop:2}}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+          <div className="chips">
+            {FILTERS.map(f=>(
+              <button key={f.k} className={`chip${filter===f.k?" on":""}`} onClick={()=>setFilter(f.k)}>
+                {f.l}{f.k!=="all"&&f.k!=="done"&&counts[f.k]?` (${counts[f.k]})`:""}</button>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={{padding:"4px 16px 80px"}}>
+        {filtered.length===0&&(
+          <div style={{textAlign:"center",padding:"50px 20px",color:"#5A5A78"}}>
+            <div style={{fontSize:36,marginBottom:14}}>🧠</div>
+            <div style={{fontSize:16,fontWeight:600,color:"#EEEEF5",marginBottom:6}}>{thoughts.length===0?"Brain dump ready":"Koi nathi"}</div>
+            <div style={{fontSize:13,lineHeight:1.6}}>{thoughts.length===0?"Jo pan matha ma chale che — lakhte jao.":"Baaki filter try karo."}</div>
+          </div>
+        )}
+        {filtered.map(t=>{
+          const cfg=TC[t.type]||TC.note;
+          const isTask=t.type==="task";
+          return(
+            <div key={t.id} className="card" style={{opacity:t.done?.65:1}}>
+              <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:t.done?"#3ECFA4":cfg.col,borderRadius:"13px 0 0 13px"}}/>
+              <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                {isTask&&(
+                  <div onClick={()=>toggleDone(t.id)}
+                    style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${t.done?"#3ECFA4":"#FFD166"}`,background:t.done?"#3ECFA4":"none",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",marginTop:2,transition:"all .2s"}}>
+                    {t.done&&<span style={{fontSize:10,color:"#000",fontWeight:700}}>✓</span>}
+                  </div>
+                )}
+                <div style={{flex:1,fontSize:14,lineHeight:1.55,textDecoration:t.done?"line-through":"none",color:t.done?"#5A5A78":"#EEEEF5"}}>{t.text}</div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0}}>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:3,justifyContent:"flex-end"}}>
+                    {t.done
+                      ? <span className="badge" style={{background:"rgba(62,207,164,.15)",color:"#3ECFA4"}}>DONE</span>
+                      : (t.labels||[t.type]).map(l=>{const c=TC[l]||TC.note;return<span key={l} className="badge" style={{background:c.bg,color:c.col}}>{c.label}</span>;})}
+                  </div>
+                  <div style={{display:"flex",gap:4,marginTop:2}}>
+                    <button onClick={()=>setEditing({id:t.id,text:t.text})}
+                      style={{background:"none",border:"none",color:"#5A5A78",cursor:"pointer",fontSize:12,padding:"2px 4px"}}>✎</button>
+                    <button onClick={()=>del(t.id)}
+                      style={{background:"none",border:"none",color:"#5A5A78",cursor:"pointer",fontSize:15,padding:"2px 4px"}}>×</button>
+                  </div>
+                </div>
+              </div>
+              {t.insight&&<div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #2C2C3A",fontSize:12,color:"#5A5A78",lineHeight:1.5,fontStyle:"italic"}}><span style={{color:"#7C6FFF",fontStyle:"normal"}}>→ </span>{t.insight}</div>}
+              <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace",marginTop:7,textAlign:"right"}}>{fmtTime(t.ts)}</div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Edit Modal */}
+      {editing&&(
+        <div className="modal-bg" onClick={e=>{if(e.target.className==="modal-bg")setEditing(null);}}>
+          <div className="modal">
+            <div style={{fontSize:14,fontWeight:600,marginBottom:12,color:"#EEEEF5"}}>✎ Edit Thought</div>
+            <textarea className="input" value={editing.text} onChange={e=>setEditing({...editing,text:e.target.value})}
+              rows={4} style={{resize:"vertical",minHeight:80,marginBottom:12}}/>
+            <div className="modal-btns">
+              <button className="modal-cancel" onClick={()=>setEditing(null)}>Cancel</button>
+              <button className="modal-save" onClick={saveEdit}>Save Edit</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── TASKS ───────────────────────────────────────────────
+function Tasks(){
+  const [tasks,setTasks]=useState(()=>LS.get("tasks",[]));
+  const [mits,setMits]=useState(()=>LS.get("mits",["","",""]));
+  const [show,setShow]=useState(false);
+  const [form,setForm]=useState({text:"",stream:"Personal",due:""});
+  const [filter,setFilter]=useState("All");
+
+  const saveMit=(i,v)=>{const m=[...mits];m[i]=v;setMits(m);LS.set("mits",m);};
+  const addTask=()=>{
+    if(!form.text.trim())return;
+    const t={id:Date.now(),...form,done:false,ts:Date.now()};
+    const u=[t,...tasks];setTasks(u);LS.set("tasks",u);
+    MEM.add("task_added",`[${form.stream}] ${form.text.trim()}`,"tasks");
+    setForm({text:"",stream:"Personal",due:""});setShow(false);
+  };
+  const toggle=id=>{
+    const u=tasks.map(t=>{
+      if(t.id!==id)return t;
+      const next={...t,done:!t.done};
+      if(next.done) MEM.add("task_done",`[${t.stream}] Completed: ${t.text}`,"tasks");
+      return next;
+    });
+    setTasks(u);LS.set("tasks",u);
+  };
+  const del=id=>{const u=tasks.filter(t=>t.id!==id);setTasks(u);LS.set("tasks",u);};
+  const filtered=filter==="All"?tasks:tasks.filter(t=>t.stream===filter);
+  const pending=tasks.filter(t=>!t.done).length;
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        <div style={{background:"linear-gradient(135deg,rgba(124,111,255,.12),rgba(62,207,164,.08))",border:"1px solid rgba(124,111,255,.3)",borderRadius:13,padding:"13px 14px",marginBottom:14}}>
+          <div style={{fontSize:10,fontFamily:"Space Mono,monospace",color:"#7C6FFF",textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>⚡ Today's MIT</div>
+          {mits.map((m,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:i<2?"1px dashed #2C2C3A":"none"}}>
+              <span style={{fontFamily:"Space Mono,monospace",fontSize:11,color:"#5A5A78",width:16}}>{i+1}.</span>
+              <input value={m} onChange={e=>saveMit(i,e.target.value)} placeholder={`Priority ${i+1}...`}
+                style={{flex:1,background:"none",border:"none",outline:"none",color:"#EEEEF5",fontFamily:"'Sora',sans-serif",fontSize:14}}/>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <span className="sec-title">Tasks ({pending} pending)</span>
+          <button className="btn-sm" onClick={()=>setShow(true)}>+ Add</button>
+        </div>
+        <div className="chips" style={{padding:"0 0 10px"}}>
+          {["All",...STREAMS].map(s=>(<button key={s} className={`chip${filter===s?" on":""}`} onClick={()=>setFilter(s)}>{s}</button>))}
+        </div>
+        {filtered.map(t=>(
+          <div key={t.id} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:11,padding:"11px 13px",display:"flex",alignItems:"flex-start",gap:10,marginBottom:7,opacity:t.done?.5:1}}>
+            <div onClick={()=>toggle(t.id)} style={{width:18,height:18,borderRadius:"50%",border:`2px solid ${t.done?"#3ECFA4":"#2C2C3A"}`,background:t.done?"#3ECFA4":"none",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",marginTop:1,transition:"all .2s"}}>
+              {t.done&&<span style={{fontSize:10,color:"#000",fontWeight:700}}>✓</span>}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:14,textDecoration:t.done?"line-through":"none",color:t.done?"#5A5A78":"#EEEEF5"}}>{t.text}</div>
+              <div style={{display:"flex",gap:8,marginTop:3}}>
+                <span style={{fontSize:10,fontWeight:600,padding:"2px 7px",borderRadius:5,background:`${SCOL[t.stream]}22`,color:SCOL[t.stream]}}>{t.stream}</span>
+                {t.due&&<span style={{fontSize:11,color:"#5A5A78"}}>{t.due}</span>}
+              </div>
+            </div>
+            <button onClick={()=>del(t.id)} style={{background:"none",border:"none",color:"#5A5A78",cursor:"pointer",fontSize:13}}>×</button>
+          </div>
+        ))}
+        {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:"#5A5A78"}}><div style={{fontSize:32,marginBottom:10}}>✅</div><div style={{fontSize:15,color:"#EEEEF5"}}>Koi task nathi — + Add thi umerao</div></div>}
+      </div>
+
+      {show&&(
+        <div className="modal-bg" onClick={e=>{if(e.target.className==="modal-bg")setShow(false);}}>
+          <div className="modal">
+            <div style={{fontSize:15,fontWeight:600,marginBottom:14}}>New Task</div>
+            <div className="field"><label className="lbl">Task</label><input className="input" value={form.text} onChange={e=>setForm({...form,text:e.target.value})} placeholder="Shu karvu che..."/></div>
+            <div className="field"><label className="lbl">Stream</label><select className="select" value={form.stream} onChange={e=>setForm({...form,stream:e.target.value})}>{STREAMS.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div className="field"><label className="lbl">Due Date</label><input type="date" className="input" value={form.due} onChange={e=>setForm({...form,due:e.target.value})}/></div>
+            <div className="modal-btns">
+              <button className="modal-cancel" onClick={()=>setShow(false)}>Cancel</button>
+              <button className="modal-save" onClick={addTask}>Save Task</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── KANBAN ──────────────────────────────────────────────
+function Kanban(){
+  const [cards,setCards]=useState(()=>LS.get("kanban",[]));
+  const [show,setShow]=useState(false);
+  const [form,setForm]=useState({text:"",stream:"Personal",status:"Backlog"});
+
+  const add=()=>{
+    if(!form.text.trim())return;
+    const c={id:Date.now(),...form};
+    const u=[...cards,c];setCards(u);LS.set("kanban",u);
+    setForm({text:"",stream:"Personal",status:"Backlog"});setShow(false);
+  };
+  const move=(id,dir)=>{
+    const u=cards.map(c=>{if(c.id!==id)return c;const i=KOLS.indexOf(c.status);return{...c,status:KOLS[Math.max(0,Math.min(KOLS.length-1,i+dir))]}});
+    setCards(u);LS.set("kanban",u);
+  };
+  const del=id=>{const u=cards.filter(c=>c.id!==id);setCards(u);LS.set("kanban",u);};
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 8px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <span className="sec-title">Kanban Board</span>
+        <button className="btn-sm" onClick={()=>setShow(true)}>+ Add Card</button>
+      </div>
+      <div style={{display:"flex",gap:10,padding:"4px 16px 80px",overflowX:"auto",alignItems:"flex-start"}}>
+        {KOLS.map(s=>{
+          const col=cards.filter(c=>c.status===s);
+          return(
+            <div key={s} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:13,minWidth:195,width:195,flexShrink:0}}>
+              <div style={{padding:"11px 13px",borderBottom:"1px solid #2C2C3A",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span style={{fontSize:12,fontWeight:600,display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{width:8,height:8,borderRadius:"50%",background:KCOL[s],display:"inline-block"}}/>{s}
+                </span>
+                <span style={{fontFamily:"Space Mono,monospace",fontSize:10,color:"#5A5A78"}}>{col.length}</span>
+              </div>
+              <div style={{padding:8,display:"flex",flexDirection:"column",gap:6,minHeight:60}}>
+                {col.map(c=>(
+                  <div key={c.id} style={{background:"#18181F",border:"1px solid #2C2C3A",borderRadius:9,padding:"9px 10px"}}>
+                    <div style={{fontSize:12,lineHeight:1.4}}>{c.text}</div>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginTop:6}}>
+                      <span style={{fontSize:9,fontWeight:600,padding:"2px 6px",borderRadius:4,background:`${SCOL[c.stream]}22`,color:SCOL[c.stream]}}>{c.stream}</span>
+                      <div style={{display:"flex",gap:2}}>
+                        {KOLS.indexOf(c.status)>0&&<button onClick={()=>move(c.id,-1)} style={{background:"none",border:"none",color:"#5A5A78",cursor:"pointer",fontSize:12}}>←</button>}
+                        {KOLS.indexOf(c.status)<KOLS.length-1&&<button onClick={()=>move(c.id,1)} style={{background:"none",border:"none",color:"#5A5A78",cursor:"pointer",fontSize:12}}>→</button>}
+                        <button onClick={()=>del(c.id)} style={{background:"none",border:"none",color:"#FF5F7A",cursor:"pointer",fontSize:12}}>×</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {col.length===0&&<div style={{fontSize:11,color:"#5A5A78",padding:"4px 2px",fontStyle:"italic"}}>Empty</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {show&&(
+        <div className="modal-bg" onClick={e=>{if(e.target.className==="modal-bg")setShow(false);}}>
+          <div className="modal">
+            <div style={{fontSize:15,fontWeight:600,marginBottom:14}}>New Card</div>
+            <div className="field"><label className="lbl">Task / Project</label><input className="input" value={form.text} onChange={e=>setForm({...form,text:e.target.value})} placeholder="Shu che..."/></div>
+            <div className="field"><label className="lbl">Stream</label><select className="select" value={form.stream} onChange={e=>setForm({...form,stream:e.target.value})}>{STREAMS.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div className="field"><label className="lbl">Column</label><select className="select" value={form.status} onChange={e=>setForm({...form,status:e.target.value})}>{KOLS.map(s=><option key={s}>{s}</option>)}</select></div>
+            <div className="modal-btns">
+              <button className="modal-cancel" onClick={()=>setShow(false)}>Cancel</button>
+              <button className="modal-save" onClick={add}>Add Card</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── JOURNAL ─────────────────────────────────────────────
+const PROMPTS=["Aaj shu saru thayun?","Aaj shu mushkil hatu?","Aaj no sabathi important learning?","Kaal mate ek intention?"];
+
+function Journal(){
+  const [entries,setEntries]=useState(()=>LS.get("journal",[]));
+  const [answers,setAnswers]=useState(["","","",""]);
+
+  const save=()=>{
+    if(!answers.some(a=>a.trim()))return;
+    const e={id:Date.now(),date:todayStr(),answers:[...answers],ts:Date.now()};
+    const u=[e,...entries];setEntries(u);LS.set("journal",u);
+    setAnswers(["","","",""]);
+  };
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        <div style={{fontSize:11,fontFamily:"Space Mono,monospace",color:"#5A5A78",marginBottom:10}}>{todayStr()}</div>
+        {PROMPTS.map((q,i)=>(
+          <div key={i} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+            <div style={{fontSize:12,color:"#7C6FFF",marginBottom:6,fontStyle:"italic"}}>{i+1}. {q}</div>
+            <textarea value={answers[i]} onChange={e=>{const a=[...answers];a[i]=e.target.value;setAnswers(a);}}
+              placeholder="Lakhao..." rows={2}
+              style={{width:"100%",background:"none",border:"none",outline:"none",color:"#EEEEF5",fontFamily:"'Sora',sans-serif",fontSize:13,lineHeight:1.6,resize:"none"}}/>
+          </div>
+        ))}
+        <button onClick={save} disabled={!answers.some(a=>a.trim())}
+          style={{width:"100%",background:"#111118",border:"1px solid #2C2C3A",borderRadius:10,padding:11,color:"#3ECFA4",fontFamily:"'Sora',sans-serif",fontSize:14,fontWeight:600,cursor:"pointer",marginTop:2}}>
+          ✓ Journal Save Karo
+        </button>
+        {entries.length>0&&(
+          <div style={{marginTop:20}}>
+            <div className="sec-title" style={{marginBottom:8}}>Past Entries</div>
+            {entries.slice(0,5).map(e=>(
+              <div key={e.id} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+                <div style={{fontSize:10,fontFamily:"Space Mono,monospace",color:"#5A5A78",marginBottom:8}}>{e.date}</div>
+                {PROMPTS.map((q,i)=>e.answers[i]?(
+                  <div key={i} style={{marginBottom:6}}>
+                    <div style={{fontSize:11,color:"#7C6FFF",marginBottom:2}}>{q}</div>
+                    <div style={{fontSize:13,lineHeight:1.4}}>{e.answers[i]}</div>
+                  </div>
+                ):null)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── DOCS (PARA) ─────────────────────────────────────────
+function Docs(){
+  const [docs,setDocs]=useState(()=>LS.get("docs",[]));
+  const [show,setShow]=useState(false);
+  const [form,setForm]=useState({title:"",category:"Projects",content:"",tags:""});
+  const [filter,setFilter]=useState("All");
+  const [view,setView]=useState(null);
+
+  const add=()=>{
+    if(!form.title.trim())return;
+    const d={id:Date.now(),...form,tags:form.tags.split(",").map(t=>t.trim()).filter(Boolean),ts:Date.now()};
+    const u=[d,...docs];setDocs(u);LS.set("docs",u);
+    setForm({title:"",category:"Projects",content:"",tags:""});setShow(false);
+  };
+  const del=id=>{const u=docs.filter(d=>d.id!==id);setDocs(u);LS.set("docs",u);setView(null);};
+  const filtered=filter==="All"?docs:docs.filter(d=>d.category===filter);
+
+  if(view){
+    const doc=docs.find(d=>d.id===view);
+    if(!doc){setView(null);return null;}
+    return(
+      <div className="screen">
+        <div style={{padding:"14px 16px 80px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <button onClick={()=>setView(null)} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:8,padding:"5px 12px",color:"#5A5A78",cursor:"pointer",fontSize:12}}>← Back</button>
+            <span style={{fontSize:10,fontWeight:600,padding:"3px 8px",borderRadius:5,background:`${PARA_COL[doc.category]}22`,color:PARA_COL[doc.category]}}>{doc.category}</span>
+          </div>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:8}}>{doc.title}</div>
+          {doc.tags.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>{doc.tags.map(t=><span key={t} style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:"#2C2C3A",color:"#5A5A78"}}>#{t}</span>)}</div>}
+          <div style={{fontSize:11,color:"#5A5A78",fontFamily:"Space Mono,monospace",marginBottom:16}}>{fmtTime(doc.ts)}</div>
+          <div style={{fontSize:14,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{doc.content}</div>
+          <button onClick={()=>del(doc.id)} style={{marginTop:20,background:"rgba(255,95,122,.1)",border:"1px solid rgba(255,95,122,.3)",borderRadius:9,padding:"8px 16px",color:"#FF5F7A",fontSize:13,cursor:"pointer"}}>Delete</button>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <span className="sec-title">Documents — PARA</span>
+          <button className="btn-sm" onClick={()=>setShow(true)}>+ Add</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14}}>
+          {PARA.map(p=>{
+            const count=docs.filter(d=>d.category===p).length;
+            return(
+              <div key={p} onClick={()=>setFilter(filter===p?"All":p)}
+                style={{background:"#111118",border:`1px solid ${filter===p?PARA_COL[p]:"#2C2C3A"}`,borderRadius:11,padding:"11px 13px",cursor:"pointer",transition:"border-color .2s"}}>
+                <div style={{fontSize:13,fontWeight:600,color:PARA_COL[p]}}>{p}</div>
+                <div style={{fontSize:11,color:"#5A5A78",marginTop:2}}>{PARA_DESC[p]}</div>
+                <div style={{fontFamily:"Space Mono,monospace",fontSize:16,fontWeight:700,marginTop:6}}>{count}</div>
+              </div>
+            );
+          })}
+        </div>
+        {filtered.map(d=>(
+          <div key={d.id} className="card" onClick={()=>setView(d.id)} style={{cursor:"pointer"}}>
+            <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:PARA_COL[d.category],borderRadius:"13px 0 0 13px"}}/>
+            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
+              <div>
+                <div style={{fontSize:14,fontWeight:600,marginBottom:4}}>{d.title}</div>
+                {d.content&&<div style={{fontSize:12,color:"#5A5A78",lineHeight:1.4}}>{d.content.slice(0,80)}...</div>}
+                {d.tags.length>0&&<div style={{display:"flex",gap:5,marginTop:6,flexWrap:"wrap"}}>{d.tags.map(t=><span key={t} style={{fontSize:9,padding:"2px 6px",borderRadius:8,background:"#2C2C3A",color:"#5A5A78"}}>#{t}</span>)}</div>}
+              </div>
+              <span style={{fontSize:10,fontWeight:600,padding:"3px 7px",borderRadius:5,background:`${PARA_COL[d.category]}22`,color:PARA_COL[d.category],flexShrink:0}}>{d.category}</span>
+            </div>
+            <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace",marginTop:8,textAlign:"right"}}>{fmtTime(d.ts)}</div>
+          </div>
+        ))}
+        {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:"#5A5A78"}}><div style={{fontSize:32,marginBottom:10}}>📂</div><div style={{fontSize:15,color:"#EEEEF5"}}>Koi document nathi</div></div>}
+      </div>
+      {show&&(
+        <div className="modal-bg" onClick={e=>{if(e.target.className==="modal-bg")setShow(false);}}>
+          <div className="modal">
+            <div style={{fontSize:15,fontWeight:600,marginBottom:14}}>New Document</div>
+            <div className="field"><label className="lbl">Title</label><input className="input" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} placeholder="Document title..."/></div>
+            <div className="field"><label className="lbl">Category (PARA)</label><select className="select" value={form.category} onChange={e=>setForm({...form,category:e.target.value})}>{PARA.map(p=><option key={p}>{p}</option>)}</select></div>
+            <div className="field"><label className="lbl">Content</label><textarea className="input" value={form.content} onChange={e=>setForm({...form,content:e.target.value})} placeholder="Notes, details, ideas..." rows={5} style={{resize:"vertical",minHeight:80}}/></div>
+            <div className="field"><label className="lbl">Tags (comma separated)</label><input className="input" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})} placeholder="site, finance, idea..."/></div>
+            <div className="modal-btns">
+              <button className="modal-cancel" onClick={()=>setShow(false)}>Cancel</button>
+              <button className="modal-save" onClick={add}>Save Document</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── AI EXPERT ───────────────────────────────────────────
+function AIExpert(){
+  const [problem,setProblem]=useState("");
+  const [advice,setAdvice]=useState("");
+  const [loading,setLoading]=useState(false);
+  const [history,setHistory]=useState(()=>LS.get("expert_history",[]));
+
+  const ask=async()=>{
+    if(!problem.trim()||loading)return;
+    const q=problem.trim();
+    setProblem("");setLoading(true);setAdvice("");
+    const result=await getExpertAdvice(q);
+    setAdvice(result);
+    MEM.add("expert_query",`Q: ${q.slice(0,150)}`,"expert");
+    const h=[{id:Date.now(),q,a:result,ts:Date.now()},...history.slice(0,9)];
+    setHistory(h);LS.set("expert_history",h);
+    setLoading(false);
+  };
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        <div style={{background:"linear-gradient(135deg,rgba(124,111,255,.15),rgba(94,174,255,.1))",border:"1px solid rgba(124,111,255,.3)",borderRadius:13,padding:14,marginBottom:14}}>
+          <div style={{fontSize:11,fontFamily:"Space Mono,monospace",color:"#7C6FFF",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>🧠 Expert Panel</div>
+          <div style={{fontSize:13,color:"#5A5A78",lineHeight:1.5,marginBottom:12}}>Taro problem lakhao — 4 experts thi advice malshe.</div>
+          <textarea value={problem} onChange={e=>setProblem(e.target.value)}
+            placeholder="Tari problem, situation, decision lakhao..."
+            style={{width:"100%",background:"rgba(0,0,0,.3)",border:"1px solid #2C2C3A",borderRadius:10,padding:"10px 12px",color:"#EEEEF5",fontFamily:"'Sora',sans-serif",fontSize:14,lineHeight:1.6,resize:"none",outline:"none",minHeight:80}}/>
+          <button className="btn" onClick={ask} disabled={!problem.trim()||loading} style={{width:"100%",marginTop:10}}>
+            {loading?<span style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8}}><div className="dots"><span style={{background:"#fff"}}/><span style={{background:"#fff"}}/><span style={{background:"#fff"}}/></div>Experts vichar kare che...</span>:"Get Expert Advice →"}
+          </button>
+        </div>
+
+        {advice&&(
+          <div style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:13,padding:14,marginBottom:14,whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.7}}>
+            {advice.split("\n").map((line,i)=>{
+              const isH=/^[🧠📊💰🌱⚡]/.test(line);
+              return<div key={i} style={{color:isH?"#7C6FFF":"#EEEEF5",fontWeight:isH?600:400,marginTop:isH?10:0}}>{line}</div>;
+            })}
+          </div>
+        )}
+
+        {history.length>0&&(
+          <div>
+            <div className="sec-title" style={{marginBottom:8}}>Past Questions</div>
+            {history.slice(advice?1:0,5).map(h=>(
+              <div key={h.id} onClick={()=>setAdvice(h.a)}
+                style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:11,padding:"11px 13px",marginBottom:8,cursor:"pointer"}}>
+                <div style={{fontSize:13,fontWeight:500,marginBottom:4}}>{h.q}</div>
+                <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace"}}>{fmtTime(h.ts)} — tap to view</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── KAIZEN ──────────────────────────────────────────────
+function Kaizen(){
+  const [items,setItems]=useState(()=>LS.get("kaizen",[]));
+  const [input,setInput]=useState("");
+  const [streak,setStreak]=useState(()=>LS.get("kaizen_streak",0));
+
+  const add=()=>{
+    if(!input.trim())return;
+    const item={id:Date.now(),text:input.trim(),done:false,ts:Date.now(),date:new Date().toDateString()};
+    const u=[item,...items];setItems(u);LS.set("kaizen",u);setInput("");
+  };
+  const toggle=id=>{
+    const u=items.map(i=>i.id===id?{...i,done:!i.done}:i);
+    setItems(u);LS.set("kaizen",u);
+    const s=streak+1;setStreak(s);LS.set("kaizen_streak",s);
+  };
+  const del=id=>{const u=items.filter(i=>i.id!==id);setItems(u);LS.set("kaizen",u);};
+  const today=items.filter(i=>i.date===new Date().toDateString());
+  const past=items.filter(i=>i.date!==new Date().toDateString()).slice(0,20);
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        <div style={{background:"linear-gradient(135deg,rgba(62,207,164,.12),rgba(94,174,255,.08))",border:"1px solid rgba(62,207,164,.3)",borderRadius:13,padding:14,marginBottom:14,textAlign:"center"}}>
+          <div style={{fontSize:40,fontFamily:"Space Mono,monospace",fontWeight:700,color:"#3ECFA4"}}>{streak}</div>
+          <div style={{fontSize:12,color:"#5A5A78",textTransform:"uppercase",letterSpacing:1}}>Day Streak 🔥</div>
+          <div style={{fontSize:12,color:"#5A5A78",marginTop:6}}>Roj 1% better — 1 year = 37x better</div>
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <input className="input" value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()} placeholder="Aaj shu improve karish? (1 small thing)" style={{flex:1}}/>
+          <button className="btn" onClick={add} style={{padding:"8px 16px"}}>+</button>
+        </div>
+        {today.length>0&&(
+          <div style={{marginBottom:16}}>
+            <div className="sec-title" style={{marginBottom:8}}>Today</div>
+            {today.map(i=>(
+              <div key={i.id} style={{background:"#111118",border:`1px solid ${i.done?"rgba(62,207,164,.4)":"#2C2C3A"}`,borderRadius:11,padding:"11px 13px",display:"flex",alignItems:"center",gap:10,marginBottom:7}}>
+                <div onClick={()=>toggle(i.id)} style={{width:20,height:20,borderRadius:"50%",border:`2px solid ${i.done?"#3ECFA4":"#2C2C3A"}`,background:i.done?"#3ECFA4":"none",cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .2s"}}>
+                  {i.done&&<span style={{fontSize:11,color:"#000",fontWeight:700}}>✓</span>}
+                </div>
+                <span style={{flex:1,fontSize:14,textDecoration:i.done?"line-through":"none",color:i.done?"#5A5A78":"#EEEEF5"}}>{i.text}</span>
+                <button onClick={()=>del(i.id)} style={{background:"none",border:"none",color:"#5A5A78",cursor:"pointer",fontSize:13}}>×</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {past.length>0&&(
+          <div>
+            <div className="sec-title" style={{marginBottom:8}}>History</div>
+            {past.map(i=>(
+              <div key={i.id} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:11,padding:"9px 13px",display:"flex",alignItems:"center",gap:8,marginBottom:6,opacity:.6}}>
+                <span style={{fontSize:11,color:i.done?"#3ECFA4":"#FF5F7A"}}>{i.done?"✓":"✗"}</span>
+                <span style={{flex:1,fontSize:13}}>{i.text}</span>
+                <span style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace"}}>{i.date}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── WEEKLY INSIGHT ──────────────────────────────────────
+function WeeklyInsight() {
+  const [insight, setInsight] = useState(() => LS.get("weekly_insight", null));
+  const [loading, setLoading] = useState(false);
+
+  const generate = async () => {
+    setLoading(true);
+    const thoughts = LS.get("thoughts", []);
+    const tasks = LS.get("tasks", []);
+    const journal = LS.get("journal", []);
+    const kaizen = LS.get("kaizen", []);
+    const result = await getWeeklyInsight(thoughts, tasks, journal, kaizen);
+    setInsight(result);
+    LS.set("weekly_insight", result);
+    setLoading(false);
+  };
+
+  const STREAM_COL = { Site: "#5EAEFF", Samaj: "#3ECFA4", Personal: "#C49BFF", Finance: "#FFD166" };
+
+  const EmotionBar = ({ label, val, total, col }) => {
+    const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+    return (
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <span style={{ fontSize: 11, color: "#5A5A78" }}>{label}</span>
+          <span style={{ fontSize: 11, fontFamily: "Space Mono,monospace", color: col }}>{pct}% ({val})</span>
+        </div>
+        <div style={{ background: "#22222C", borderRadius: 4, height: 6, overflow: "hidden" }}>
+          <div style={{ width: `${pct}%`, height: "100%", background: col, borderRadius: 4, transition: "width .6s ease" }} />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="screen">
+      <div style={{ padding: "14px 16px 80px" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Weekly Insight</div>
+            {insight && <div style={{ fontSize: 10, color: "#5A5A78", fontFamily: "Space Mono,monospace", marginTop: 2 }}>
+              Generated: {new Date(insight.generated).toLocaleDateString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+            </div>}
+          </div>
+          <button className="btn" onClick={generate} disabled={loading} style={{ padding: "8px 16px" }}>
+            {loading
+              ? <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div className="dots"><span style={{ background: "#fff" }} /><span style={{ background: "#fff" }} /><span style={{ background: "#fff" }} /></div>
+                  Analyzing...
+                </span>
+              : insight ? "↻ Refresh" : "Generate →"}
+          </button>
+        </div>
+
+        {/* Empty state */}
+        {!insight && !loading && (
+          <div style={{ textAlign: "center", padding: "60px 20px", color: "#5A5A78" }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "#EEEEF5", marginBottom: 8 }}>Last 30 days ka insight</div>
+            <div style={{ fontSize: 13, lineHeight: 1.7, marginBottom: 20 }}>
+              Tara thoughts, tasks, journal ane kaizen data analyze karine<br />
+              3 major themes, emotion pattern ane next action malshe.
+            </div>
+            <button className="btn" onClick={generate} style={{ padding: "10px 28px" }}>Generate Insight →</button>
+          </div>
+        )}
+
+        {/* Loading placeholder */}
+        {loading && (
+          <div style={{ background: "#111118", border: "1px solid #2C2C3A", borderRadius: 13, padding: 20, textAlign: "center" }}>
+            <div className="dots" style={{ justifyContent: "center", display: "flex", marginBottom: 12 }}>
+              <span style={{ background: "#7C6FFF", width: 8, height: 8 }} />
+              <span style={{ background: "#7C6FFF", width: 8, height: 8 }} />
+              <span style={{ background: "#7C6FFF", width: 8, height: 8 }} />
+            </div>
+            <div style={{ fontSize: 13, color: "#5A5A78" }}>Taro data analyze thay che...<br />Themes, patterns ane insights generate thay che.</div>
+          </div>
+        )}
+
+        {insight && !loading && (
+          <>
+            {/* Period badge */}
+            <div style={{ background: "rgba(124,111,255,.1)", border: "1px solid rgba(124,111,255,.25)", borderRadius: 8, padding: "7px 12px", marginBottom: 14, fontSize: 11, color: "#7C6FFF", fontFamily: "Space Mono,monospace" }}>
+              📅 {insight.period}
+            </div>
+
+            {/* 3 Themes */}
+            <div style={{ marginBottom: 16 }}>
+              <div className="sec-title" style={{ marginBottom: 10 }}>🎯 3 Major Themes</div>
+              {(insight.themes || []).map((t, i) => (
+                <div key={i} className="card" style={{ borderLeft: `3px solid #7C6FFF`, marginBottom: 10 }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                    <div style={{ fontSize: 26, lineHeight: 1, flexShrink: 0, marginTop: 2 }}>{t.emoji}</div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 5, color: "#EEEEF5" }}>{t.title}</div>
+                      <div style={{ fontSize: 13, color: "#A0A0BC", lineHeight: 1.6 }}>{t.desc}</div>
+                    </div>
+                  </div>
+                  <div style={{ background: "rgba(124,111,255,.08)", borderRadius: 6, padding: "4px 8px", marginTop: 10, display: "inline-block" }}>
+                    <span style={{ fontSize: 10, fontFamily: "Space Mono,monospace", color: "#7C6FFF" }}>THEME {i + 1}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Emotion Breakdown */}
+            {insight.emotion && (
+              <div style={{ background: "#111118", border: "1px solid #2C2C3A", borderRadius: 13, padding: "14px 16px", marginBottom: 14 }}>
+                <div className="sec-title" style={{ marginBottom: 12 }}>💭 Emotion Pattern</div>
+                <EmotionBar label="Positive" val={insight.emotion.positive || 0} total={insight.emotion.total || 1} col="#3ECFA4" />
+                <EmotionBar label="Negative" val={insight.emotion.negative || 0} total={insight.emotion.total || 1} col="#FF5F7A" />
+                <EmotionBar label="Neutral / Ideas" val={insight.emotion.neutral || 0} total={insight.emotion.total || 1} col="#5EAEFF" />
+                <div style={{ fontSize: 10, color: "#5A5A78", fontFamily: "Space Mono,monospace", marginTop: 8, textAlign: "right" }}>
+                  Total: {insight.emotion.total} thoughts analyzed
+                </div>
+              </div>
+            )}
+
+            {/* Stream Activity */}
+            {insight.streams && Object.keys(insight.streams).length > 0 && (
+              <div style={{ background: "#111118", border: "1px solid #2C2C3A", borderRadius: 13, padding: "14px 16px", marginBottom: 14 }}>
+                <div className="sec-title" style={{ marginBottom: 12 }}>📊 Stream Activity</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {["Site", "Samaj", "Personal", "Finance"].map(s => {
+                    const val = insight.streams[s] || 0;
+                    const max = Math.max(...Object.values(insight.streams), 1);
+                    const pct = Math.round((val / max) * 100);
+                    return (
+                      <div key={s} style={{ background: "#18181F", border: `1px solid ${val > 0 ? STREAM_COL[s] + "44" : "#2C2C3A"}`, borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: STREAM_COL[s] }}>{s}</span>
+                          <span style={{ fontSize: 12, fontFamily: "Space Mono,monospace", color: "#EEEEF5" }}>{val}</span>
+                        </div>
+                        <div style={{ background: "#2C2C3A", borderRadius: 3, height: 4 }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: STREAM_COL[s], borderRadius: 3, transition: "width .6s ease" }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Top Action */}
+            {insight.action && (
+              <div style={{ background: "linear-gradient(135deg,rgba(62,207,164,.12),rgba(94,174,255,.07))", border: "1px solid rgba(62,207,164,.35)", borderRadius: 13, padding: "14px 16px", marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontFamily: "Space Mono,monospace", color: "#3ECFA4", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>⚡ Top Action — Aaj Karo</div>
+                <div style={{ fontSize: 14, lineHeight: 1.65, color: "#EEEEF5", fontWeight: 500 }}>{insight.action}</div>
+              </div>
+            )}
+
+            {/* Refresh note */}
+            <div style={{ textAlign: "center", padding: "8px 0" }}>
+              <span style={{ fontSize: 11, color: "#5A5A78" }}>Weekly regenerate karo — data update thay ene sathe insights badlashe.</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── FILE ALLOCATION TABLE ───────────────────────────────
+const FILE_TYPES=["PDF","Excel","Word","Image","Drawing","Report","Other","Link"];
+const FILE_TYPE_COL={PDF:"#FF5F7A",Excel:"#3ECFA4",Word:"#5EAEFF",Image:"#C49BFF",Link:"#FFD166",Drawing:"#FF9A56",Report:"#7C6FFF",Other:"#5A5A78"};
+const FILE_TYPE_ICON={PDF:"📄",Excel:"📊",Word:"📝",Image:"🖼️",Link:"🔗",Drawing:"📐",Report:"📋",Other:"📁"};
+
+function fmtBytes(b){if(!b||b===0)return"0 B";const k=1024;const s=["B","KB","MB","GB"];const i=Math.floor(Math.log(b)/Math.log(k));return`${(b/Math.pow(k,i)).toFixed(1)} ${s[i]}`;}
+
+function FileTable(){
+  const [files,setFiles]=useState(()=>LS.get("fat_files",[]));
+  const [show,setShow]=useState(false);
+  const [view,setView]=useState(null);
+  const [filter,setFilter]=useState("All");
+  const [search,setSearch]=useState("");
+  const [form,setForm]=useState({name:"",type:"PDF",stream:"Site",url:"",desc:"",tags:"",version:""});
+  const [uploading,setUploading]=useState(false);
+  const [selectedFile,setSelectedFile]=useState(null); // raw File object
+  const [viewData,setViewData]=useState(null); // IDB data for detail view
+  const fileRef=useRef();
+
+  // Handle file picker selection
+  const onFilePick=e=>{
+    const f=e.target.files?.[0];
+    if(!f)return;
+    setSelectedFile(f);
+    if(!form.name)setForm(prev=>({...prev,name:f.name,type:guessType(f.name)}));
+  };
+  const guessType=name=>{
+    const ext=name.split(".").pop().toLowerCase();
+    if(["pdf"].includes(ext))return"PDF";
+    if(["xls","xlsx","csv"].includes(ext))return"Excel";
+    if(["doc","docx"].includes(ext))return"Word";
+    if(["jpg","jpeg","png","gif","webp","heic"].includes(ext))return"Image";
+    if(["dwg","dxf","rvt"].includes(ext))return"Drawing";
+    return"Other";
+  };
+
+  const add=async()=>{
+    if(!form.name.trim())return;
+    setUploading(true);
+    const id=Date.now();
+    let stored=false;
+    let fileSize=0;
+    // If actual file selected — store in IDB
+    if(selectedFile){
+      try{
+        fileSize=selectedFile.size;
+        const data=await new Promise((res,rej)=>{
+          const r=new FileReader();
+          r.onload=()=>res(r.result);
+          r.onerror=()=>rej();
+          r.readAsDataURL(selectedFile);
+        });
+        await IDB.save({id,data,mime:selectedFile.type,originalName:selectedFile.name,size:fileSize});
+        stored=true;
+      }catch(e){console.warn("IDB save failed",e);}
+    }
+    const f={id,...form,tags:form.tags.split(",").map(t=>t.trim()).filter(Boolean),ts:id,stored,fileSize,originalName:selectedFile?.name||""};
+    const u=[f,...files];setFiles(u);LS.set("fat_files",u);
+    MEM.add("file_added",`[${form.type}|${form.stream}] ${form.name}${stored?" (stored locally)":""}`,"files");
+    setForm({name:"",type:"PDF",stream:"Site",url:"",desc:"",tags:"",version:""});
+    setSelectedFile(null);setShow(false);setUploading(false);
+    if(fileRef.current)fileRef.current.value="";
+  };
+
+  const del=async id=>{
+    await IDB.del(id).catch(()=>{});
+    const u=files.filter(f=>f.id!==id);setFiles(u);LS.set("fat_files",u);
+    setView(null);setViewData(null);
+  };
+
+  const streams=["All",...STREAMS];
+  let filtered=filter==="All"?files:files.filter(f=>f.stream===filter);
+  if(search.trim()) filtered=filtered.filter(f=>f.name.toLowerCase().includes(search.toLowerCase())||f.tags.join(" ").toLowerCase().includes(search.toLowerCase()));
+  const typeCounts=files.reduce((a,f)=>{a[f.type]=(a[f.type]||0)+1;return a;},{});
+
+  // Detail View
+  useEffect(()=>{
+    if(view){
+      const f=files.find(f=>f.id===view);
+      if(f?.stored) IDB.get(f.id).then(d=>setViewData(d)).catch(()=>setViewData(null));
+      else setViewData(null);
+    }
+  },[view]);
+
+  const downloadFile=()=>{
+    if(!viewData?.data)return;
+    const a=document.createElement("a");
+    a.href=viewData.data;
+    a.download=viewData.originalName||"file";
+    a.click();
+  };
+
+  if(view){
+    const file=files.find(f=>f.id===view);
+    if(!file){setView(null);return null;}
+    const col=FILE_TYPE_COL[file.type]||"#5A5A78";
+    const isImage=file.type==="Image"&&viewData?.data;
+    return(
+      <div className="screen">
+        <div style={{padding:"14px 16px 80px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
+            <button onClick={()=>{setView(null);setViewData(null);}} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:8,padding:"5px 12px",color:"#5A5A78",cursor:"pointer",fontSize:12}}>← Back</button>
+            <span style={{fontSize:18}}>{FILE_TYPE_ICON[file.type]}</span>
+            {file.stored&&<span style={{fontSize:9,fontWeight:700,padding:"2px 7px",borderRadius:5,background:"rgba(62,207,164,.15)",color:"#3ECFA4"}}>STORED LOCALLY</span>}
+          </div>
+          <div style={{fontSize:20,fontWeight:700,marginBottom:8}}>{file.name}</div>
+          <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
+            <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:`${col}22`,color:col}}>{file.type}</span>
+            <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:`${SCOL[file.stream]||"#5A5A78"}22`,color:SCOL[file.stream]||"#5A5A78"}}>{file.stream}</span>
+            {file.version&&<span style={{fontSize:10,padding:"3px 9px",borderRadius:5,background:"#2C2C3A",color:"#5A5A78"}}>v{file.version}</span>}
+            {file.fileSize>0&&<span style={{fontSize:10,padding:"3px 9px",borderRadius:5,background:"#2C2C3A",color:"#5A5A78"}}>{fmtBytes(file.fileSize)}</span>}
+          </div>
+          {/* Image preview */}
+          {isImage&&<img src={viewData.data} alt={file.name} style={{width:"100%",borderRadius:10,marginBottom:14,border:"1px solid #2C2C3A"}}/>}
+          {file.desc&&<div style={{fontSize:14,lineHeight:1.7,color:"#A0A0BC",marginBottom:14,background:"#111118",borderRadius:10,padding:"12px 14px"}}>{file.desc}</div>}
+          {file.tags.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{file.tags.map(t=><span key={t} style={{fontSize:10,padding:"2px 8px",borderRadius:10,background:"#2C2C3A",color:"#5A5A78"}}>#{t}</span>)}</div>}
+          {/* Download button for stored files */}
+          {file.stored&&viewData&&(
+            <button onClick={downloadFile}
+              style={{display:"flex",alignItems:"center",gap:8,width:"100%",background:"rgba(62,207,164,.1)",border:"1px solid rgba(62,207,164,.3)",borderRadius:10,padding:"11px 14px",color:"#3ECFA4",fontSize:13,cursor:"pointer",marginBottom:10,justifyContent:"center"}}>
+              ⬇️ Download — {file.originalName||file.name}
+            </button>
+          )}
+          {/* External link */}
+          {file.url&&(
+            <a href={file.url} target="_blank" rel="noreferrer"
+              style={{display:"flex",alignItems:"center",gap:8,background:"rgba(94,174,255,.1)",border:"1px solid rgba(94,174,255,.3)",borderRadius:10,padding:"10px 14px",color:"#5EAEFF",fontSize:13,textDecoration:"none",marginBottom:14}}>
+              🔗 Open Link
+            </a>
+          )}
+          <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace",marginBottom:16}}>Added: {fmtTime(file.ts)}</div>
+          <button onClick={()=>del(file.id)} style={{background:"rgba(255,95,122,.1)",border:"1px solid rgba(255,95,122,.3)",borderRadius:9,padding:"8px 16px",color:"#FF5F7A",fontSize:13,cursor:"pointer"}}>Delete File</button>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:700}}>File Allocation Table</div>
+            <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace",marginTop:2}}>{files.length} files · {files.filter(f=>f.stored).length} stored locally</div>
+          </div>
+          <button className="btn-sm" onClick={()=>setShow(true)}>+ Add File</button>
+        </div>
+
+        {/* Storage info banner */}
+        <div style={{background:"rgba(62,207,164,.06)",border:"1px solid rgba(62,207,164,.18)",borderRadius:9,padding:"8px 12px",marginBottom:12,fontSize:11,color:"#5A5A78",lineHeight:1.5}}>
+          📦 Files IndexedDB ma store thay — device par locally. No Google Drive, no link copy.{" "}
+          <span style={{color:"#3ECFA4"}}>Phone change karo to download karo → nava phone par upload karo.</span>
+        </div>
+
+        {files.length>0&&(
+          <div style={{display:"flex",gap:6,overflowX:"auto",scrollbarWidth:"none",paddingBottom:10,marginBottom:4}}>
+            {Object.entries(typeCounts).map(([type,count])=>(
+              <div key={type} style={{flexShrink:0,background:`${FILE_TYPE_COL[type]||"#5A5A78"}18`,border:`1px solid ${FILE_TYPE_COL[type]||"#5A5A78"}44`,borderRadius:8,padding:"5px 10px",display:"flex",alignItems:"center",gap:5}}>
+                <span style={{fontSize:13}}>{FILE_TYPE_ICON[type]}</span>
+                <span style={{fontSize:11,color:FILE_TYPE_COL[type]||"#5A5A78",fontFamily:"Space Mono,monospace"}}>{count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <input className="input" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search files, tags..." style={{marginBottom:10}}/>
+        <div className="chips" style={{padding:"0 0 10px"}}>
+          {streams.map(s=><button key={s} className={`chip${filter===s?" on":""}`} onClick={()=>setFilter(s)}>{s}</button>)}
+        </div>
+
+        {filtered.length===0&&(
+          <div style={{textAlign:"center",padding:"50px 20px",color:"#5A5A78"}}>
+            <div style={{fontSize:40,marginBottom:14}}>📁</div>
+            <div style={{fontSize:15,color:"#EEEEF5",marginBottom:6}}>Koi file nathi</div>
+            <div style={{fontSize:12,lineHeight:1.6}}>Actual file upload karo ya link register karo.</div>
+          </div>
+        )}
+        {filtered.map(f=>{
+          const col=FILE_TYPE_COL[f.type]||"#5A5A78";
+          return(
+            <div key={f.id} onClick={()=>setView(f.id)}
+              style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:12,padding:"12px 14px",marginBottom:8,cursor:"pointer",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",left:0,top:0,bottom:0,width:3,background:col,borderRadius:"12px 0 0 12px"}}/>
+              <div style={{display:"flex",alignItems:"flex-start",gap:10}}>
+                <div style={{fontSize:22,lineHeight:1,flexShrink:0,marginTop:2}}>{FILE_TYPE_ICON[f.type]}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:600,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:`${col}22`,color:col}}>{f.type}</span>
+                    <span style={{fontSize:10,fontWeight:600,padding:"2px 7px",borderRadius:4,background:`${SCOL[f.stream]||"#5A5A78"}22`,color:SCOL[f.stream]||"#5A5A78"}}>{f.stream}</span>
+                    {f.stored&&<span style={{fontSize:9,padding:"2px 5px",borderRadius:4,background:"rgba(62,207,164,.15)",color:"#3ECFA4"}}>📦</span>}
+                    {f.version&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#2C2C3A",color:"#5A5A78"}}>v{f.version}</span>}
+                    {f.fileSize>0&&<span style={{fontSize:9,color:"#5A5A78"}}>{fmtBytes(f.fileSize)}</span>}
+                  </div>
+                  {f.tags.length>0&&<div style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:5}}>{f.tags.slice(0,3).map(t=><span key={t} style={{fontSize:9,padding:"1px 6px",borderRadius:8,background:"#2C2C3A",color:"#5A5A78"}}>#{t}</span>)}</div>}
+                </div>
+                <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace",textAlign:"right",flexShrink:0}}>{fmtTime(f.ts)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Add Modal */}
+      {show&&(
+        <div className="modal-bg" onClick={e=>{if(e.target.className==="modal-bg")setShow(false);}}>
+          <div className="modal">
+            <div style={{fontSize:15,fontWeight:600,marginBottom:14}}>Add File</div>
+            {/* File Upload Area */}
+            <div onClick={()=>fileRef.current?.click()}
+              style={{border:`2px dashed ${selectedFile?"#3ECFA4":"#2C2C3A"}`,borderRadius:10,padding:"14px",textAlign:"center",marginBottom:12,cursor:"pointer",background:selectedFile?"rgba(62,207,164,.05)":"transparent",transition:"all .2s"}}>
+              {selectedFile
+                ?<div style={{fontSize:13,color:"#3ECFA4"}}>✓ {selectedFile.name}<br/><span style={{fontSize:10,color:"#5A5A78"}}>{fmtBytes(selectedFile.size)}</span></div>
+                :<div style={{fontSize:12,color:"#5A5A78"}}>📂 Tap to pick file from device<br/><span style={{fontSize:10}}>PDF, Excel, Word, Image, Drawing, etc.</span></div>}
+            </div>
+            <input ref={fileRef} type="file" style={{display:"none"}} onChange={onFilePick} accept="*/*"/>
+            <div style={{textAlign:"center",fontSize:11,color:"#5A5A78",marginBottom:12}}>— ya sirf link/reference register karo —</div>
+            <div className="field"><label className="lbl">File Name *</label><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="e.g. D5 Structural Drawing Rev3"/></div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+              <div><label className="lbl">Type</label><select className="select" value={form.type} onChange={e=>setForm({...form,type:e.target.value})}>{FILE_TYPES.map(t=><option key={t}>{t}</option>)}</select></div>
+              <div><label className="lbl">Stream</label><select className="select" value={form.stream} onChange={e=>setForm({...form,stream:e.target.value})}>{STREAMS.map(s=><option key={s}>{s}</option>)}</select></div>
+            </div>
+            <div className="field"><label className="lbl">Version / Rev</label><input className="input" value={form.version} onChange={e=>setForm({...form,version:e.target.value})} placeholder="e.g. 3 or Rev-A"/></div>
+            <div className="field"><label className="lbl">External URL (optional)</label><input className="input" value={form.url} onChange={e=>setForm({...form,url:e.target.value})} placeholder="https://drive.google.com/..."/></div>
+            <div className="field"><label className="lbl">Description</label><textarea className="input" value={form.desc} onChange={e=>setForm({...form,desc:e.target.value})} placeholder="File content, purpose, notes..." rows={2} style={{resize:"vertical"}}/></div>
+            <div className="field"><label className="lbl">Tags (comma separated)</label><input className="input" value={form.tags} onChange={e=>setForm({...form,tags:e.target.value})} placeholder="D5, foundation, approved"/></div>
+            <div className="modal-btns">
+              <button className="modal-cancel" onClick={()=>{setShow(false);setSelectedFile(null);if(fileRef.current)fileRef.current.value="";}}>Cancel</button>
+              <button className="modal-save" onClick={add} disabled={uploading}>{uploading?"Saving...":"Save File"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── APP MEMORY ──────────────────────────────────────────
+function AppMemoryView(){
+  const [mem,setMem]=useState(()=>MEM.get(100));
+  const [filter,setFilter]=useState("all");
+  const MEM_COL={task_added:"#FFD166",task_done:"#3ECFA4",completed:"#3ECFA4",dump:"#7C6FFF",expert_query:"#5EAEFF",file_added:"#FF9A56",journal:"#C49BFF",kaizen:"#3ECFA4"};
+  const MEM_ICON={task_added:"✅",task_done:"✓",completed:"✓",dump:"🧠",expert_query:"🤖",file_added:"📁",journal:"📓",kaizen:"🌱"};
+  const types=[...new Set(mem.map(m=>m.type))];
+
+  const clearAll=()=>{if(window.confirm("Memory clear karvanu che? (AI context reset thashe)")){{LS.set("app_memory",[]);setMem([]);}}};
+
+  const filtered=filter==="all"?mem:mem.filter(m=>m.type===filter);
+
+  return(
+    <div className="screen">
+      <div style={{padding:"14px 16px 80px"}}>
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div>
+            <div style={{fontSize:14,fontWeight:700}}>🧠 App Memory</div>
+            <div style={{fontSize:10,color:"#5A5A78",fontFamily:"Space Mono,monospace",marginTop:2}}>AI uses this context for better advice</div>
+          </div>
+          <button onClick={clearAll} style={{background:"rgba(255,95,122,.1)",border:"1px solid rgba(255,95,122,.3)",borderRadius:8,padding:"5px 12px",color:"#FF5F7A",fontSize:11,cursor:"pointer"}}>Clear</button>
+        </div>
+
+        {/* Info banner */}
+        <div style={{background:"rgba(124,111,255,.08)",border:"1px solid rgba(124,111,255,.2)",borderRadius:10,padding:"10px 13px",marginBottom:14,fontSize:12,color:"#A0A0BC",lineHeight:1.6}}>
+          💡 Tara badha actions yahan log thay che — tasks, dumps, expert queries, files. Claude API calls ma aa context inject thay che jethithi AI tane personally jaane che ane better advice aape.
+        </div>
+
+        {/* Stats */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:7,marginBottom:14}}>
+          {[{l:"Total Logs",n:mem.length,c:"#EEEEF5"},{l:"Tasks Done",n:mem.filter(m=>m.type==="task_done"||m.type==="completed").length,c:"#3ECFA4"},{l:"AI Queries",n:mem.filter(m=>m.type==="expert_query").length,c:"#7C6FFF"}].map(s=>(
+            <div key={s.l} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:10,padding:"9px 8px",textAlign:"center"}}>
+              <div style={{fontFamily:"Space Mono,monospace",fontSize:16,fontWeight:700,color:s.c}}>{s.n}</div>
+              <div style={{fontSize:9,color:"#5A5A78",textTransform:"uppercase",letterSpacing:.4,marginTop:2}}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filter chips */}
+        <div className="chips" style={{padding:"0 0 10px"}}>
+          <button className={`chip${filter==="all"?" on":""}`} onClick={()=>setFilter("all")}>All ({mem.length})</button>
+          {types.map(t=><button key={t} className={`chip${filter===t?" on":""}`} onClick={()=>setFilter(t)}>
+            {MEM_ICON[t]||"•"} {t.replace("_"," ")} ({mem.filter(m=>m.type===t).length})
+          </button>)}
+        </div>
+
+        {filtered.length===0&&<div style={{textAlign:"center",padding:"40px 20px",color:"#5A5A78"}}><div style={{fontSize:30,marginBottom:8}}>📭</div><div>Koi memory log nathi</div></div>}
+        {filtered.map(m=>{
+          const col=MEM_COL[m.type]||"#5A5A78";
+          return(
+            <div key={m.id} style={{background:"#111118",border:"1px solid #2C2C3A",borderRadius:10,padding:"10px 13px",marginBottom:6,display:"flex",gap:10,alignItems:"flex-start"}}>
+              <div style={{fontSize:16,lineHeight:1,flexShrink:0,marginTop:2}}>{MEM_ICON[m.type]||"•"}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,lineHeight:1.5,color:"#EEEEF5"}}>{m.content}</div>
+                <div style={{display:"flex",gap:8,marginTop:4,alignItems:"center"}}>
+                  <span style={{fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:4,background:`${col}20`,color:col}}>{m.type.replace("_"," ").toUpperCase()}</span>
+                  <span style={{fontSize:9,color:"#5A5A78",fontFamily:"Space Mono,monospace"}}>{fmtTime(m.ts)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── ROOT ────────────────────────────────────────────────
+const TABS=[
+  {k:"dump",l:"🧠 Dump"},
+  {k:"tasks",l:"✅ Tasks"},
+  {k:"kanban",l:"📋 Kanban"},
+  {k:"journal",l:"📓 Journal"},
+  {k:"docs",l:"📂 Docs"},
+  {k:"expert",l:"🤖 Expert"},
+  {k:"kaizen",l:"🌱 Kaizen"},
+  {k:"insight",l:"📊 Insight"},
+  {k:"files",l:"📁 Files"},
+  {k:"memory",l:"🧠 Memory"},
+];
+
+// ─── API TEST BUTTON ─────────────────────────────────────
+function ApiTestButton({apiKeyInput}){
+  const [status,setStatus]=useState(null); // null | "testing" | {ok,msg}
+
+  const test=async()=>{
+    const key=(apiKeyInput||"").trim();
+    if(!key){setStatus({ok:false,msg:"Key blank che — pehla type karo."});return;}
+    setStatus("testing");
+    try{
+      const res=await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "x-api-key":key,
+          "anthropic-version":"2023-06-01",
+          "anthropic-dangerous-direct-browser-access":"true"
+        },
+        body:JSON.stringify({
+          model:"claude-sonnet-4-6",
+          max_tokens:30,
+          messages:[{role:"user",content:"Reply with only: WORKING"}]
+        })
+      });
+      const d=await res.json();
+      if(d.error){
+        setStatus({ok:false,msg:`API Error: ${d.error.type} — ${d.error.message}`});
+      } else if(d.content?.[0]?.text){
+        setStatus({ok:true,msg:`✓ API Working! Response: "${d.content[0].text.trim()}"`});
+      } else {
+        setStatus({ok:false,msg:`Unexpected response: ${JSON.stringify(d).slice(0,120)}`});
+      }
+    }catch(e){
+      setStatus({ok:false,msg:`Network/CORS Error: ${e.message}. Try opening app via Chrome browser, not file manager.`});
+    }
+  };
+
+  return(
+    <div style={{marginBottom:12}}>
+      <button onClick={test} disabled={status==="testing"}
+        style={{width:"100%",background:"rgba(94,174,255,.1)",border:"1px solid rgba(94,174,255,.3)",borderRadius:9,padding:"9px",color:"#5EAEFF",fontSize:13,cursor:"pointer",marginBottom:8}}>
+        {status==="testing"?"⏳ Testing...":"🔌 Test API Connection"}
+      </button>
+      {status&&status!=="testing"&&(
+        <div style={{background:status.ok?"rgba(62,207,164,.1)":"rgba(255,95,122,.1)",border:`1px solid ${status.ok?"rgba(62,207,164,.3)":"rgba(255,95,122,.3)"}`,borderRadius:8,padding:"10px 12px",fontSize:12,color:status.ok?"#3ECFA4":"#FF5F7A",lineHeight:1.6,wordBreak:"break-word"}}>
+          {status.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function App(){
+  const [tab,setTab]=useState("dump");
+  const [showSettings,setShowSettings]=useState(false);
+  const [apiKeyInput,setApiKeyInput]=useState(()=>localStorage.getItem("jos_api_key")||"");
+  const [hasKey,setHasKey]=useState(()=>!!(localStorage.getItem("jos_api_key")));
+
+  const saveKey=()=>{
+    const k=apiKeyInput.trim();
+    localStorage.setItem("jos_api_key",k);
+    setHasKey(!!k);
+    setShowSettings(false);
+  };
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100vh"}}>
+      <div style={{padding:"10px 16px 0",flexShrink:0,borderBottom:"1px solid #2C2C3A",background:"#09090F",position:"relative",zIndex:2}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:8}}>
+            <span style={{fontFamily:"Space Mono,monospace",fontWeight:700,fontSize:16,letterSpacing:2}}>J<span style={{color:"#7C6FFF"}}>—</span>OS</span>
+            <span style={{fontSize:11,color:"#5A5A78"}}>v3 · Second Brain</span>
+          </div>
+          <button onClick={()=>setShowSettings(true)}
+            style={{background:"none",border:"none",cursor:"pointer",padding:"4px 6px",display:"flex",alignItems:"center",gap:4}}>
+            <span style={{fontSize:15}}>⚙️</span>
+            {hasKey
+              ?<span style={{fontSize:9,fontWeight:700,padding:"2px 5px",borderRadius:4,background:"rgba(62,207,164,.2)",color:"#3ECFA4"}}>AI ON</span>
+              :<span style={{fontSize:9,fontWeight:700,padding:"2px 5px",borderRadius:4,background:"rgba(255,95,122,.15)",color:"#FF5F7A"}}>NO KEY</span>}
+          </button>
+        </div>
+        <div style={{display:"flex",gap:0,overflowX:"auto",scrollbarWidth:"none"}}>
+          {TABS.map(t=><button key={t.k} className={`nb${tab===t.k?" on":""}`} onClick={()=>setTab(t.k)}>{t.l}</button>)}
+        </div>
+      </div>
+
+      {tab==="dump"&&<BrainDump/>}
+      {tab==="tasks"&&<Tasks/>}
+      {tab==="kanban"&&<Kanban/>}
+      {tab==="journal"&&<Journal/>}
+      {tab==="docs"&&<Docs/>}
+      {tab==="expert"&&<AIExpert/>}
+      {tab==="kaizen"&&<Kaizen/>}
+      {tab==="insight"&&<WeeklyInsight/>}
+      {tab==="files"&&<FileTable/>}
+      {tab==="memory"&&<AppMemoryView/>}
+
+      {/* Settings Modal */}
+      {showSettings&&(
+        <div className="modal-bg" onClick={e=>{if(e.target.className==="modal-bg")setShowSettings(false);}}>
+          <div className="modal">
+            <div style={{fontSize:15,fontWeight:600,marginBottom:6}}>⚙️ Settings</div>
+            <div style={{fontSize:11,color:"#5A5A78",marginBottom:16,lineHeight:1.5}}>API key set karo — Dump classification, Expert advice, Weekly Insight badhu AI-powered thashe.</div>
+            <div className="field">
+              <label className="lbl">Anthropic API Key</label>
+              <input className="input" type="password" value={apiKeyInput}
+                onChange={e=>setApiKeyInput(e.target.value)}
+                placeholder="sk-ant-api03-..."/>
+              <div style={{fontSize:10,color:"#5A5A78",marginTop:5,lineHeight:1.5}}>
+                Key sirf is device par store thay (localStorage). Anthro API console thi: console.anthropic.com
+              </div>
+            </div>
+            {hasKey&&(
+              <div style={{background:"rgba(62,207,164,.08)",border:"1px solid rgba(62,207,164,.2)",borderRadius:8,padding:"8px 11px",marginBottom:12,fontSize:11,color:"#3ECFA4"}}>
+                ✓ API Key set che — J-OS full AI mode ma che
+              </div>
+            )}
+            {/* API TEST BUTTON */}
+            <ApiTestButton apiKeyInput={apiKeyInput}/>
+            <div className="modal-btns">
+              <button className="modal-cancel" onClick={()=>setShowSettings(false)}>Cancel</button>
+              <button className="modal-save" onClick={saveKey}>Save Key</button>
+            </div>
+            {hasKey&&(
+              <button onClick={()=>{localStorage.removeItem("jos_api_key");setApiKeyInput("");setHasKey(false);setShowSettings(false);}}
+                style={{width:"100%",marginTop:10,background:"none",border:"1px solid rgba(255,95,122,.3)",borderRadius:9,padding:"8px",color:"#FF5F7A",fontSize:12,cursor:"pointer"}}>
+                Remove Key
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
