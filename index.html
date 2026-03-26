@@ -666,259 +666,379 @@ function TabBar({ tab, setTab, txns, udahriCount }) {
 
 // ── ADD SCREEN ───────────────────────────────────────
 function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategories }) {
-  const [amt, setAmt]       = useState('');
-  const [desc, setDesc]     = useState('');
-  const [type, setType]     = useState('Expense');
-  const [cat, setCat]       = useState('');
-  const [from, setFrom]     = useState('Cash');
-  const [to, setTo]         = useState('');
-  const [tower, setTower]   = useState('');
-  const [saving, setSaving] = useState(false);
-  const [mode, setMode]     = useState('form');
-  const todayStr = () => new Date().toISOString().slice(0,10);
-  const [txnDate, setTxnDate] = useState(todayStr());
+  const today = new Date().toISOString().slice(0,10);
 
-  const handleKey = k => {
-    if (k === '⌫') { setAmt(a => a.slice(0,-1)); return; }
+  const [amt,     setAmt]     = useState('');
+  const [desc,    setDesc]    = useState('');
+  const [type,    setType]    = useState('Expense');
+  const [cat,     setCat]     = useState('');
+  const [from,    setFrom]    = useState('Cash');
+  const [to,      setTo]      = useState('');
+  const [tower,   setTower]   = useState('');
+  const [txnDate, setTxnDate] = useState(today);
+  const [saving,  setSaving]  = useState(false);
+  const [mode,    setMode]    = useState('form');
+
+  const catInfo = allCategories.find(c => c.id === cat);
+
+  const needCat  = type === 'Expense';
+  const needFrom = ['Expense','UA Expense','Bank-CC','Bank-Bank'].includes(type);
+  const needTo   = ['Income','UA Received','Bank-CC','Bank-Bank'].includes(type);
+  const fromList = (type === 'Bank-CC' || type === 'Bank-Bank') ? allBanks : allAccounts;
+  const toList   = type === 'Bank-CC' ? allCC : allBanks;
+
+  const canSave = parseFloat(amt) > 0 && (
+    type === 'Expense'     ? (cat && from) :
+    type === 'UA Expense'  ? from :
+    type === 'Income'      ? to :
+    type === 'UA Received' ? to :
+    type === 'Bank-CC'     ? (from && to) :
+    type === 'Bank-Bank'   ? (from && to) : false
+  );
+
+  const selectType = (t) => {
+    setType(t);
+    setCat('');
+    setTo('');
+    if (t === 'Bank-CC' || t === 'Bank-Bank') {
+      setFrom(allBanks[0] || 'KB');
+    } else {
+      setFrom('Cash');
+    }
+  };
+
+  const handleSave = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    try {
+      await onSave({
+        type:         type.replace('Bank-CC','Bank\u2192CC').replace('Bank-Bank','Bank\u2192Bank'),
+        amount:       parseFloat(amt),
+        category:     type === 'UA Expense' ? 'UA Expense' : (cat || type),
+        from_account: from || null,
+        to_account:   to   || null,
+        particulars:  desc || cat || type,
+        tower:        tower || null,
+        it_section:   catInfo ? catInfo.it || null : null,
+        status:       'complete',
+        source:       'app',
+        created_at:   txnDate + 'T06:30:00.000Z',
+      });
+      setAmt(''); setDesc(''); setCat(''); setTower('');
+      setTxnDate(new Date().toISOString().slice(0,10));
+    } catch(e) {
+      showToast('Error saving');
+    }
+    setSaving(false);
+  };
+
+  const handleKey = (k) => {
+    if (k === 'DEL') { setAmt(a => a.slice(0,-1)); return; }
     if (k === '.' && amt.includes('.')) return;
     if (amt.length >= 9) return;
     setAmt(a => a + k);
   };
 
-  const catInfo  = allCategories.find(c => c.id === cat);
+  const chipStyle = (active) => ({
+    display:'inline-block',
+    border: active ? '1px solid var(--green)' : '1px solid var(--border2)',
+    borderRadius:20,
+    padding:'8px 14px',
+    fontFamily:'var(--mono)',
+    fontSize:12,
+    color: active ? 'var(--green)' : 'var(--text2)',
+    background: active ? 'var(--green-bg)' : 'var(--bg2)',
+    cursor:'pointer',
+    userSelect:'none',
+    WebkitTapHighlightColor:'transparent',
+    margin:'0 4px 6px 0',
+  });
 
-  const canSave = amt && parseFloat(amt) > 0 && (
-    type === 'Expense'    ? (cat && from) :
-    type === 'UA Expense' ? (from) :
-    type === 'Income'     ? (to) :
-    type === 'UA Received'? (to) :
-    type === 'Bank→CC'    ? (from && to) :
-    type === 'Bank→Bank'  ? (from && to) : false
-  );
+  const amberChip = (active) => ({
+    ...chipStyle(false),
+    border: active ? '1px solid var(--amber)' : '1px solid var(--border2)',
+    color:  active ? 'var(--amber)' : 'var(--text2)',
+    background: active ? 'var(--amber-bg)' : 'var(--bg2)',
+  });
 
-  const handleSave = async () => {
-    if (!canSave || saving) return;
-    setSaving(true);
-    // Use selected date — set time to noon IST to avoid timezone issues
-    const created_at = txnDate + 'T06:30:00.000Z'; // noon IST = 06:30 UTC
-    await onSave({
-      type,
-      amount:       parseFloat(amt),
-      category:     type === 'UA Expense' ? 'UA Expense' : (cat || type),
-      from_account: from || null,
-      to_account:   to || null,
-      particulars:  desc || cat || type,
-      tower:        tower || null,
-      it_section:   catInfo?.it || null,
-      status:       'complete',
-      source:       'app',
-      created_at,
-    });
-    setAmt(''); setDesc(''); setCat(''); setTower('');
-    setTxnDate(todayStr()); // reset to today after save
-    setSaving(false);
+  const inStyle = {
+    background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,
+    padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',
+    fontSize:13,outline:'none',width:'100%',
   };
 
-  const reset = () => { setCat(''); setTo(''); };
+  const TYPE_LIST = [
+    {key:'Expense',    label:'Expense'},
+    {key:'Income',     label:'Income'},
+    {key:'Bank-CC',    label:'Bank → CC'},
+    {key:'Bank-Bank',  label:'Bank → Bank'},
+    {key:'UA Expense', label:'UA Expense'},
+    {key:'UA Received',label:'UA Received'},
+  ];
 
-  // Date picker — compact row
-  const DateRow = () => {
-    const isToday = txnDate === todayStr();
-    return (
-      <div style={{display:'flex',alignItems:'center',gap:8}}>
-        <input
-          type="date"
-          value={txnDate}
-          max={todayStr()}
-          onChange={e => setTxnDate(e.target.value)}
-          style={{background:'var(--bg2)',border:'1px solid '+(isToday?'var(--border)':'var(--amber)'),
-            borderRadius:8,padding:'7px 10px',color:isToday?'var(--text2)':'var(--amber)',
-            fontFamily:'var(--mono)',fontSize:12,outline:'none',flex:1}}
-        />
-        {!isToday && (
-          <div onClick={()=>setTxnDate(todayStr())}
-            style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)',cursor:'pointer',
-              background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:6,padding:'5px 8px',whiteSpace:'nowrap'}}>
-            ← Today
-          </div>
-        )}
-        {isToday && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',whiteSpace:'nowrap'}}>Today</span>}
-      </div>
-    );
-  };
+  const isToday = txnDate === new Date().toISOString().slice(0,10);
 
-  const TypeChips = () => (
-    <div style={{display:'flex',flexWrap:'wrap',gap:6,padding:'0 0 2px'}}>
-      {TYPES.map(t => (
-        <div key={t}
-          className={'chip'+(type===t?' sel':'')}
-          style={{fontSize:12,padding:'8px 14px',userSelect:'none'}}
-          onTouchEnd={e=>{ e.preventDefault(); setType(t); setCat(''); setFrom(t==='Bank→CC'||t==='Bank→Bank'?'KB':'Cash'); setTo(''); }}
-          onClick={()=>{ setType(t); setCat(''); setFrom(t==='Bank→CC'||t==='Bank→Bank'?'KB':'Cash'); setTo(''); }}>
-          {t}
-        </div>
-      ))}
-    </div>
-  );
-
-  const CatChips = () => type === 'Expense' ? (
-    <div className="chip-row" style={{marginBottom:10}}>
-      {allCategories.filter(c => c.id !== 'UA Expense').map(c => (
-        <div key={c.id} className={'chip'+(cat===c.id?' sel':'')} onClick={() => setCat(c.id)}>
-          {c.emoji} {c.id}
-        </div>
-      ))}
-    </div>
-  ) : null;
-
-  const TowerChips = () => type === 'UA Expense' ? (
-    <div className="chip-row" style={{marginBottom:10}}>
-      {['D5','E2','C3','Common'].map(tw => (
-        <div key={tw} className={'chip'+(tower===tw?' sel-amber':'')} onClick={() => setTower(tw===tower?'':tw)}>
-          {tw}
-        </div>
-      ))}
-    </div>
-  ) : null;
-
-  const FromChips = () => ['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) ? (
-    <div className="chip-row" style={{marginBottom:10}}>
-      {(type==='Bank→CC'||type==='Bank→Bank'?allBanks:allAccounts).map(a => (
-        <div key={a} className={'chip'+(from===a?' sel':'')} onClick={() => setFrom(a)}>{a}</div>
-      ))}
-    </div>
-  ) : null;
-
-  const ToChips = () => ['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) ? (
-    <div className="chip-row" style={{marginBottom:10}}>
-      {(type==='Bank→CC'?allCC:allBanks).map(a => (
-        <div key={a} className={'chip'+(to===a?' sel':'')} onClick={() => setTo(a)}>{a}</div>
-      ))}
-    </div>
-  ) : null;
-
-  const SaveBtn = () => (
-    <>
-      {type === 'UA Expense' && from && from !== 'Cash' && (
-        <div style={{margin:'0 0 8px',background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,padding:'7px 12px',fontSize:11,color:'var(--amber)'}}>
-          ⚠ {from} se pay kiya — recover bhi bank se hi karo
-        </div>
-      )}
-      {catInfo?.it && (
-        <div style={{marginBottom:8}}>
-          <span className="badge badge-in">IT: {catInfo.it} Eligible</span>
-        </div>
-      )}
-      <button className="save-btn" disabled={!canSave||saving} onClick={handleSave}>
-        {saving ? 'Saving...' : `Save  ₹${fmt(parseFloat(amt)||0)}`}
-      </button>
-    </>
-  );
-
-  const modeToggle = (
-    <div style={{display:'flex',justifyContent:'flex-end',padding:'8px 16px 0',gap:8}}>
-      <div className={'chip'+(mode==='form'?' sel':'')} onClick={()=>setMode('form')} style={{fontSize:11}}>
-        Form
-      </div>
-      <div className={'chip'+(mode==='keypad'?' sel':'')} onClick={()=>setMode('keypad')} style={{fontSize:11}}>
-        Keypad
-      </div>
-    </div>
-  );
-
-  // ── FORM MODE — compact, no big keypad
+  // ── FORM MODE
   if (mode === 'form') {
     return (
-      <div className="fade-in" style={{padding:'8px 16px',display:'flex',flexDirection:'column',gap:10}}>
-        {modeToggle}
+      <div className="fade-in" style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:12}}>
 
-        <p className="sec-label" style={{marginBottom:0}}>Type</p>
-        <TypeChips />
-
-        {/* Amount + Description */}
-        <div style={{display:'flex',gap:8,alignItems:'center'}}>
-          <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'10px 14px',display:'flex',alignItems:'center',gap:8,flex:1}}>
-            <span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)'}}>₹</span>
-            <input type="number" inputMode="decimal" placeholder="0" value={amt}
-              onChange={e=>setAmt(e.target.value)}
-              style={{flex:1,background:'none',border:'none',color:amt?'var(--green)':'var(--text)',fontFamily:'var(--mono)',fontSize:22,fontWeight:600,outline:'none',width:'100%'}}
-              autoFocus />
-          </div>
-          <input className="desc-input" placeholder="Description" value={desc}
-            onChange={e=>setDesc(e.target.value)} style={{flex:1,margin:0}} />
+        {/* Mode toggle */}
+        <div style={{display:'flex',justifyContent:'flex-end',gap:6}}>
+          <span style={chipStyle(mode==='form')} onClick={() => setMode('form')}>Form</span>
+          <span style={chipStyle(mode==='keypad')} onClick={() => setMode('keypad')}>Keypad</span>
         </div>
 
-        {/* Date picker */}
-        <DateRow />
+        {/* Type */}
+        <div>
+          <p className="sec-label" style={{marginBottom:6}}>Type</p>
+          <div style={{display:'flex',flexWrap:'wrap'}}>
+            {TYPE_LIST.map(t => (
+              <span key={t.key} style={chipStyle(type===t.key)} onClick={() => selectType(t.key)}>
+                {t.label}
+              </span>
+            ))}
+          </div>
+        </div>
 
-        {type === 'Expense' && (
-          <>
-            <p className="sec-label" style={{marginBottom:0}}>Category</p>
-            <CatChips />
-          </>
+        {/* Amount + Desc */}
+        <div style={{display:'flex',gap:8}}>
+          <div style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,
+            padding:'10px 12px',display:'flex',alignItems:'center',gap:6}}>
+            <span style={{color:'var(--text3)',fontFamily:'var(--mono)',fontSize:15}}>₹</span>
+            <input
+              type="number" inputMode="decimal" placeholder="0" value={amt}
+              onChange={e => setAmt(e.target.value)}
+              style={{flex:1,background:'none',border:'none',outline:'none',
+                color: amt ? 'var(--green)' : 'var(--text)',
+                fontFamily:'var(--mono)',fontSize:20,fontWeight:600}}
+            />
+          </div>
+          <input placeholder="Description" value={desc} onChange={e => setDesc(e.target.value)}
+            style={{...inStyle,flex:1}} />
+        </div>
+
+        {/* Date */}
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <input type="date" value={txnDate} max={new Date().toISOString().slice(0,10)}
+            onChange={e => setTxnDate(e.target.value)}
+            style={{...inStyle,flex:1,color:isToday?'var(--text2)':'var(--amber)',
+              borderColor:isToday?'var(--border2)':'var(--amber)'}} />
+          {!isToday && (
+            <span onClick={() => setTxnDate(new Date().toISOString().slice(0,10))}
+              style={{fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)',cursor:'pointer',
+                whiteSpace:'nowrap',padding:'4px 8px',border:'1px solid var(--amber)',borderRadius:6}}>
+              Today
+            </span>
+          )}
+        </div>
+
+        {/* Category */}
+        {needCat && (
+          <div>
+            <p className="sec-label" style={{marginBottom:6}}>Category</p>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {allCategories.filter(c => c.id !== 'UA Expense').map(c => (
+                <span key={c.id} style={chipStyle(cat===c.id)} onClick={() => setCat(c.id)}>
+                  {c.emoji} {c.id}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
 
+        {/* Tower for UA */}
         {type === 'UA Expense' && (
-          <>
-            <p className="sec-label" style={{marginBottom:0}}>Tower</p>
-            <TowerChips />
-          </>
+          <div>
+            <p className="sec-label" style={{marginBottom:6}}>Tower (optional)</p>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {['D5','E2','C3','Common'].map(tw => (
+                <span key={tw} style={amberChip(tower===tw)} onClick={() => setTower(tower===tw?'':tw)}>
+                  {tw}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
 
-        {['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) && (
-          <>
-            <p className="sec-label" style={{marginBottom:0}}>{type==='Bank→CC'||type==='Bank→Bank'?'From':'Paid From'}</p>
-            <FromChips />
-          </>
+        {/* From */}
+        {needFrom && (
+          <div>
+            <p className="sec-label" style={{marginBottom:6}}>
+              {type==='Bank-CC'||type==='Bank-Bank' ? 'From Account' : 'Paid From'}
+            </p>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {fromList.map(a => (
+                <span key={a} style={chipStyle(from===a)} onClick={() => setFrom(a)}>{a}</span>
+              ))}
+            </div>
+          </div>
         )}
 
-        {['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) && (
-          <>
-            <p className="sec-label" style={{marginBottom:0}}>{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p>
-            <ToChips />
-          </>
+        {/* To */}
+        {needTo && (
+          <div>
+            <p className="sec-label" style={{marginBottom:6}}>
+              {type==='Bank-CC' ? 'To CC Card' : type==='Bank-Bank' ? 'To Account' : 'Received In'}
+            </p>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {toList.map(a => (
+                <span key={a} style={chipStyle(to===a)} onClick={() => setTo(a)}>{a}</span>
+              ))}
+            </div>
+          </div>
         )}
 
-        <SaveBtn />
+        {/* Warnings */}
+        {type === 'UA Expense' && from && from !== 'Cash' && (
+          <div style={{background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,
+            padding:'8px 12px',fontSize:11,color:'var(--amber)'}}>
+            ⚠ {from} se pay kiya — recover bhi bank se hi karo
+          </div>
+        )}
+        {catInfo && catInfo.it && (
+          <span className="badge badge-in">IT: {catInfo.it} Eligible</span>
+        )}
+
+        {/* Save */}
+        <button onClick={handleSave} disabled={!canSave || saving}
+          style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',
+            border:'none',borderRadius:10,
+            color:canSave&&!saving?'#000':'var(--text3)',
+            fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
+            padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>
+          {saving ? 'Saving...' : canSave ? `Save  ₹${fmt(parseFloat(amt)||0)}` : 'Fill required fields'}
+        </button>
+
       </div>
     );
   }
 
-  // ── KEYPAD MODE — original full screen
+  // ── KEYPAD MODE
   return (
     <div className="fade-in">
-      {modeToggle}
-      <div className="amt-display">
-        <div className="amt-label">Amount (₹)</div>
-        <div className={'amt-value' + (amt ? ' has-val' : '')}>{amt || '0'}</div>
+      {/* Mode toggle */}
+      <div style={{display:'flex',justifyContent:'flex-end',gap:6,padding:'8px 16px'}}>
+        <span style={chipStyle(mode==='form')} onClick={() => setMode('form')}>Form</span>
+        <span style={chipStyle(mode==='keypad')} onClick={() => setMode('keypad')}>Keypad</span>
       </div>
 
-      <p className="sec-label">Type</p>
-      <TypeChips />
+      {/* Amount display */}
+      <div className="amt-display">
+        <div className="amt-label">Amount (₹)</div>
+        <div className={'amt-value'+(amt?' has-val':'')}>{amt||'0'}</div>
+      </div>
 
-      <div className="keypad" style={{marginBottom:12}}>
-        {['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k => (
-          <button key={k} className={'key'+(k==='⌫'?' del':'')} onClick={() => handleKey(k)}>{k}</button>
+      {/* Type */}
+      <p className="sec-label">Type</p>
+      <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
+        {TYPE_LIST.map(t => (
+          <span key={t.key} style={chipStyle(type===t.key)} onClick={() => selectType(t.key)}>
+            {t.label}
+          </span>
         ))}
       </div>
 
-      <input className="desc-input" style={{marginBottom:12}} placeholder="Description (optional)"
-        value={desc} onChange={e=>setDesc(e.target.value)} />
+      {/* Keypad */}
+      <div className="keypad" style={{marginBottom:12}}>
+        {['1','2','3','4','5','6','7','8','9','.','0','DEL'].map(k => (
+          <button key={k} className={'key'+(k==='DEL'?' del':'')} onClick={() => handleKey(k)}>
+            {k === 'DEL' ? '⌫' : k}
+          </button>
+        ))}
+      </div>
 
-      {type === 'Expense' && (
-        <><p className="sec-label">Category</p><CatChips /></>
+      {/* Date */}
+      <div style={{display:'flex',gap:8,alignItems:'center',padding:'0 16px',marginBottom:10}}>
+        <input type="date" value={txnDate} max={new Date().toISOString().slice(0,10)}
+          onChange={e => setTxnDate(e.target.value)}
+          style={{...inStyle,flex:1,color:isToday?'var(--text2)':'var(--amber)',
+            borderColor:isToday?'var(--border2)':'var(--amber)'}} />
+        {!isToday && (
+          <span onClick={() => setTxnDate(new Date().toISOString().slice(0,10))}
+            style={{fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)',cursor:'pointer',
+              whiteSpace:'nowrap',padding:'4px 8px',border:'1px solid var(--amber)',borderRadius:6}}>
+            Today
+          </span>
+        )}
+      </div>
+
+      {/* Desc */}
+      <input className="desc-input" placeholder="Description (optional)" value={desc}
+        onChange={e => setDesc(e.target.value)} style={{marginBottom:10}} />
+
+      {/* Category */}
+      {needCat && (
+        <>
+          <p className="sec-label">Category</p>
+          <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
+            {allCategories.filter(c => c.id !== 'UA Expense').map(c => (
+              <span key={c.id} style={chipStyle(cat===c.id)} onClick={() => setCat(c.id)}>
+                {c.emoji} {c.id}
+              </span>
+            ))}
+          </div>
+        </>
       )}
+
+      {/* Tower */}
       {type === 'UA Expense' && (
-        <><p className="sec-label">Tower (optional)</p><TowerChips /></>
-      )}
-      {['Expense','UA Expense','Bank→CC','Bank→Bank'].includes(type) && (
-        <><p className="sec-label">{type==='Bank→CC'||type==='Bank→Bank'?'From Account':'Paid From'}</p><FromChips /></>
-      )}
-      {['Income','UA Received','Bank→CC','Bank→Bank'].includes(type) && (
-        <><p className="sec-label">{type==='Bank→CC'?'CC Card':type==='Bank→Bank'?'To Account':'Received In'}</p><ToChips /></>
+        <>
+          <p className="sec-label">Tower (optional)</p>
+          <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
+            {['D5','E2','C3','Common'].map(tw => (
+              <span key={tw} style={amberChip(tower===tw)} onClick={() => setTower(tower===tw?'':tw)}>
+                {tw}
+              </span>
+            ))}
+          </div>
+        </>
       )}
 
-      <div style={{padding:'0 16px 16px'}}><SaveBtn /></div>
+      {/* From */}
+      {needFrom && (
+        <>
+          <p className="sec-label">{type==='Bank-CC'||type==='Bank-Bank'?'From Account':'Paid From'}</p>
+          <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
+            {fromList.map(a => (
+              <span key={a} style={chipStyle(from===a)} onClick={() => setFrom(a)}>{a}</span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* To */}
+      {needTo && (
+        <>
+          <p className="sec-label">{type==='Bank-CC'?'To CC Card':type==='Bank-Bank'?'To Account':'Received In'}</p>
+          <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
+            {toList.map(a => (
+              <span key={a} style={chipStyle(to===a)} onClick={() => setTo(a)}>{a}</span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Warnings + Save */}
+      <div style={{padding:'0 16px 16px',display:'flex',flexDirection:'column',gap:8}}>
+        {type === 'UA Expense' && from && from !== 'Cash' && (
+          <div style={{background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,
+            padding:'8px 12px',fontSize:11,color:'var(--amber)'}}>
+            ⚠ {from} se pay kiya — recover bhi bank se hi karo
+          </div>
+        )}
+        {catInfo && catInfo.it && (
+          <span className="badge badge-in">IT: {catInfo.it} Eligible</span>
+        )}
+        <button onClick={handleSave} disabled={!canSave||saving}
+          style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',
+            border:'none',borderRadius:10,
+            color:canSave&&!saving?'#000':'var(--text3)',
+            fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
+            padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>
+          {saving ? 'Saving...' : canSave ? `Save  ₹${fmt(parseFloat(amt)||0)}` : 'Fill required fields'}
+        </button>
+      </div>
     </div>
   );
 }
