@@ -285,13 +285,16 @@ const fmtTime = d => {
 
 // ── MAIN APP ─────────────────────────────────────────
 function App() {
-  const [tab, setTab]                       = useState('add');
+  const [tab, setTab]                       = useState('dash');
   const [txns, setTxns]                     = useState([]);
   const [opening, setOpening]               = useState(DEFAULT_OPENING);
   const [customAccounts, setCustomAccounts] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
   const [budgets, setBudgets]               = useState({});
+  const [udhari, setUdhari]                 = useState([]);
   const [toast, setToast]                   = useState(null);
+  const [menuOpen, setMenuOpen]             = useState(false);
+  const [quickAdd, setQuickAdd]             = useState(false);
   const [loading, setLoading]               = useState(true);
 
   const showToast = msg => {
@@ -304,6 +307,12 @@ function App() {
     try {
       const { data } = await db.from('transactions').select('*').order('created_at', { ascending: false }).limit(500);
       setTxns(data || []);
+
+      // Load udhari — graceful fail if table not yet created
+      try {
+        const { data: ud } = await db.from('udhari').select('*').order('created_at', { ascending: false });
+        setUdhari(ud || []);
+      } catch(e) { setUdhari([]); }
 
       const { data: s } = await db.from('settings').select('*');
       if (s) {
@@ -328,6 +337,7 @@ function App() {
   const allCategories = [...CATEGORIES, ...customCategories.map(c=>({ id:c.name, emoji:c.emoji||'•', color:'none', it:c.it||'' }))];
 
   const balances = computeBalances(opening, txns, allBanks, allCC);
+  const liquid   = allBanks.reduce((s, a) => s + (balances[a] || 0), 0);
 
   const addTxn = async (txn) => {
     const { error } = await db.from('transactions').insert([txn]);
@@ -363,6 +373,7 @@ function App() {
       status:         'complete',
       source:         'app-correction',
       correction_of:  original.id,
+      created_at:     corrections.created_at || original.created_at,
     };
     const { error } = await db.from('transactions').insert([corrected]);
     if (!error) { showToast('✓ Corrected — trail preserved'); loadData(); }
@@ -393,11 +404,24 @@ function App() {
     showToast('✓ Categories updated');
   };
 
-  const liquid = allBanks.reduce((s, a) => s + (balances[a] || 0), 0);
+  const udhariOutstanding = udhari.filter(u => u.direction==='given')
+    .reduce((s,u) => s + u.amount, 0) -
+    udhari.filter(u => u.direction==='received').reduce((s,u) => s + u.amount, 0);
+
+  const addUdhari = async (entry) => {
+    const { error } = await db.from('udhari').insert([entry]);
+    if (!error) { showToast('✓ Udhari logged'); loadData(); }
+    else showToast('⚠ Error: ' + (error.message||''));
+  };
+
+  const deleteUdhari = async (id) => {
+    await db.from('udhari').delete().eq('id', id);
+    showToast('↩ Deleted'); loadData();
+  };
 
   return (
     <div id="root">
-      <Header liquid={liquid} tab={tab} />
+      <Header liquid={liquid} tab={tab} onMenu={() => setMenuOpen(true)} />
       <div className="main">
         {loading && <div className="empty">Loading...</div>}
         {!loading && tab === 'add'  && (
@@ -409,6 +433,9 @@ function App() {
         {!loading && tab === 'dash' && (
           <DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} budgets={budgets} />
         )}
+        {!loading && tab === 'udhari' && (
+          <UdhariScreen udhari={udhari} onAdd={addUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} />
+        )}
         {!loading && tab === 'settings' && (
           <SettingsScreen
             opening={opening} onSave={saveOpening}
@@ -419,7 +446,135 @@ function App() {
           />
         )}
       </div>
-      <TabBar tab={tab} setTab={setTab} txns={txns} />
+
+      {/* ── FLOATING ADD BUTTON */}
+      {!quickAdd && tab !== 'add' && (
+        <button onClick={() => setQuickAdd(true)}
+          style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b) + 16px)',right:20,
+            width:52,height:52,borderRadius:'50%',background:'var(--green)',border:'none',
+            color:'#000',fontSize:28,fontWeight:300,cursor:'pointer',zIndex:50,
+            boxShadow:'0 4px 16px rgba(34,197,94,0.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+          +
+        </button>
+      )}
+
+      {/* ── QUICK ADD MODAL */}
+      {quickAdd && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}}
+          onClick={e => e.target===e.currentTarget && setQuickAdd(false)}>
+          <div style={{background:'var(--bg)',borderRadius:'16px 16px 0 0',border:'1px solid var(--border)',maxHeight:'90vh',overflowY:'auto'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 16px',borderBottom:'1px solid var(--border)'}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,letterSpacing:'0.08em',color:'var(--text2)'}}>ADD ENTRY</span>
+              <button onClick={() => setQuickAdd(false)}
+                style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>
+                ✕ Close
+              </button>
+            </div>
+            <AddScreen onSave={async (txn) => { await addTxn(txn); setQuickAdd(false); }}
+              showToast={showToast}
+              allAccounts={allAccounts} allBanks={allBanks}
+              allCC={allCC} allCategories={allCategories} />
+          </div>
+        </div>
+      )}
+
+      {/* ── HAMBURGER MENU OVERLAY */}
+      {menuOpen && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-start'}}
+          onClick={e => e.target===e.currentTarget && setMenuOpen(false)}>
+          <div style={{background:'var(--bg)',borderRadius:'0 0 16px 16px',border:'1px solid var(--border)',padding:'16px',maxHeight:'80vh',overflowY:'auto'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text2)',letterSpacing:'0.08em'}}>MENU</span>
+              <button onClick={() => setMenuOpen(false)}
+                style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>
+                ✕
+              </button>
+            </div>
+
+            {/* Quick nav */}
+            {[
+              {label:'Dashboard',icon:'◈',id:'dash'},
+              {label:'Add Entry',icon:'+',id:'add'},
+              {label:'Transaction Log',icon:'≡',id:'txns'},
+              {label:'Udhari Ledger',icon:'◎',id:'udhari'},
+            ].map(item => (
+              <div key={item.id} onClick={() => { setTab(item.id); setMenuOpen(false); }}
+                style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span>
+                <span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span>
+              </div>
+            ))}
+
+            <p style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',margin:'14px 0 8px',textTransform:'uppercase',letterSpacing:'0.08em'}}>Manage</p>
+
+            {/* Inline account add */}
+            <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'12px',marginBottom:8}}>
+              <p style={{fontSize:11,color:'var(--text2)',fontFamily:'var(--mono)',margin:'0 0 8px',fontWeight:600}}>+ Add Account</p>
+              <div style={{display:'flex',gap:6,marginBottom:6}}>
+                <input id="menu-acc-name" placeholder="Name e.g. ICICI CC"
+                  style={{flex:1,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none'}} />
+              </div>
+              <div style={{display:'flex',gap:6,marginBottom:8}}>
+                {['bank','cc'].map(t => (
+                  <div key={t} id={'menu-acc-type-'+t}
+                    className={'chip'} style={{flex:1,textAlign:'center'}}
+                    onClick={e => {
+                      document.querySelectorAll('[id^=menu-acc-type-]').forEach(el => el.classList.remove('sel'));
+                      e.target.classList.add('sel');
+                    }}>
+                    {t === 'bank' ? 'Bank' : 'Credit Card'}
+                  </div>
+                ))}
+              </div>
+              <button onClick={async () => {
+                  const nameEl = document.getElementById('menu-acc-name');
+                  const name = nameEl.value.trim().toUpperCase();
+                  const typeEl = document.querySelector('[id^=menu-acc-type-].sel');
+                  const type = typeEl ? typeEl.id.replace('menu-acc-type-','') : 'bank';
+                  if (!name) return;
+                  const updated = [...customAccounts.filter(a=>a.name!==name), { name, type }];
+                  await saveCustomAccounts(updated);
+                  nameEl.value = '';
+                }}
+                style={{background:'var(--green)',border:'none',borderRadius:6,color:'#000',padding:'7px',width:'100%',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                Add Account
+              </button>
+            </div>
+
+            {/* Inline category add */}
+            <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'12px',marginBottom:8}}>
+              <p style={{fontSize:11,color:'var(--text2)',fontFamily:'var(--mono)',margin:'0 0 8px',fontWeight:600}}>+ Add Category</p>
+              <div style={{display:'flex',gap:6,marginBottom:6}}>
+                <input id="menu-cat-emoji" placeholder="🏗" maxLength={2}
+                  style={{width:50,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px',color:'var(--text)',fontSize:14,textAlign:'center',outline:'none'}} />
+                <input id="menu-cat-name" placeholder="Category name"
+                  style={{flex:1,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none'}} />
+              </div>
+              <button onClick={async () => {
+                  const name = document.getElementById('menu-cat-name').value.trim();
+                  const emoji = document.getElementById('menu-cat-emoji').value.trim() || '•';
+                  if (!name) return;
+                  const updated = [...customCategories.filter(c=>c.name!==name), { name, emoji, it:'' }];
+                  await saveCustomCategories(updated);
+                  document.getElementById('menu-cat-name').value = '';
+                  document.getElementById('menu-cat-emoji').value = '';
+                }}
+                style={{background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',padding:'7px',width:'100%',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                Add Category
+              </button>
+            </div>
+
+            {/* Setup link */}
+            <div onClick={() => { setTab('settings'); setMenuOpen(false); }}
+              style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)',width:24,textAlign:'center'}}>⚙</span>
+              <span style={{fontSize:13,color:'var(--text2)'}}>Full Settings / Setup</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <TabBar tab={tab} setTab={setTab} txns={txns} udahriCount={Math.round(udhariOutstanding)} />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -455,11 +610,17 @@ function computeBalances(opening, txns, allBanks, allCC) {
 }
 
 // ── HEADER ───────────────────────────────────────────
-function Header({ liquid, tab }) {
-  const titles = { add:'Quick Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings' };
+function Header({ liquid, tab, onMenu }) {
+  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger' };
   return (
     <div className="header">
-      <span className="header-title">{titles[tab] || 'JB Finance'}</span>
+      <button onClick={onMenu}
+        style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',padding:'4px 6px',borderRadius:6,display:'flex',flexDirection:'column',gap:4}}>
+        <span style={{display:'block',width:18,height:1.5,background:'var(--text2)',borderRadius:1}}/>
+        <span style={{display:'block',width:14,height:1.5,background:'var(--text2)',borderRadius:1}}/>
+        <span style={{display:'block',width:18,height:1.5,background:'var(--text2)',borderRadius:1}}/>
+      </button>
+      <span className="header-title" style={{flex:1,textAlign:'center'}}>{titles[tab] || 'JB Finance'}</span>
       {tab !== 'settings' && (
         <span className="header-bal">{fmtAmt(liquid)}</span>
       )}
@@ -468,8 +629,7 @@ function Header({ liquid, tab }) {
 }
 
 // ── TAB BAR ──────────────────────────────────────────
-function TabBar({ tab, setTab, txns }) {
-  const pending = txns.filter(t => t.status === 'pending').length;
+function TabBar({ tab, setTab, txns, udahriCount }) {
   const tabs = [
     { id:'add',  label:'Add',
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
@@ -477,6 +637,8 @@ function TabBar({ tab, setTab, txns }) {
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="14" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/></svg> },
     { id:'dash', label:'Dash',
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="13" width="6" height="8" rx="1"/><rect x="10" y="8" width="5" height="13" rx="1"/><rect x="16" y="4" width="5" height="17" rx="1"/></svg> },
+    { id:'udhari', label:'Udhari',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg> },
     { id:'settings', label:'Setup',
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg> },
   ];
@@ -485,8 +647,8 @@ function TabBar({ tab, setTab, txns }) {
       {tabs.map(t => (
         <button key={t.id} className={'tab-btn' + (tab===t.id?' active':'')} onClick={() => setTab(t.id)}>
           {t.icon}
-          {t.id === 'txns' && pending > 0
-            ? <span style={{color:'var(--amber)',fontSize:9}}>{t.label} ({pending})</span>
+          {t.id === 'udhari' && udahriCount > 0
+            ? <span style={{color:'var(--amber)',fontSize:9}}>Udhari ({udahriCount})</span>
             : t.label}
         </button>
       ))}
@@ -504,7 +666,9 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const [to, setTo]         = useState('');
   const [tower, setTower]   = useState('');
   const [saving, setSaving] = useState(false);
-  const [mode, setMode]     = useState('form'); // 'keypad' | 'form'
+  const [mode, setMode]     = useState('form');
+  const todayStr = () => new Date().toISOString().slice(0,10);
+  const [txnDate, setTxnDate] = useState(todayStr());
 
   const handleKey = k => {
     if (k === '⌫') { setAmt(a => a.slice(0,-1)); return; }
@@ -527,6 +691,8 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
+    // Use selected date — set time to noon IST to avoid timezone issues
+    const created_at = txnDate + 'T06:30:00.000Z'; // noon IST = 06:30 UTC
     await onSave({
       type,
       amount:       parseFloat(amt),
@@ -538,12 +704,40 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
       it_section:   catInfo?.it || null,
       status:       'complete',
       source:       'app',
+      created_at,
     });
     setAmt(''); setDesc(''); setCat(''); setTower('');
+    setTxnDate(todayStr()); // reset to today after save
     setSaving(false);
   };
 
   const reset = () => { setType('Expense'); setCat(''); setFrom('Cash'); setTo(''); };
+
+  // Date picker — compact row
+  const DateRow = () => {
+    const isToday = txnDate === todayStr();
+    return (
+      <div style={{display:'flex',alignItems:'center',gap:8}}>
+        <input
+          type="date"
+          value={txnDate}
+          max={todayStr()}
+          onChange={e => setTxnDate(e.target.value)}
+          style={{background:'var(--bg2)',border:'1px solid '+(isToday?'var(--border)':'var(--amber)'),
+            borderRadius:8,padding:'7px 10px',color:isToday?'var(--text2)':'var(--amber)',
+            fontFamily:'var(--mono)',fontSize:12,outline:'none',flex:1}}
+        />
+        {!isToday && (
+          <div onClick={()=>setTxnDate(todayStr())}
+            style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)',cursor:'pointer',
+              background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:6,padding:'5px 8px',whiteSpace:'nowrap'}}>
+            ← Today
+          </div>
+        )}
+        {isToday && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',whiteSpace:'nowrap'}}>Today</span>}
+      </div>
+    );
+  };
 
   // Shared sections used in both modes
   const TypeChips = () => (
@@ -630,28 +824,21 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
         <p className="sec-label" style={{marginBottom:0}}>Type</p>
         <TypeChips />
 
-        {/* Amount — simple text input */}
+        {/* Amount + Description */}
         <div style={{display:'flex',gap:8,alignItems:'center'}}>
           <div style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'10px 14px',display:'flex',alignItems:'center',gap:8,flex:1}}>
             <span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)'}}>₹</span>
-            <input
-              type="number"
-              inputMode="decimal"
-              placeholder="0"
-              value={amt}
-              onChange={e => setAmt(e.target.value)}
+            <input type="number" inputMode="decimal" placeholder="0" value={amt}
+              onChange={e=>setAmt(e.target.value)}
               style={{flex:1,background:'none',border:'none',color:amt?'var(--green)':'var(--text)',fontFamily:'var(--mono)',fontSize:22,fontWeight:600,outline:'none',width:'100%'}}
-              autoFocus
-            />
+              autoFocus />
           </div>
-          <input
-            className="desc-input"
-            placeholder="Description"
-            value={desc}
-            onChange={e=>setDesc(e.target.value)}
-            style={{flex:1,margin:0}}
-          />
+          <input className="desc-input" placeholder="Description" value={desc}
+            onChange={e=>setDesc(e.target.value)} style={{flex:1,margin:0}} />
         </div>
+
+        {/* Date picker */}
+        <DateRow />
 
         {type === 'Expense' && (
           <>
@@ -733,6 +920,7 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
   const [corrAmt, setCorrAmt]   = useState('');
   const [corrDesc, setCorrDesc] = useState('');
   const [corrCat, setCorrCat]   = useState('');
+  const [corrDate, setCorrDate] = useState('');
   const [saving, setSaving]     = useState(false);
 
   const filters = ['All','Today','Voided','UA','Income'];
@@ -765,6 +953,7 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
     setCorrAmt(String(t.amount));
     setCorrDesc(t.particulars || '');
     setCorrCat(t.category || '');
+    setCorrDate(new Date(t.created_at).toISOString().slice(0,10));
   };
 
   const handleSaveCorrection = async () => {
@@ -774,6 +963,7 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
       amount:      parseFloat(corrAmt),
       particulars: corrDesc || editMode.particulars,
       category:    corrCat  || editMode.category,
+      created_at:  corrDate ? corrDate + 'T06:30:00.000Z' : editMode.created_at,
     });
     setEditMode(null);
     setSelected(null);
@@ -844,6 +1034,11 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
                   <input value={corrDesc} onChange={e=>setCorrDesc(e.target.value)}
                     placeholder="Description"
                     style={{flex:2,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
+                </div>
+                <div style={{marginBottom:8}}>
+                  <input type="date" value={corrDate} max={new Date().toISOString().slice(0,10)}
+                    onChange={e=>setCorrDate(e.target.value)}
+                    style={{width:'100%',background:'var(--bg3)',border:'1px solid '+(corrDate!==new Date(editMode.created_at).toISOString().slice(0,10)?'var(--amber)':'var(--border2)'),borderRadius:6,padding:'7px 10px',color:corrDate!==new Date(editMode.created_at).toISOString().slice(0,10)?'var(--amber)':'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none'}}/>
                 </div>
                 <div style={{display:'flex',gap:8}}>
                   <button onClick={handleSaveCorrection} disabled={saving}
@@ -1060,6 +1255,205 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets }) {
         </Card>
       )}
 
+    </div>
+  );
+}
+
+// ── UDHARI SCREEN ────────────────────────────────────
+function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
+  const [view, setView]       = useState('list');   // 'list' | 'add' | 'person'
+  const [selPerson, setSelPerson] = useState(null);
+  const [form, setForm]       = useState({
+    person_name: '', amount: '', direction: 'given',
+    mode: 'Cash', notes: '', txn_date: new Date().toISOString().slice(0,10)
+  });
+  const [saving, setSaving]   = useState(false);
+
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  // Person-wise summary
+  const persons = {};
+  udhari.forEach(u => {
+    if (!persons[u.person_name]) persons[u.person_name] = { given:0, received:0, entries:[] };
+    if (u.direction === 'given')    persons[u.person_name].given    += u.amount;
+    if (u.direction === 'received') persons[u.person_name].received += u.amount;
+    persons[u.person_name].entries.push(u);
+  });
+  const personList = Object.entries(persons)
+    .map(([name, d]) => ({ name, outstanding: d.given - d.received, given: d.given, received: d.received, entries: d.entries }))
+    .sort((a,b) => b.outstanding - a.outstanding);
+  const totalOut = personList.reduce((s,p) => s + Math.max(0,p.outstanding), 0);
+
+  const handleAdd = async () => {
+    if (!form.person_name.trim() || !form.amount || parseFloat(form.amount) <= 0) return;
+    setSaving(true);
+    await onAdd({
+      person_name: form.person_name.trim(),
+      amount:      parseFloat(form.amount),
+      direction:   form.direction,
+      mode:        form.mode,
+      notes:       form.notes,
+      created_at:  form.txn_date + 'T06:30:00.000Z',
+    });
+    setForm({ person_name:'', amount:'', direction:'given', mode:'Cash', notes:'', txn_date: todayStr });
+    setSaving(false);
+    setView('list');
+  };
+
+  const iStyle = { background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:8,
+    padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)', fontSize:13, outline:'none', width:'100%' };
+
+  // ── PERSON DETAIL VIEW
+  if (view === 'person' && selPerson) {
+    const p = persons[selPerson];
+    const entries = (p?.entries || []).sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
+    const outstanding = (p?.given||0) - (p?.received||0);
+    return (
+      <div className="fade-in" style={{paddingBottom:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderBottom:'1px solid var(--border)'}}>
+          <div onClick={()=>setView('list')} style={{cursor:'pointer',color:'var(--blue)',fontFamily:'var(--mono)',fontSize:12}}>← Back</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:14,fontWeight:600}}>{selPerson}</div>
+            <div style={{fontSize:11,color:outstanding>0?'var(--amber)':outstanding<0?'var(--green)':'var(--text3)',fontFamily:'var(--mono)'}}>
+              {outstanding>0 ? 'owes you '+fmtAmt(outstanding) : outstanding<0 ? 'you owe '+fmtAmt(Math.abs(outstanding)) : 'settled ✓'}
+            </div>
+          </div>
+          <div onClick={()=>{ setForm(f=>({...f,person_name:selPerson})); setView('add'); }}
+            style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'6px 12px',borderRadius:6,cursor:'pointer'}}>
+            + Entry
+          </div>
+        </div>
+        {/* Summary */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+          {[['Given',fmtAmt(p?.given||0),'var(--amber)'],['Received',fmtAmt(p?.received||0),'var(--green)'],['Balance',fmtAmt(Math.abs(outstanding)),outstanding>0?'var(--red)':'var(--green)']].map(([l,v,c])=>(
+            <div key={l} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
+              <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>{l.toUpperCase()}</div>
+              <div style={{fontSize:14,fontWeight:600,fontFamily:'var(--mono)',color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {/* Entry list */}
+        {entries.map((e,i)=>(
+          <div key={e.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+            <div>
+              <div style={{fontSize:12,color:e.direction==='given'?'var(--amber)':'var(--green)',fontFamily:'var(--mono)',fontWeight:600}}>
+                {e.direction==='given'?'▲ Diya':'▼ Wapas'} — {fmtAmt(e.amount)}
+              </div>
+              <div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{fmtDate(e.created_at)} · {e.mode}{e.notes?' · '+e.notes:''}</div>
+            </div>
+            <button onClick={()=>onDelete(e.id)} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text3)',padding:'4px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button>
+          </div>
+        ))}
+        {entries.length===0 && <div className="empty">No entries yet</div>}
+      </div>
+    );
+  }
+
+  // ── ADD ENTRY VIEW
+  if (view === 'add') {
+    return (
+      <div className="fade-in" style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:12}}>
+        <div style={{display:'flex',alignItems:'center',gap:12}}>
+          <div onClick={()=>setView('list')} style={{cursor:'pointer',color:'var(--blue)',fontFamily:'var(--mono)',fontSize:12}}>← Back</div>
+          <span style={{fontSize:13,fontWeight:600}}>New Udhari Entry</span>
+        </div>
+
+        <div>
+          <p className="sec-label" style={{marginBottom:6}}>Direction</p>
+          <div className="chip-row">
+            <div className={'chip'+(form.direction==='given'?' sel-amber':'')} onClick={()=>setForm(f=>({...f,direction:'given'}))}>▲ Maine diya</div>
+            <div className={'chip'+(form.direction==='received'?' sel':'')} onClick={()=>setForm(f=>({...f,direction:'received'}))}>▼ Mujhe mila (wapas)</div>
+          </div>
+        </div>
+
+        <div>
+          <p className="sec-label" style={{marginBottom:6}}>Person ka naam</p>
+          <input style={iStyle} placeholder="e.g. Rajesh Senghani" value={form.person_name}
+            onChange={e=>setForm(f=>({...f,person_name:e.target.value}))} />
+        </div>
+
+        <div style={{display:'flex',gap:8}}>
+          <div style={{flex:1}}>
+            <p className="sec-label" style={{marginBottom:6}}>Amount (₹)</p>
+            <input style={iStyle} type="number" placeholder="0" value={form.amount}
+              onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
+          </div>
+          <div style={{flex:1}}>
+            <p className="sec-label" style={{marginBottom:6}}>Date</p>
+            <input style={{...iStyle,color:form.txn_date!==todayStr?'var(--amber)':'var(--text)'}}
+              type="date" value={form.txn_date} max={todayStr}
+              onChange={e=>setForm(f=>({...f,txn_date:e.target.value}))} />
+          </div>
+        </div>
+
+        <div>
+          <p className="sec-label" style={{marginBottom:6}}>Mode</p>
+          <div className="chip-row">
+            {['Cash',...allBanks].map(a=>(
+              <div key={a} className={'chip'+(form.mode===a?' sel':'')} onClick={()=>setForm(f=>({...f,mode:a}))}>{a}</div>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <p className="sec-label" style={{marginBottom:6}}>Notes (optional)</p>
+          <input style={iStyle} placeholder="e.g. rickshaw ke liye" value={form.notes}
+            onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
+        </div>
+
+        <button onClick={handleAdd} disabled={saving||!form.person_name.trim()||!form.amount}
+          style={{background:saving||!form.person_name.trim()||!form.amount?'var(--bg3)':'var(--green)',
+            border:'none',borderRadius:8,color:saving||!form.person_name.trim()||!form.amount?'var(--text3)':'#000',
+            fontFamily:'var(--mono)',fontSize:13,fontWeight:600,padding:14,cursor:'pointer',transition:'all 0.2s'}}>
+          {saving ? 'Saving...' : `Save — ${form.direction==='given'?'Diya':'Wapas'} ₹${form.amount||0}`}
+        </button>
+      </div>
+    );
+  }
+
+  // ── LIST VIEW — all persons
+  return (
+    <div className="fade-in" style={{paddingBottom:8}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid var(--border)'}}>
+        <div>
+          <div style={{fontSize:13,fontWeight:600}}>Udhari Ledger</div>
+          <div style={{fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)',marginTop:2}}>
+            Total outstanding — {fmtAmt(totalOut)}
+          </div>
+        </div>
+        <div onClick={()=>{ setForm(f=>({...f,person_name:''})); setView('add'); }}
+          style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',borderRadius:8,cursor:'pointer'}}>
+          + New
+        </div>
+      </div>
+
+      {personList.length === 0 && (
+        <div className="empty">
+          Koi udhari nahi hai abhi.<br/>
+          "+ New" dabao pehli entry karne ke liye.
+        </div>
+      )}
+
+      {personList.map(p => (
+        <div key={p.name} onClick={()=>{ setSelPerson(p.name); setView('person'); }}
+          style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+            padding:'12px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{p.name}</div>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3}}>
+              Diya {fmtAmt(p.given)}
+              {p.received>0 && <span style={{color:'var(--green)'}}> · Wapas {fmtAmt(p.received)}</span>}
+            </div>
+          </div>
+          <div style={{textAlign:'right'}}>
+            <div style={{fontSize:14,fontWeight:600,fontFamily:'var(--mono)',
+              color: p.outstanding>0?'var(--amber)':p.outstanding<0?'var(--green)':'var(--text3)'}}>
+              {p.outstanding>0 ? fmtAmt(p.outstanding) : p.outstanding<0 ? '−'+fmtAmt(Math.abs(p.outstanding)) : '✓ Settled'}
+            </div>
+            <div style={{fontSize:9,color:'var(--text3)',marginTop:2}}>{p.outstanding>0?'owes you':p.outstanding<0?'you owe':'clear'}</div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
