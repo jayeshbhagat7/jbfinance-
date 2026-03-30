@@ -245,14 +245,18 @@ const CATEGORIES = [
   { id:'Misc',           emoji:'•',  color:'none'  },
 ];
 
-const TYPES = ['Expense','Income','Bank→CC','Bank→Bank','UA Expense','UA Received'];
-const TYPE_LABELS = {
-  'Expense':     'Expense',
-  'Income':      'Income',
-  'Bank→CC':     'Bank→CC',
-  'Bank→Bank':   'Bank→Bank',
-  'UA Expense':  'UA Expense',
-  'UA Received': 'UA Received',
+const TYPES = ['Expense','Income','Bank→CC','Bank→Bank','Bank→Cash','Cash→Bank','CC→Bank','UA Expense','UA Received'];
+
+const TYPE_CONFIG = {
+  'Expense':     { from:'any',  to:null,   label:'Expense'    },
+  'Income':      { from:null,   to:'bank', label:'Income'     },
+  'Bank→CC':     { from:'bank', to:'cc',   label:'Bank→CC'    },
+  'Bank→Bank':   { from:'bank', to:'bank', label:'Bank→Bank'  },
+  'Bank→Cash':   { from:'bank', to:'cash', label:'Bank→Cash'  },
+  'Cash→Bank':   { from:'cash', to:'bank', label:'Cash→Bank'  },
+  'CC→Bank':     { from:'cc',   to:'bank', label:'CC→Bank'    },
+  'UA Expense':  { from:'any',  to:null,   label:'UA Expense' },
+  'UA Received': { from:null,   to:'any',  label:'UA Recv'    },
 };
 
 // Default opening balances — update in Settings
@@ -299,7 +303,9 @@ function App() {
   const [customAccounts, setCustomAccounts] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
   const [budgets, setBudgets]               = useState({});
-  const [udhari, setUdhari]                 = useState([]);
+  const [udhari,    setUdhari]    = useState([]);
+  const [recurring, setRecurring] = useState([]);
+  const [checklist, setChecklist] = useState([]);
   const [toast, setToast]                   = useState(null);
   const [menuOpen, setMenuOpen]             = useState(false);
   const [quickAdd, setQuickAdd]             = useState(false);
@@ -321,6 +327,22 @@ function App() {
         const { data: ud } = await db.from('udhari').select('*').order('created_at', { ascending: false });
         setUdhari(ud || []);
       } catch(e) { setUdhari([]); }
+
+      // Load recurring — graceful fail
+      try {
+        const { data: rec } = await db.from('recurring').select('*').order('due_day', { ascending: true });
+        setRecurring(rec || []);
+      } catch(e) { setRecurring([]); }
+
+      // Load checklist for current month — graceful fail
+      try {
+        const now = new Date();
+        const { data: cl } = await db.from('checklist')
+          .select('*')
+          .eq('month', now.getMonth() + 1)
+          .eq('year', now.getFullYear());
+        setChecklist(cl || []);
+      } catch(e) { setChecklist([]); }
 
       const { data: s } = await db.from('settings').select('*');
       if (s) {
@@ -412,6 +434,51 @@ function App() {
     showToast('✓ Categories updated');
   };
 
+  const addRecurring = async (entry) => {
+    const { error } = await db.from('recurring').insert([entry]);
+    if (!error) { showToast('✓ Recurring saved'); loadData(); }
+    else showToast('⚠ ' + (error.message||'Error'));
+  };
+
+  const updateChecklist = async (id, data) => {
+    await db.from('checklist').update(data).eq('id', id);
+    loadData();
+  };
+
+  const tickChecklist = async (item, amtPaid) => {
+    const now = new Date().toISOString();
+    if (item.id) {
+      await db.from('checklist').update({
+        status: 'paid', amount_paid: amtPaid, paid_at: now
+      }).eq('id', item.id);
+    } else {
+      // Create checklist entry if it doesn't exist
+      const nowD = new Date();
+      await db.from('checklist').insert([{
+        recurring_id: item.recurring_id,
+        month: nowD.getMonth() + 1,
+        year:  nowD.getFullYear(),
+        status: 'paid',
+        amount_paid: amtPaid,
+        paid_at: now,
+      }]);
+    }
+    loadData();
+    showToast('✓ Marked paid');
+  };
+
+  const deleteRecurring = async (id) => {
+    await db.from('recurring').delete().eq('id', id);
+    showToast('↩ Deleted'); loadData();
+  };
+
+  // ── True spendable: liquid − CC − recurring provisions this month
+  const monthlyProvisions = recurring
+    .filter(r => r.active !== false && r.frequency === 'monthly')
+    .reduce((s,r) => s + (parseFloat(r.amount)||0), 0);
+  const totalCC = allCC.reduce((s,a) => s + Math.max(0, -(balances[a]||0)), 0);
+  const trueSpendable = Math.max(0, liquid - totalCC - monthlyProvisions);
+
   const udhariOutstanding = udhari.filter(u => u.direction==='given')
     .reduce((s,u) => s + u.amount, 0) -
     udhari.filter(u => u.direction==='received').reduce((s,u) => s + u.amount, 0);
@@ -439,7 +506,14 @@ function App() {
         )}
         {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} />}
         {!loading && tab === 'dash' && (
-          <DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} budgets={budgets} />
+          <DashScreen balances={balances} txns={txns} liquid={liquid}
+            allBanks={allBanks} allCC={allCC} budgets={budgets}
+            trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} />
+        )}
+        {!loading && tab === 'checklist' && (
+          <ChecklistScreen recurring={recurring} checklist={checklist}
+            onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring}
+            allAccounts={allAccounts} allBanks={allBanks} allCategories={allCategories} />
         )}
         {!loading && tab === 'udhari' && (
           <UdhariScreen udhari={udhari} onAdd={addUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} />
@@ -582,7 +656,8 @@ function App() {
         </div>
       )}
 
-      <TabBar tab={tab} setTab={setTab} txns={txns} udahriCount={Math.round(udhariOutstanding)} />
+      <TabBar tab={tab} setTab={setTab} udahriCount={Math.round(udhariOutstanding)}
+        checklistPending={checklist.filter(c=>c.status==='pending').length} />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -605,11 +680,8 @@ function computeBalances(opening, txns, allBanks, allCC) {
     if (type === 'Income' || type === 'UA Received') {
       if (to) bal[to] = (bal[to] || 0) + amt;
     }
-    if (type === 'Bank→Bank') {
-      if (from) bal[from] = (bal[from] || 0) - amt;
-      if (to)   bal[to]   = (bal[to]   || 0) + amt;
-    }
-    if (type === 'Bank→CC') {
+    if (type === 'Bank→Bank' || type === 'Bank→CC' ||
+        type === 'Bank→Cash' || type === 'Cash→Bank' || type === 'CC→Bank') {
       if (from) bal[from] = (bal[from] || 0) - amt;
       if (to)   bal[to]   = (bal[to]   || 0) + amt;
     }
@@ -619,7 +691,7 @@ function computeBalances(opening, txns, allBanks, allCC) {
 
 // ── HEADER ───────────────────────────────────────────
 function Header({ liquid, tab, onMenu }) {
-  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger' };
+  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills' };
   return (
     <div className="header">
       <button onClick={onMenu}
@@ -637,14 +709,14 @@ function Header({ liquid, tab, onMenu }) {
 }
 
 // ── TAB BAR ──────────────────────────────────────────
-function TabBar({ tab, setTab, txns, udahriCount }) {
+function TabBar({ tab, setTab, udahriCount, checklistPending }) {
   const tabs = [
-    { id:'add',  label:'Add',
-      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="9"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg> },
-    { id:'txns', label:'Log',
-      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="14" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/></svg> },
     { id:'dash', label:'Dash',
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="13" width="6" height="8" rx="1"/><rect x="10" y="8" width="5" height="13" rx="1"/><rect x="16" y="4" width="5" height="17" rx="1"/></svg> },
+    { id:'checklist', label:'Bills',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg> },
+    { id:'txns', label:'Log',
+      icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="14" y2="12"/><line x1="7" y1="16" x2="11" y2="16"/></svg> },
     { id:'udhari', label:'Udhari',
       icon: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="23" y1="11" x2="17" y2="11"/></svg> },
     { id:'settings', label:'Setup',
@@ -653,11 +725,13 @@ function TabBar({ tab, setTab, txns, udahriCount }) {
   return (
     <div className="tabs">
       {tabs.map(t => (
-        <button key={t.id} className={'tab-btn' + (tab===t.id?' active':'')} onClick={() => setTab(t.id)}>
+        <button key={t.id} className={'tab-btn'+(tab===t.id?' active':'')} onClick={() => setTab(t.id)}>
           {t.icon}
-          {t.id === 'udhari' && udahriCount > 0
-            ? <span style={{color:'var(--amber)',fontSize:9}}>Udhari ({udahriCount})</span>
-            : t.label}
+          {t.id==='udhari' && udahriCount>0
+            ? <span style={{color:'var(--amber)',fontSize:9}}>Udhari</span>
+            : t.id==='checklist' && checklistPending>0
+            ? <span style={{color:'var(--red)',fontSize:9}}>Bills ({checklistPending})</span>
+            : <span>{t.label}</span>}
         </button>
       ))}
     </div>
@@ -682,42 +756,59 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const catInfo = allCategories.find(c => c.id === cat);
 
   const needCat  = type === 'Expense';
-  const needFrom = ['Expense','UA Expense','Bank-CC','Bank-Bank'].includes(type);
-  const needTo   = ['Income','UA Received','Bank-CC','Bank-Bank'].includes(type);
-  const fromList = (type === 'Bank-CC' || type === 'Bank-Bank') ? allBanks : allAccounts;
-  const toList   = type === 'Bank-CC' ? allCC : allBanks;
+  const needFrom = ['Expense','UA Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(type);
+  const needTo   = ['Income','UA Received','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank'].includes(type);
+
+  const fromList = () => {
+    if (type === 'Bank-CC' || type === 'Bank-Bank' || type === 'Bank-Cash') return allBanks.filter(a=>a!=='Cash');
+    if (type === 'CC-Bank') return allCC;
+    if (type === 'Cash-Bank') return ['Cash'];
+    return allAccounts; // Expense, UA Expense
+  };
+
+  const toList = () => {
+    if (type === 'Bank-CC') return allCC;
+    if (type === 'Bank-Bank' || type === 'Cash-Bank' || type === 'CC-Bank') return allBanks.filter(a=>a!=='Cash');
+    if (type === 'Bank-Cash') return ['Cash'];
+    return allBanks; // Income, UA Received
+  };
 
   const canSave = parseFloat(amt) > 0 && (
     type === 'Expense'     ? (cat && from) :
     type === 'UA Expense'  ? from :
     type === 'Income'      ? to :
     type === 'UA Received' ? to :
-    type === 'Bank-CC'     ? (from && to) :
-    type === 'Bank-Bank'   ? (from && to) : false
+    (from && to) // all transfer types
   );
 
   const selectType = (t) => {
     setType(t);
     setCat('');
     setTo('');
-    if (t === 'Bank-CC' || t === 'Bank-Bank') {
-      setFrom(allBanks[0] || 'KB');
-    } else {
-      setFrom('Cash');
-    }
+    // Set sensible default from_account per type
+    if (t === 'Bank-CC' || t === 'Bank-Bank' || t === 'Bank-Cash') setFrom(allBanks.find(a=>a!=='Cash')||'KB');
+    else if (t === 'Cash-Bank') setFrom('Cash');
+    else if (t === 'CC-Bank') setFrom(allCC[0]||'SBI CC');
+    else setFrom('Cash');
   };
 
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
+    const typeStored = type
+      .replace('Bank-CC','Bank→CC')
+      .replace('Bank-Bank','Bank→Bank')
+      .replace('Bank-Cash','Bank→Cash')
+      .replace('Cash-Bank','Cash→Bank')
+      .replace('CC-Bank','CC→Bank');
     try {
       await onSave({
-        type:         type.replace('Bank-CC','Bank\u2192CC').replace('Bank-Bank','Bank\u2192Bank'),
+        type:         typeStored,
         amount:       parseFloat(amt),
-        category:     type === 'UA Expense' ? 'UA Expense' : (cat || type),
+        category:     type === 'UA Expense' ? 'UA Expense' : (cat || typeStored),
         from_account: from || null,
         to_account:   to   || null,
-        particulars:  desc || cat || type,
+        particulars:  desc || cat || typeStored,
         tower:        tower || null,
         it_section:   catInfo ? catInfo.it || null : null,
         status:       'complete',
@@ -768,12 +859,15 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   };
 
   const TYPE_LIST = [
-    {key:'Expense',    label:'Expense'},
-    {key:'Income',     label:'Income'},
-    {key:'Bank-CC',    label:'Bank → CC'},
-    {key:'Bank-Bank',  label:'Bank → Bank'},
-    {key:'UA Expense', label:'UA Expense'},
-    {key:'UA Received',label:'UA Received'},
+    {key:'Expense',     label:'Expense'},
+    {key:'Income',      label:'Income'},
+    {key:'Bank-CC',     label:'Bank→CC'},
+    {key:'Bank-Bank',   label:'Bank→Bank'},
+    {key:'Bank-Cash',   label:'Bank→Cash'},
+    {key:'Cash-Bank',   label:'Cash→Bank'},
+    {key:'CC-Bank',     label:'CC→Bank'},
+    {key:'UA Expense',  label:'UA Expense'},
+    {key:'UA Received', label:'UA Recv'},
   ];
 
   const isToday = txnDate === new Date().toISOString().slice(0,10);
@@ -868,7 +962,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
               {type==='Bank-CC'||type==='Bank-Bank' ? 'From Account' : 'Paid From'}
             </p>
             <div style={{display:'flex',flexWrap:'wrap'}}>
-              {fromList.map(a => (
+              {fromList().map(a => (
                 <span key={a} style={chipStyle(from===a)} onClick={() => setFrom(a)}>{a}</span>
               ))}
             </div>
@@ -882,7 +976,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
               {type==='Bank-CC' ? 'To CC Card' : type==='Bank-Bank' ? 'To Account' : 'Received In'}
             </p>
             <div style={{display:'flex',flexWrap:'wrap'}}>
-              {toList.map(a => (
+              {toList().map(a => (
                 <span key={a} style={chipStyle(to===a)} onClick={() => setTo(a)}>{a}</span>
               ))}
             </div>
@@ -1000,7 +1094,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
         <>
           <p className="sec-label">{type==='Bank-CC'||type==='Bank-Bank'?'From Account':'Paid From'}</p>
           <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
-            {fromList.map(a => (
+            {fromList().map(a => (
               <span key={a} style={chipStyle(from===a)} onClick={() => setFrom(a)}>{a}</span>
             ))}
           </div>
@@ -1012,7 +1106,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
         <>
           <p className="sec-label">{type==='Bank-CC'?'To CC Card':type==='Bank-Bank'?'To Account':'Received In'}</p>
           <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px',marginBottom:8}}>
-            {toList.map(a => (
+            {toList().map(a => (
               <span key={a} style={chipStyle(to===a)} onClick={() => setTo(a)}>{a}</span>
             ))}
           </div>
@@ -1189,7 +1283,7 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect }) {
 }
 
 // ── DASHBOARD SCREEN — COMPACT ───────────────────────
-function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets }) {
+function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpendable, recurring, checklist }) {
   allBanks = allBanks || BANKS;
   allCC    = allCC    || CC_ACCTS;
   budgets  = budgets  || {};
@@ -1214,7 +1308,7 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets }) {
 
   const ccDues  = allCC.map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
   const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
-  const spendable = Math.max(0, liquid - totalCC);
+  const spendable = trueSpendable !== undefined ? trueSpendable : Math.max(0, liquid - totalCC);
 
   // Category spend this month
   const cats = {};
@@ -1282,7 +1376,7 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets }) {
       {/* ── TOP 4 METRICS */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <D label="Liquid balance" val={fmtAmt(liquid)} grn/>
-        <D label={`Spendable (−CC)`} val={fmtAmt(spendable)} col={spendable<10000?'var(--red)':spendable<30000?'var(--amber)':'var(--green)'} sub="after CC dues"/>
+        <D label="Available Today" val={fmtAmt(spendable)} col={spendable<10000?'var(--red)':spendable<30000?'var(--amber)':'var(--green)'} sub="liquid − CC − provisions"/>
         <D label={MONTHS[month]+' income'} val={income>0?fmtAmt(income):'—'} col="var(--green)"/>
         <D label={MONTHS[month]+' expense'} val={expense>0?fmtAmt(expense):'—'} col="var(--red)"/>
       </div>
@@ -1585,6 +1679,312 @@ function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── CHECKLIST SCREEN ─────────────────────────────────
+function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAccounts, allBanks, allCategories }) {
+  const now   = new Date();
+  const month = now.getMonth() + 1;
+  const year  = now.getFullYear();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  const [addOpen, setAddOpen]   = useState(false);
+  const [payAmt, setPayAmt]     = useState({});  // recurring_id → entered amount
+  const [ticking, setTicking]   = useState(null);
+
+  // Form state for new recurring
+  const [form, setForm] = useState({
+    name:'', amount:'', frequency:'monthly', due_day:1,
+    account:'Cash', category:'', notes:'', active:true
+  });
+  const [saving, setSaving] = useState(false);
+
+  const iStyle = {
+    background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:8,
+    padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)',
+    fontSize:12, outline:'none', width:'100%'
+  };
+  const chipS = (active) => ({
+    display:'inline-block', border: active?'1px solid var(--green)':'1px solid var(--border2)',
+    borderRadius:20, padding:'6px 12px', fontFamily:'var(--mono)', fontSize:11,
+    color:active?'var(--green)':'var(--text2)', background:active?'var(--green-bg)':'var(--bg2)',
+    cursor:'pointer', userSelect:'none', margin:'0 4px 4px 0'
+  });
+
+  // Get checklist status for each recurring item
+  const getStatus = (recId) => checklist.find(c => c.recurring_id === recId);
+
+  // Filter recurring by frequency — show this month's relevant items
+  const activeItems = recurring.filter(r => {
+    if (r.active === false) return false;
+    if (r.frequency === 'monthly') return true;
+    if (r.frequency === 'annual' && r.due_month === month) return true;
+    if (r.frequency === 'half_yearly' && (r.due_month === month || r.due_month2 === month)) return true;
+    if (r.frequency === 'quarterly') {
+      const startMonth = r.due_month || 1;
+      return (month - startMonth) % 3 === 0 && month >= startMonth;
+    }
+    return false;
+  });
+
+  const paid   = activeItems.filter(r => getStatus(r.id)?.status === 'paid');
+  const pending = activeItems.filter(r => getStatus(r.id)?.status !== 'paid');
+  const pct = activeItems.length > 0 ? Math.round(paid.length / activeItems.length * 100) : 0;
+
+  const handleTick = async (rec) => {
+    const cl = getStatus(rec.id);
+    if (cl?.status === 'paid') return; // already paid
+    setTicking(rec.id);
+    const amt = parseFloat(payAmt[rec.id]) || parseFloat(rec.amount) || 0;
+    await onTick({ ...cl, recurring_id: rec.id }, amt);
+    setTicking(null);
+    setPayAmt(prev => { const n={...prev}; delete n[rec.id]; return n; });
+  };
+
+  const handleAdd = async () => {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onAdd({
+      name:      form.name.trim(),
+      amount:    parseFloat(form.amount) || 0,
+      frequency: form.frequency,
+      due_day:   parseInt(form.due_day) || 1,
+      due_month: form.due_month ? parseInt(form.due_month) : null,
+      due_month2:form.due_month2 ? parseInt(form.due_month2) : null,
+      account:   form.account,
+      category:  form.category,
+      notes:     form.notes,
+      active:    true,
+    });
+    setForm({name:'',amount:'',frequency:'monthly',due_day:1,account:'Cash',category:'',notes:'',active:true});
+    setSaving(false);
+    setAddOpen(false);
+  };
+
+  const RecItem = ({rec}) => {
+    const cl     = getStatus(rec.id);
+    const isPaid = cl?.status === 'paid';
+    const isVar  = !rec.amount || rec.amount === 0; // variable amount
+    const isTick = ticking === rec.id;
+    const [showAmt, setShowAmt] = useState(false);
+
+    return (
+      <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',
+        background:isPaid?'var(--green-bg)':'var(--bg2)'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          {/* Checkbox */}
+          <div onClick={() => !isPaid && (isVar ? setShowAmt(s=>!s) : handleTick(rec))}
+            style={{width:22,height:22,borderRadius:6,
+              border:isPaid?'1.5px solid var(--green)':'1.5px solid var(--border2)',
+              background:isPaid?'var(--green)':'none',
+              display:'flex',alignItems:'center',justifyContent:'center',
+              cursor:isPaid?'default':'pointer',flexShrink:0}}>
+            {isPaid && <span style={{color:'#000',fontSize:12,fontWeight:700}}>✓</span>}
+          </div>
+          {/* Name + details */}
+          <div style={{flex:1}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontSize:13,color:isPaid?'var(--text3)':'var(--text)',
+                textDecoration:isPaid?'line-through':'none'}}>{rec.name}</span>
+              <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
+                color:isPaid?'var(--green)':isVar?'var(--text2)':'var(--text)'}}>
+                {isPaid ? fmtAmt(cl.amount_paid||rec.amount||0) : isVar ? 'variable' : fmtAmt(rec.amount)}
+              </span>
+            </div>
+            <div style={{display:'flex',gap:8,marginTop:2}}>
+              {rec.due_day && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>
+                due {rec.due_day}{rec.due_day===1?'st':rec.due_day===2?'nd':rec.due_day===3?'rd':'th'}
+              </span>}
+              {rec.account && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>{rec.account}</span>}
+              {rec.category && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>{rec.category}</span>}
+              {isPaid && cl.paid_at && <span style={{fontSize:10,color:'var(--green)',fontFamily:'var(--mono)'}}>
+                paid {fmtDate(cl.paid_at)}
+              </span>}
+            </div>
+          </div>
+        </div>
+        {/* Variable amount input */}
+        {showAmt && !isPaid && (
+          <div style={{display:'flex',gap:8,marginTop:8}}>
+            <input type="number" placeholder={rec.amount||'Enter amount'} value={payAmt[rec.id]||''}
+              onChange={e=>setPayAmt(p=>({...p,[rec.id]:e.target.value}))}
+              style={{flex:1,background:'var(--bg3)',border:'1px solid var(--green)',borderRadius:6,
+                padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
+            <button onClick={()=>handleTick(rec)} disabled={isTick}
+              style={{background:'var(--green)',border:'none',borderRadius:6,color:'#000',
+                padding:'7px 14px',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+              {isTick?'...':'Mark paid'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="fade-in" style={{paddingBottom:8}}>
+      {/* Header with progress */}
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',
+        background:'var(--bg2)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600}}>{MONTHS[month-1]} {year} — Payments</div>
+            <div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
+              {paid.length}/{activeItems.length} done
+            </div>
+          </div>
+          <button onClick={() => setAddOpen(o=>!o)}
+            style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',
+              fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>
+            + Add
+          </button>
+        </div>
+        {/* Progress bar */}
+        {activeItems.length > 0 && (
+          <div>
+            <div style={{background:'var(--bg3)',borderRadius:3,height:6}}>
+              <div style={{height:6,borderRadius:3,
+                background:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',
+                width:pct+'%',transition:'width 0.3s'}}/>
+            </div>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3,textAlign:'right'}}>
+              {pct}% complete
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Add form */}
+      {addOpen && (
+        <div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',
+          borderRadius:10,padding:'14px'}}>
+          <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',
+            fontWeight:600,letterSpacing:'0.06em'}}>ADD RECURRING PAYMENT</p>
+
+          <div style={{display:'flex',gap:8,marginBottom:8}}>
+            <input style={{...iStyle,flex:2}} placeholder="Name e.g. Society maintenance"
+              value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
+            <input style={{...iStyle,flex:1}} placeholder="₹ Amount (0=variable)"
+              type="number" value={form.amount}
+              onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
+          </div>
+
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>FREQUENCY</div>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {[['monthly','Monthly'],['quarterly','Quarterly'],['half_yearly','Half-yearly'],['annual','Annual']].map(([k,l])=>(
+                <span key={k} style={chipS(form.frequency===k)} onClick={()=>setForm(f=>({...f,frequency:k}))}>{l}</span>
+              ))}
+            </div>
+          </div>
+
+          <div style={{display:'flex',gap:8,marginBottom:8}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>DUE DAY (of month)</div>
+              <input style={iStyle} type="number" min="1" max="31" value={form.due_day}
+                onChange={e=>setForm(f=>({...f,due_day:e.target.value}))} />
+            </div>
+            {(form.frequency==='annual'||form.frequency==='half_yearly') && (
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>DUE MONTH (1-12)</div>
+                <input style={iStyle} type="number" min="1" max="12" placeholder="e.g. 10"
+                  value={form.due_month||''} onChange={e=>setForm(f=>({...f,due_month:e.target.value}))} />
+              </div>
+            )}
+            {form.frequency==='half_yearly' && (
+              <div style={{flex:1}}>
+                <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>2ND MONTH</div>
+                <input style={iStyle} type="number" min="1" max="12" placeholder="e.g. 4"
+                  value={form.due_month2||''} onChange={e=>setForm(f=>({...f,due_month2:e.target.value}))} />
+              </div>
+            )}
+          </div>
+
+          <div style={{marginBottom:8}}>
+            <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>ACCOUNT</div>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {allAccounts.map(a=>(
+                <span key={a} style={chipS(form.account===a)} onClick={()=>setForm(f=>({...f,account:a}))}>{a}</span>
+              ))}
+            </div>
+          </div>
+
+          <input style={{...iStyle,marginBottom:8}} placeholder="Category (optional)"
+            value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} />
+          <input style={{...iStyle,marginBottom:10}} placeholder="Notes (optional)"
+            value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
+
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={handleAdd} disabled={saving||!form.name.trim()}
+              style={{flex:1,background:saving||!form.name.trim()?'var(--bg3)':'var(--green)',
+                border:'none',borderRadius:8,color:saving||!form.name.trim()?'var(--text3)':'#000',
+                fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>
+              {saving?'Saving...':'Save recurring'}
+            </button>
+            <button onClick={()=>setAddOpen(false)}
+              style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,
+                color:'var(--text3)',padding:'12px 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Pending items */}
+      {pending.length > 0 && (
+        <>
+          <p className="sec-label" style={{color:'var(--amber)'}}>Pending ({pending.length})</p>
+          {pending.map(rec => <RecItem key={rec.id} rec={rec} />)}
+        </>
+      )}
+
+      {/* Paid items */}
+      {paid.length > 0 && (
+        <>
+          <p className="sec-label">Done ({paid.length})</p>
+          {paid.map(rec => <RecItem key={rec.id} rec={rec} />)}
+        </>
+      )}
+
+      {activeItems.length === 0 && !addOpen && (
+        <div className="empty">
+          Koi recurring payment nahi hai abhi.<br/>
+          "+ Add" dabao pehla item add karne ke liye.<br/><br/>
+          <span style={{fontSize:11,color:'var(--text3)'}}>
+            e.g. Society ₹3,690 · Electricity variable · PNG bill variable
+          </span>
+        </div>
+      )}
+
+      {/* All recurring list at bottom */}
+      {recurring.length > 0 && (
+        <>
+          <p className="sec-label" style={{marginTop:16}}>All recurring items</p>
+          {recurring.map(rec => (
+            <div key={rec.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+              padding:'9px 14px',borderBottom:'1px solid var(--border)',fontSize:12}}>
+              <div>
+                <span style={{color:'var(--text)'}}>{rec.name}</span>
+                <span style={{color:'var(--text3)',marginLeft:8,fontSize:10,fontFamily:'var(--mono)'}}>
+                  {rec.frequency} · {rec.account}
+                </span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>
+                  {rec.amount?fmtAmt(rec.amount):'variable'}
+                </span>
+                <button onClick={()=>onDelete(rec.id)}
+                  style={{background:'none',border:'1px solid var(--border)',borderRadius:5,
+                    color:'var(--text3)',padding:'3px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
