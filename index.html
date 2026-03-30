@@ -63,7 +63,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .header-bal { font-family: var(--mono); font-size: 16px; font-weight: 600; color: var(--green); }
 
 /* ── MAIN SCROLL AREA ── */
-.main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--tab-h) + var(--safe-b) + 8px); }
+.main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding-bottom: calc(var(--tab-h) + var(--safe-b) + 72px); }
 
 /* ── TABS ── */
 .tabs {
@@ -445,26 +445,56 @@ function App() {
     loadData();
   };
 
-  const tickChecklist = async (item, amtPaid) => {
-    const now = new Date().toISOString();
-    if (item.id) {
+  const tickChecklist = async (rec, cl, amtPaid, fromAccount) => {
+    if (!amtPaid || amtPaid <= 0) return;
+    const now   = new Date().toISOString();
+    const nowD  = new Date();
+
+    // Determine transaction type based on account
+    const isCC = allCC.includes(fromAccount);
+    const txnType = rec.is_cc_payment
+      ? 'Bank→CC'
+      : rec.is_provision
+      ? 'Bank→Bank'
+      : 'Expense';
+
+    // Build transaction
+    const txn = {
+      type:         txnType,
+      amount:       amtPaid,
+      category:     rec.category || 'Household',
+      from_account: (txnType === 'Bank→CC' || txnType === 'Bank→Bank') ? fromAccount : fromAccount,
+      to_account:   txnType === 'Bank→CC' ? rec.cc_name || null
+                  : txnType === 'Bank→Bank' ? rec.provision_account || null
+                  : null,
+      particulars:  rec.name,
+      status:       'complete',
+      source:       'checklist',
+      created_at:   now,
+    };
+
+    try {
+      await db.from('transactions').insert([txn]);
+    } catch(e) { /* continue even if txn fails */ }
+
+    // Mark checklist as paid
+    if (cl?.id) {
       await db.from('checklist').update({
-        status: 'paid', amount_paid: amtPaid, paid_at: now
-      }).eq('id', item.id);
+        status:'paid', amount_paid:amtPaid, paid_at:now
+      }).eq('id', cl.id);
     } else {
-      // Create checklist entry if it doesn't exist
-      const nowD = new Date();
       await db.from('checklist').insert([{
-        recurring_id: item.recurring_id,
-        month: nowD.getMonth() + 1,
-        year:  nowD.getFullYear(),
+        recurring_id: rec.id,
+        month:  nowD.getMonth() + 1,
+        year:   nowD.getFullYear(),
         status: 'paid',
         amount_paid: amtPaid,
         paid_at: now,
       }]);
     }
+
     loadData();
-    showToast('✓ Marked paid');
+    showToast('✓ ' + rec.name + ' — logged to transactions');
   };
 
   const deleteRecurring = async (id) => {
@@ -513,7 +543,8 @@ function App() {
         {!loading && tab === 'checklist' && (
           <ChecklistScreen recurring={recurring} checklist={checklist}
             onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring}
-            allAccounts={allAccounts} allBanks={allBanks} allCategories={allCategories} />
+            allAccounts={allAccounts} allBanks={allBanks} allCC={allCC}
+            allCategories={allCategories} balances={balances} />
         )}
         {!loading && tab === 'udhari' && (
           <UdhariScreen udhari={udhari} onAdd={addUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} />
@@ -532,9 +563,9 @@ function App() {
       {/* ── FLOATING ADD BUTTON */}
       {!quickAdd && tab !== 'add' && (
         <button onClick={() => setQuickAdd(true)}
-          style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b) + 16px)',right:20,
+          style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b) + 20px)',right:20,
             width:52,height:52,borderRadius:'50%',background:'var(--green)',border:'none',
-            color:'#000',fontSize:28,fontWeight:300,cursor:'pointer',zIndex:50,
+            color:'#000',fontSize:28,fontWeight:300,cursor:'pointer',zIndex:150,
             boxShadow:'0 4px 16px rgba(34,197,94,0.4)',display:'flex',alignItems:'center',justifyContent:'center'}}>
           +
         </button>
@@ -1683,151 +1714,222 @@ function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
   );
 }
 
+// ── RECURRING ITEM ROW — outside ChecklistScreen to avoid remount bug ──
+function RecItem({ rec, cl, onTick, allAccounts, allBanks }) {
+  const [open,     setOpen]    = useState(false);
+  const [payAmt,   setPayAmt]  = useState('');
+  const [payAcct,  setPayAcct] = useState(rec.account || 'Cash');
+  const [saving,   setSaving]  = useState(false);
+
+  const isPaid = cl?.status === 'paid';
+  const isVar  = !rec.amount || parseFloat(rec.amount) === 0;
+
+  const chipS = (active) => ({
+    display:'inline-block',
+    border: active ? '1px solid var(--green)' : '1px solid var(--border2)',
+    borderRadius:16, padding:'5px 10px', fontFamily:'var(--mono)', fontSize:10,
+    color: active ? 'var(--green)' : 'var(--text2)',
+    background: active ? 'var(--green-bg)' : 'var(--bg2)',
+    cursor:'pointer', userSelect:'none', margin:'0 4px 4px 0',
+  });
+
+  const handlePay = async () => {
+    const amt = parseFloat(payAmt) || parseFloat(rec.amount) || 0;
+    if (!amt) return;
+    setSaving(true);
+    await onTick(rec, cl, amt, payAcct);
+    setSaving(false);
+    setOpen(false);
+    setPayAmt('');
+  };
+
+  return (
+    <div style={{borderBottom:'1px solid var(--border)',background:isPaid?'var(--green-bg)':'var(--bg2)'}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px'}}>
+        {/* Checkbox */}
+        <div
+          onClick={() => !isPaid && setOpen(o=>!o)}
+          style={{width:22,height:22,borderRadius:6,flexShrink:0,cursor:isPaid?'default':'pointer',
+            border: isPaid ? '1.5px solid var(--green)' : open ? '1.5px solid var(--blue)' : '1.5px solid var(--border2)',
+            background: isPaid ? 'var(--green)' : 'none',
+            display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {isPaid && <span style={{color:'#000',fontSize:11,fontWeight:700}}>✓</span>}
+          {!isPaid && open && <span style={{color:'var(--blue)',fontSize:14}}>−</span>}
+        </div>
+        {/* Name + amount */}
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <span style={{fontSize:13,color:isPaid?'var(--text3)':'var(--text)',
+              textDecoration:isPaid?'line-through':'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+              {rec.name}
+            </span>
+            <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,flexShrink:0,marginLeft:8,
+              color:isPaid?'var(--green)':isVar?'var(--text3)':'var(--text)'}}>
+              {isPaid ? fmtAmt(cl.amount_paid||rec.amount||0) : isVar ? 'variable' : fmtAmt(rec.amount)}
+            </span>
+          </div>
+          <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2,display:'flex',gap:8,flexWrap:'wrap'}}>
+            {rec.due_day && <span>due {rec.due_day}{['','st','nd','rd'][rec.due_day]||'th'}</span>}
+            {rec.account && <span>{rec.account}</span>}
+            {rec.category && <span>{rec.category}</span>}
+            {isPaid && cl.paid_at && <span style={{color:'var(--green)'}}>paid {fmtDate(cl.paid_at)}</span>}
+          </div>
+        </div>
+      </div>
+
+      {/* Payment form — expands below */}
+      {open && !isPaid && (
+        <div style={{padding:'0 14px 12px',display:'flex',flexDirection:'column',gap:8}}>
+          {/* Amount */}
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <div style={{background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:8,
+              padding:'8px 12px',display:'flex',alignItems:'center',gap:6,flex:1}}>
+              <span style={{color:'var(--text3)',fontFamily:'var(--mono)'}}>₹</span>
+              <input
+                type="number" inputMode="decimal"
+                placeholder={rec.amount||'Enter amount'}
+                value={payAmt}
+                onChange={e => setPayAmt(e.target.value)}
+                style={{flex:1,background:'none',border:'none',outline:'none',
+                  color:'var(--green)',fontFamily:'var(--mono)',fontSize:16,fontWeight:600}}
+              />
+            </div>
+          </div>
+          {/* Account */}
+          <div>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>PAID FROM</div>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {allAccounts.map(a => (
+                <span key={a} style={chipS(payAcct===a)} onClick={() => setPayAcct(a)}>{a}</span>
+              ))}
+            </div>
+          </div>
+          {/* Confirm */}
+          <button onClick={handlePay} disabled={saving || !payAmt}
+            style={{background:saving||!payAmt?'var(--bg3)':'var(--green)',border:'none',
+              borderRadius:8,color:saving||!payAmt?'var(--text3)':'#000',
+              fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:10,cursor:'pointer'}}>
+            {saving ? 'Saving...' : `Mark paid — ${fmtAmt(parseFloat(payAmt)||0)} from ${payAcct}`}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── CHECKLIST SCREEN ─────────────────────────────────
-function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAccounts, allBanks, allCategories }) {
+function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAccounts, allBanks, allCC, allCategories, balances }) {
   const now   = new Date();
   const month = now.getMonth() + 1;
   const year  = now.getFullYear();
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const FREQS = [
+    {k:'monthly',    l:'Monthly'},
+    {k:'bimonthly',  l:'Every 2 months'},
+    {k:'quarterly',  l:'Quarterly'},
+    {k:'half_yearly',l:'Half-yearly'},
+    {k:'annual',     l:'Annual'},
+  ];
 
-  const [addOpen, setAddOpen]   = useState(false);
-  const [payAmt, setPayAmt]     = useState({});  // recurring_id → entered amount
-  const [ticking, setTicking]   = useState(null);
-
-  // Form state for new recurring
+  const [addOpen, setAddOpen] = useState(false);
+  const [addType, setAddType] = useState('expense'); // expense | provision | cc
   const [form, setForm] = useState({
     name:'', amount:'', frequency:'monthly', due_day:1,
-    account:'Cash', category:'', notes:'', active:true
+    due_month:'', due_month2:'', account:'Cash',
+    provision_account:'YB', category:'', notes:'', active:true
   });
   const [saving, setSaving] = useState(false);
 
   const iStyle = {
     background:'var(--bg3)', border:'1px solid var(--border2)', borderRadius:8,
-    padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)',
-    fontSize:12, outline:'none', width:'100%'
+    padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)', fontSize:12, outline:'none', width:'100%'
   };
   const chipS = (active) => ({
-    display:'inline-block', border: active?'1px solid var(--green)':'1px solid var(--border2)',
-    borderRadius:20, padding:'6px 12px', fontFamily:'var(--mono)', fontSize:11,
-    color:active?'var(--green)':'var(--text2)', background:active?'var(--green-bg)':'var(--bg2)',
-    cursor:'pointer', userSelect:'none', margin:'0 4px 4px 0'
+    display:'inline-block',
+    border: active ? '1px solid var(--green)' : '1px solid var(--border2)',
+    borderRadius:16, padding:'6px 12px', fontFamily:'var(--mono)', fontSize:11,
+    color: active ? 'var(--green)' : 'var(--text2)',
+    background: active ? 'var(--green-bg)' : 'var(--bg2)',
+    cursor:'pointer', userSelect:'none', margin:'0 4px 4px 0',
   });
 
-  // Get checklist status for each recurring item
-  const getStatus = (recId) => checklist.find(c => c.recurring_id === recId);
+  // Get checklist status for a recurring item
+  const getCL = (recId) => checklist.find(c => c.recurring_id === recId);
 
-  // Filter recurring by frequency — show this month's relevant items
-  const activeItems = recurring.filter(r => {
-    if (r.active === false) return false;
+  // Check if recurring item is due this month
+  const isDueThisMonth = (r) => {
+    if (!r.active && r.active !== undefined) return false;
     if (r.frequency === 'monthly') return true;
-    if (r.frequency === 'annual' && r.due_month === month) return true;
-    if (r.frequency === 'half_yearly' && (r.due_month === month || r.due_month2 === month)) return true;
-    if (r.frequency === 'quarterly') {
-      const startMonth = r.due_month || 1;
-      return (month - startMonth) % 3 === 0 && month >= startMonth;
+    if (r.frequency === 'bimonthly') {
+      const startM = r.due_month || 1;
+      return (month - startM) % 2 === 0 && month >= startM;
     }
+    if (r.frequency === 'quarterly') {
+      const startM = r.due_month || 1;
+      return (month - startM) % 3 === 0 && month >= startM;
+    }
+    if (r.frequency === 'half_yearly') {
+      return month === r.due_month || month === r.due_month2;
+    }
+    if (r.frequency === 'annual') return month === r.due_month;
     return false;
-  });
-
-  const paid   = activeItems.filter(r => getStatus(r.id)?.status === 'paid');
-  const pending = activeItems.filter(r => getStatus(r.id)?.status !== 'paid');
-  const pct = activeItems.length > 0 ? Math.round(paid.length / activeItems.length * 100) : 0;
-
-  const handleTick = async (rec) => {
-    const cl = getStatus(rec.id);
-    if (cl?.status === 'paid') return; // already paid
-    setTicking(rec.id);
-    const amt = parseFloat(payAmt[rec.id]) || parseFloat(rec.amount) || 0;
-    await onTick({ ...cl, recurring_id: rec.id }, amt);
-    setTicking(null);
-    setPayAmt(prev => { const n={...prev}; delete n[rec.id]; return n; });
   };
+
+  // Auto-generate CC dues as checklist items
+  const ccItems = allCC
+    .map(a => ({ balance: balances[a] || 0, name: a }))
+    .filter(x => x.balance < 0)
+    .map(x => ({
+      id:       'cc-' + x.name,
+      name:     x.name + ' bill payment',
+      amount:   Math.abs(x.balance),
+      frequency:'monthly',
+      account:  allBanks.find(b=>b!=='Cash') || 'UB',
+      category: 'Credit Card Bill',
+      is_cc_payment: true,
+      cc_name:  x.name,
+      due_day:  null,
+      active:   true,
+    }));
+
+  const activeItems = [
+    ...ccItems,
+    ...recurring.filter(isDueThisMonth),
+  ];
+
+  const paid    = activeItems.filter(r => getCL(r.id)?.status === 'paid');
+  const pending = activeItems.filter(r => getCL(r.id)?.status !== 'paid');
+  const pct     = activeItems.length > 0 ? Math.round(paid.length / activeItems.length * 100) : 0;
 
   const handleAdd = async () => {
     if (!form.name.trim()) return;
     setSaving(true);
-    await onAdd({
-      name:      form.name.trim(),
-      amount:    parseFloat(form.amount) || 0,
-      frequency: form.frequency,
-      due_day:   parseInt(form.due_day) || 1,
-      due_month: form.due_month ? parseInt(form.due_month) : null,
-      due_month2:form.due_month2 ? parseInt(form.due_month2) : null,
-      account:   form.account,
-      category:  form.category,
-      notes:     form.notes,
-      active:    true,
-    });
-    setForm({name:'',amount:'',frequency:'monthly',due_day:1,account:'Cash',category:'',notes:'',active:true});
+    const entry = {
+      name:               form.name.trim(),
+      amount:             parseFloat(form.amount) || 0,
+      frequency:          form.frequency,
+      due_day:            parseInt(form.due_day) || 1,
+      due_month:          form.due_month  ? parseInt(form.due_month)  : null,
+      due_month2:         form.due_month2 ? parseInt(form.due_month2) : null,
+      account:            addType === 'provision' ? (allBanks.find(b=>b!=='Cash')||'UB') : form.account,
+      provision_account:  addType === 'provision' ? form.provision_account : null,
+      category:           addType === 'provision' ? 'Provision' : form.category,
+      notes:              form.notes,
+      is_provision:       addType === 'provision',
+      active:             true,
+    };
+    await onAdd(entry);
+    setForm({name:'',amount:'',frequency:'monthly',due_day:1,due_month:'',due_month2:'',
+      account:'Cash',provision_account:'YB',category:'',notes:'',active:true});
     setSaving(false);
     setAddOpen(false);
   };
 
-  const RecItem = ({rec}) => {
-    const cl     = getStatus(rec.id);
-    const isPaid = cl?.status === 'paid';
-    const isVar  = !rec.amount || rec.amount === 0; // variable amount
-    const isTick = ticking === rec.id;
-    const [showAmt, setShowAmt] = useState(false);
-
-    return (
-      <div style={{padding:'10px 14px',borderBottom:'1px solid var(--border)',
-        background:isPaid?'var(--green-bg)':'var(--bg2)'}}>
-        <div style={{display:'flex',alignItems:'center',gap:10}}>
-          {/* Checkbox */}
-          <div onClick={() => !isPaid && (isVar ? setShowAmt(s=>!s) : handleTick(rec))}
-            style={{width:22,height:22,borderRadius:6,
-              border:isPaid?'1.5px solid var(--green)':'1.5px solid var(--border2)',
-              background:isPaid?'var(--green)':'none',
-              display:'flex',alignItems:'center',justifyContent:'center',
-              cursor:isPaid?'default':'pointer',flexShrink:0}}>
-            {isPaid && <span style={{color:'#000',fontSize:12,fontWeight:700}}>✓</span>}
-          </div>
-          {/* Name + details */}
-          <div style={{flex:1}}>
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span style={{fontSize:13,color:isPaid?'var(--text3)':'var(--text)',
-                textDecoration:isPaid?'line-through':'none'}}>{rec.name}</span>
-              <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
-                color:isPaid?'var(--green)':isVar?'var(--text2)':'var(--text)'}}>
-                {isPaid ? fmtAmt(cl.amount_paid||rec.amount||0) : isVar ? 'variable' : fmtAmt(rec.amount)}
-              </span>
-            </div>
-            <div style={{display:'flex',gap:8,marginTop:2}}>
-              {rec.due_day && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>
-                due {rec.due_day}{rec.due_day===1?'st':rec.due_day===2?'nd':rec.due_day===3?'rd':'th'}
-              </span>}
-              {rec.account && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>{rec.account}</span>}
-              {rec.category && <span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>{rec.category}</span>}
-              {isPaid && cl.paid_at && <span style={{fontSize:10,color:'var(--green)',fontFamily:'var(--mono)'}}>
-                paid {fmtDate(cl.paid_at)}
-              </span>}
-            </div>
-          </div>
-        </div>
-        {/* Variable amount input */}
-        {showAmt && !isPaid && (
-          <div style={{display:'flex',gap:8,marginTop:8}}>
-            <input type="number" placeholder={rec.amount||'Enter amount'} value={payAmt[rec.id]||''}
-              onChange={e=>setPayAmt(p=>({...p,[rec.id]:e.target.value}))}
-              style={{flex:1,background:'var(--bg3)',border:'1px solid var(--green)',borderRadius:6,
-                padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
-            <button onClick={()=>handleTick(rec)} disabled={isTick}
-              style={{background:'var(--green)',border:'none',borderRadius:6,color:'#000',
-                padding:'7px 14px',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer'}}>
-              {isTick?'...':'Mark paid'}
-            </button>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="fade-in" style={{paddingBottom:8}}>
-      {/* Header with progress */}
-      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',
-        background:'var(--bg2)'}}>
+
+      {/* Header */}
+      <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{MONTHS[month-1]} {year} — Payments</div>
@@ -1841,13 +1943,12 @@ function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAcc
             + Add
           </button>
         </div>
-        {/* Progress bar */}
         {activeItems.length > 0 && (
           <div>
             <div style={{background:'var(--bg3)',borderRadius:3,height:6}}>
-              <div style={{height:6,borderRadius:3,
-                background:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',
-                width:pct+'%',transition:'width 0.3s'}}/>
+              <div style={{height:6,borderRadius:3,transition:'width 0.3s',
+                background: pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',
+                width: pct+'%'}}/>
             </div>
             <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3,textAlign:'right'}}>
               {pct}% complete
@@ -1858,23 +1959,40 @@ function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAcc
 
       {/* Add form */}
       {addOpen && (
-        <div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',
-          borderRadius:10,padding:'14px'}}>
-          <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',
-            fontWeight:600,letterSpacing:'0.06em'}}>ADD RECURRING PAYMENT</p>
+        <div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
+          <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',fontWeight:600,letterSpacing:'0.06em'}}>
+            ADD RECURRING PAYMENT
+          </p>
+
+          {/* Type selector */}
+          <div style={{marginBottom:10}}>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>TYPE</div>
+            <div style={{display:'flex',flexWrap:'wrap'}}>
+              {[['expense','Regular Expense'],['provision','Provision (save up)']].map(([k,l])=>(
+                <span key={k} style={chipS(addType===k)} onClick={()=>setAddType(k)}>{l}</span>
+              ))}
+            </div>
+          </div>
+
+          {addType === 'provision' && (
+            <div style={{background:'var(--blue-bg)',border:'1px solid #0a1a3a',borderRadius:8,padding:'8px 12px',marginBottom:10,fontSize:11,color:'var(--blue)',lineHeight:1.7}}>
+              Provision = set money aside for future payment.<br/>
+              e.g. LIC ₹5,748 in Oct → save ₹958/month in YB<br/>
+              Transfer from UB → YB monthly as provision.
+            </div>
+          )}
 
           <div style={{display:'flex',gap:8,marginBottom:8}}>
-            <input style={{...iStyle,flex:2}} placeholder="Name e.g. Society maintenance"
+            <input style={{...iStyle,flex:2}} placeholder={addType==='provision'?'e.g. LIC Premium Oct provision':'e.g. Society maintenance'}
               value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} />
-            <input style={{...iStyle,flex:1}} placeholder="₹ Amount (0=variable)"
-              type="number" value={form.amount}
-              onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
+            <input style={{...iStyle,flex:1}} type="number" placeholder={addType==='provision'?'Monthly amt':'₹ (0=variable)'}
+              value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} />
           </div>
 
           <div style={{marginBottom:8}}>
-            <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>FREQUENCY</div>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>FREQUENCY</div>
             <div style={{display:'flex',flexWrap:'wrap'}}>
-              {[['monthly','Monthly'],['quarterly','Quarterly'],['half_yearly','Half-yearly'],['annual','Annual']].map(([k,l])=>(
+              {FREQS.map(({k,l})=>(
                 <span key={k} style={chipS(form.frequency===k)} onClick={()=>setForm(f=>({...f,frequency:k}))}>{l}</span>
               ))}
             </div>
@@ -1882,46 +2000,63 @@ function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAcc
 
           <div style={{display:'flex',gap:8,marginBottom:8}}>
             <div style={{flex:1}}>
-              <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>DUE DAY (of month)</div>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DAY</div>
               <input style={iStyle} type="number" min="1" max="31" value={form.due_day}
                 onChange={e=>setForm(f=>({...f,due_day:e.target.value}))} />
             </div>
-            {(form.frequency==='annual'||form.frequency==='half_yearly') && (
+            {['annual','half_yearly','quarterly','bimonthly'].includes(form.frequency) && (
               <div style={{flex:1}}>
-                <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>DUE MONTH (1-12)</div>
+                <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>
+                  {form.frequency==='half_yearly'?'1st MONTH':'DUE MONTH (1-12)'}
+                </div>
                 <input style={iStyle} type="number" min="1" max="12" placeholder="e.g. 10"
-                  value={form.due_month||''} onChange={e=>setForm(f=>({...f,due_month:e.target.value}))} />
+                  value={form.due_month} onChange={e=>setForm(f=>({...f,due_month:e.target.value}))} />
               </div>
             )}
             {form.frequency==='half_yearly' && (
               <div style={{flex:1}}>
-                <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>2ND MONTH</div>
+                <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>2ND MONTH</div>
                 <input style={iStyle} type="number" min="1" max="12" placeholder="e.g. 4"
-                  value={form.due_month2||''} onChange={e=>setForm(f=>({...f,due_month2:e.target.value}))} />
+                  value={form.due_month2} onChange={e=>setForm(f=>({...f,due_month2:e.target.value}))} />
               </div>
             )}
           </div>
 
-          <div style={{marginBottom:8}}>
-            <div style={{fontSize:10,color:'var(--text3)',marginBottom:5,fontFamily:'var(--mono)'}}>ACCOUNT</div>
-            <div style={{display:'flex',flexWrap:'wrap'}}>
-              {allAccounts.map(a=>(
-                <span key={a} style={chipS(form.account===a)} onClick={()=>setForm(f=>({...f,account:a}))}>{a}</span>
-              ))}
+          {addType === 'provision' ? (
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>TRANSFER FROM (source account)</div>
+              <div style={{display:'flex',flexWrap:'wrap'}}>
+                {allBanks.filter(b=>b!=='Cash').map(a=>(
+                  <span key={a} style={chipS(form.account===a)} onClick={()=>setForm(f=>({...f,account:a}))}>{a}</span>
+                ))}
+              </div>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:8,marginBottom:5}}>SAVE INTO (provision account)</div>
+              <div style={{display:'flex',flexWrap:'wrap'}}>
+                {allBanks.filter(b=>b!=='Cash').map(a=>(
+                  <span key={a} style={chipS(form.provision_account===a)} onClick={()=>setForm(f=>({...f,provision_account:a}))}>{a}</span>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>DEFAULT ACCOUNT</div>
+              <div style={{display:'flex',flexWrap:'wrap'}}>
+                {allAccounts.map(a=>(
+                  <span key={a} style={chipS(form.account===a)} onClick={()=>setForm(f=>({...f,account:a}))}>{a}</span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <input style={{...iStyle,marginBottom:8}} placeholder="Category (optional)"
             value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} />
-          <input style={{...iStyle,marginBottom:10}} placeholder="Notes (optional)"
-            value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
 
           <div style={{display:'flex',gap:8}}>
             <button onClick={handleAdd} disabled={saving||!form.name.trim()}
               style={{flex:1,background:saving||!form.name.trim()?'var(--bg3)':'var(--green)',
                 border:'none',borderRadius:8,color:saving||!form.name.trim()?'var(--text3)':'#000',
                 fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>
-              {saving?'Saving...':'Save recurring'}
+              {saving?'Saving...':'Save'}
             </button>
             <button onClick={()=>setAddOpen(false)}
               style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,
@@ -1935,45 +2070,52 @@ function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAcc
       {/* Pending items */}
       {pending.length > 0 && (
         <>
-          <p className="sec-label" style={{color:'var(--amber)'}}>Pending ({pending.length})</p>
-          {pending.map(rec => <RecItem key={rec.id} rec={rec} />)}
+          <p className="sec-label" style={{color:'var(--amber)'}}>Pending — {pending.length}</p>
+          {pending.map(rec => (
+            <RecItem key={rec.id} rec={rec} cl={getCL(rec.id)}
+              onTick={onTick} allAccounts={allAccounts} allBanks={allBanks} />
+          ))}
         </>
       )}
 
       {/* Paid items */}
       {paid.length > 0 && (
         <>
-          <p className="sec-label">Done ({paid.length})</p>
-          {paid.map(rec => <RecItem key={rec.id} rec={rec} />)}
+          <p className="sec-label">Done — {paid.length}</p>
+          {paid.map(rec => (
+            <RecItem key={rec.id} rec={rec} cl={getCL(rec.id)}
+              onTick={onTick} allAccounts={allAccounts} allBanks={allBanks} />
+          ))}
         </>
       )}
 
       {activeItems.length === 0 && !addOpen && (
         <div className="empty">
-          Koi recurring payment nahi hai abhi.<br/>
-          "+ Add" dabao pehla item add karne ke liye.<br/><br/>
+          Koi payment this month nahi.<br/>
+          "+ Add" se recurring items setup karo.<br/><br/>
           <span style={{fontSize:11,color:'var(--text3)'}}>
-            e.g. Society ₹3,690 · Electricity variable · PNG bill variable
+            CC bills automatically dikhenge agar CC balance negative ho.
           </span>
         </div>
       )}
 
-      {/* All recurring list at bottom */}
+      {/* All recurring items management */}
       {recurring.length > 0 && (
         <>
           <p className="sec-label" style={{marginTop:16}}>All recurring items</p>
           {recurring.map(rec => (
             <div key={rec.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
               padding:'9px 14px',borderBottom:'1px solid var(--border)',fontSize:12}}>
-              <div>
-                <span style={{color:'var(--text)'}}>{rec.name}</span>
-                <span style={{color:'var(--text3)',marginLeft:8,fontSize:10,fontFamily:'var(--mono)'}}>
-                  {rec.frequency} · {rec.account}
-                </span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{rec.name}</div>
+                <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
+                  {FREQS.find(f=>f.k===rec.frequency)?.l||rec.frequency} · {rec.account}
+                  {rec.is_provision && <span style={{color:'var(--blue)',marginLeft:6}}>provision → {rec.provision_account}</span>}
+                </div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
                 <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>
-                  {rec.amount?fmtAmt(rec.amount):'variable'}
+                  {rec.amount?fmtAmt(rec.amount):'var'}
                 </span>
                 <button onClick={()=>onDelete(rec.id)}
                   style={{background:'none',border:'1px solid var(--border)',borderRadius:5,
