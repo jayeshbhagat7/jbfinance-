@@ -445,14 +445,16 @@ function App() {
     showToast('✓ Budgets saved');
   };
 
+  const saveCustomCategories = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
+    setCustomCategories(list);
+    showToast('✓ Categories updated');
+  };
+
   const addCustomCategory = async (catObj) => {
     const updated = [...customCategories.filter(c=>c.name!==catObj.name),
       { name: catObj.name, emoji: catObj.emoji||'•', it: catObj.it||'', parent: catObj.parent||null }];
     await saveCustomCategories(updated);
-  };
-    await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
-    setCustomCategories(list);
-    showToast('✓ Categories updated');
   };
 
   const addRecurring = async (entry) => {
@@ -568,6 +570,7 @@ function App() {
           <ProvisionLedger recurring={recurring} txns={txns}
             allBanks={allBanks} onAddTxn={addTxn} showToast={showToast} />
         )}
+        {!loading && tab === 'checklist' && (
           <ChecklistScreen recurring={recurring} checklist={checklist}
             onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring}
             allAccounts={allAccounts} allBanks={allBanks} allCC={allCC}
@@ -1551,139 +1554,7 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
   );
 }
 
-  const filters = ['All','Today','Voided','UA','Income'];
-  const today   = new Date().toDateString();
 
-  // Hide voided entries by default — show only in Voided filter
-  const filtered = txns.filter(t => {
-    if (filter === 'Today')  return new Date(t.created_at).toDateString() === today && t.status !== 'voided';
-    if (filter === 'Voided') return t.status === 'voided';
-    if (filter === 'UA')     return (t.type === 'UA Expense' || t.type === 'UA Received') && t.status !== 'voided';
-    if (filter === 'Income') return (t.type === 'Income' || t.type === 'UA Received') && t.status !== 'voided';
-    return t.status !== 'voided'; // All = active only
-  });
-
-  const amtColor = t => {
-    if (t.status === 'voided') return '';
-    if (t.type === 'Income' || t.type === 'UA Received') return 'in';
-    if (t.type === 'UA Expense') return 'ua';
-    if (t.type === 'Bank→Bank' || t.type === 'Bank→CC') return '';
-    return 'out';
-  };
-
-  const amtSign = t => {
-    if (t.type === 'Income' || t.type === 'UA Received') return '+';
-    return '−';
-  };
-
-  const handleEdit = (t) => {
-    setEditMode(t);
-    setCorrAmt(String(t.amount));
-    setCorrDesc(t.particulars || '');
-    setCorrCat(t.category || '');
-    setCorrDate(new Date(t.created_at).toISOString().slice(0,10));
-  };
-
-  const handleSaveCorrection = async () => {
-    if (!editMode || !corrAmt || saving) return;
-    setSaving(true);
-    await onVoidAndCorrect(editMode, {
-      amount:      parseFloat(corrAmt),
-      particulars: corrDesc || editMode.particulars,
-      category:    corrCat  || editMode.category,
-      created_at:  corrDate ? corrDate + 'T06:30:00.000Z' : editMode.created_at,
-    });
-    setEditMode(null);
-    setSelected(null);
-    setSaving(false);
-  };
-
-  const btnStyle = (col) => ({
-    background:'none', border:`1px solid ${col}`,
-    borderRadius:6, color:col, padding:'5px 12px',
-    fontSize:11, fontFamily:'var(--mono)', cursor:'pointer'
-  });
-
-  return (
-    <div className="fade-in">
-      <div className="chip-row" style={{padding:'12px 16px 0'}}>
-        {filters.map(f => (
-          <div key={f} className={'chip'+(filter===f?' sel':'')} onClick={() => { setFilter(f); setSelected(null); setEditMode(null); }}>{f}</div>
-        ))}
-      </div>
-
-      {filtered.length === 0 && <div className="empty">No transactions found.</div>}
-
-      <div style={{marginTop:8}}>
-        {filtered.map(t => (
-          <div key={t.id}>
-            <div className="txn-row"
-              style={t.status==='voided'?{opacity:0.45}:{}}
-              onClick={() => { setSelected(selected===t.id?null:t.id); setEditMode(null); }}>
-              <div className="txn-left">
-                <div className="txn-cat">
-                  {t.type}{t.tower ? ' · '+t.tower : ''}
-                  {t.status==='voided' && <span style={{marginLeft:6,fontSize:9,color:'var(--red)',fontFamily:'var(--mono)'}}>VOIDED</span>}
-                  {t.correction_of && <span style={{marginLeft:6,fontSize:9,color:'var(--green)',fontFamily:'var(--mono)'}}>CORRECTION</span>}
-                </div>
-                <div className="txn-desc" style={t.status==='voided'?{textDecoration:'line-through'}:{}}>{t.particulars || t.category}</div>
-                <div className="txn-meta">
-                  {fmtDate(t.created_at)} {fmtTime(t.created_at)}
-                  {t.it_section && <span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}
-                </div>
-
-                {/* Expanded actions */}
-                {selected === t.id && t.status !== 'voided' && (
-                  <div style={{marginTop:8,display:'flex',gap:8,flexWrap:'wrap'}}>
-                    <button onClick={(e)=>{e.stopPropagation();handleEdit(t);}}
-                      style={btnStyle('var(--blue)')}>Edit</button>
-                    <button onClick={(e)=>{e.stopPropagation();onDelete(t.id);setSelected(null);}}
-                      style={btnStyle('var(--red)')}>Void</button>
-                  </div>
-                )}
-              </div>
-              <div className="txn-right">
-                <div className={'txn-amt '+amtColor(t)} style={t.status==='voided'?{textDecoration:'line-through'}:{}}>
-                  {amtSign(t)}{fmtAmt(t.amount)}
-                </div>
-                <div className="txn-acct">{t.from_account||t.to_account}</div>
-                {t.status==='pending' && <span className="badge badge-pending">pending</span>}
-              </div>
-            </div>
-
-            {/* Inline edit form */}
-            {editMode?.id === t.id && (
-              <div style={{background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:8,margin:'0 16px 8px',padding:'12px'}}>
-                <p style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 8px',letterSpacing:'0.08em'}}>CORRECT ENTRY — original will be voided</p>
-                <div style={{display:'flex',gap:8,marginBottom:8}}>
-                  <input value={corrAmt} onChange={e=>setCorrAmt(e.target.value)}
-                    placeholder="Amount" type="number"
-                    style={{flex:1,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
-                  <input value={corrDesc} onChange={e=>setCorrDesc(e.target.value)}
-                    placeholder="Description"
-                    style={{flex:2,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none'}}/>
-                </div>
-                <div style={{marginBottom:8}}>
-                  <input type="date" value={corrDate} max={new Date().toISOString().slice(0,10)}
-                    onChange={e=>setCorrDate(e.target.value)}
-                    style={{width:'100%',background:'var(--bg3)',border:'1px solid '+(corrDate!==new Date(editMode.created_at).toISOString().slice(0,10)?'var(--amber)':'var(--border2)'),borderRadius:6,padding:'7px 10px',color:corrDate!==new Date(editMode.created_at).toISOString().slice(0,10)?'var(--amber)':'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none'}}/>
-                </div>
-                <div style={{display:'flex',gap:8}}>
-                  <button onClick={handleSaveCorrection} disabled={saving}
-                    style={{flex:1,background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',padding:'8px',fontSize:11,fontFamily:'var(--mono)',fontWeight:600,cursor:'pointer'}}>
-                    {saving?'Saving...':'Save correction'}
-                  </button>
-                  <button onClick={()=>setEditMode(null)}
-                    style={btnStyle('var(--text3)')}>Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 // ── DASHBOARD SCREEN — COMPACT ───────────────────────
 function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpendable, recurring, checklist }) {
