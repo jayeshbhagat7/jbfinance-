@@ -445,14 +445,16 @@ function App() {
     showToast('✓ Budgets saved');
   };
 
+  const saveCustomCategories = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
+    setCustomCategories(list);
+    showToast('✓ Categories updated');
+  };
+
   const addCustomCategory = async (catObj) => {
     const updated = [...customCategories.filter(c=>c.name!==catObj.name),
       { name: catObj.name, emoji: catObj.emoji||'•', it: catObj.it||'', parent: catObj.parent||null }];
     await saveCustomCategories(updated);
-  };
-    await db.from('settings').upsert({ key: 'custom_categories', value: JSON.stringify(list) });
-    setCustomCategories(list);
-    showToast('✓ Categories updated');
   };
 
   const addRecurring = async (entry) => {
