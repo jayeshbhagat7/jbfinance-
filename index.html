@@ -1099,7 +1099,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   // ── FORM MODE
   if (mode === 'form') {
     return (
-      <div className="fade-in" style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:12}}>
+      <div className="fade-in" style={{padding:'12px 16px',paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)',display:'flex',flexDirection:'column',gap:12}}>
 
         {/* Mode toggle */}
         <div style={{display:'flex',justifyContent:'flex-end',gap:6}}>
@@ -1233,7 +1233,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
 
   // ── KEYPAD MODE
   return (
-    <div className="fade-in">
+    <div className="fade-in" style={{paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)'}}>
       {/* Mode toggle */}
       <div style={{display:'flex',justifyContent:'flex-end',gap:6,padding:'8px 16px'}}>
         <span style={chipStyle(mode==='form')} onClick={() => setMode('form')}>Form</span>
