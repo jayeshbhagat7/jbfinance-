@@ -579,6 +579,10 @@ function App() {
         {!loading && tab === 'udhari' && (
           <UdhariScreen udhari={udhari} onAdd={addUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} />
         )}
+        {!loading && tab === 'statement' && (
+          <StatementScreen txns={txns} allAccounts={allAccounts}
+            allBanks={allBanks} allCC={allCC} opening={opening} balances={balances} />
+        )}
         {!loading && tab === 'settings' && (
           <SettingsScreen
             opening={opening} onSave={saveOpening}
@@ -640,6 +644,7 @@ function App() {
               {label:'Dashboard',icon:'◈',id:'dash'},
               {label:'Add Entry',icon:'+',id:'add'},
               {label:'Transaction Log',icon:'≡',id:'txns'},
+              {label:'Account Statement',icon:'◧',id:'statement'},
               {label:'Udhari Ledger',icon:'◎',id:'udhari'},
             ].map(item => (
               <div key={item.id} onClick={() => { setTab(item.id); setMenuOpen(false); }}
@@ -719,7 +724,24 @@ function App() {
       )}
 
       <TabBar tab={tab} setTab={setTab} udahriCount={Math.round(udhariOutstanding)}
-        checklistPending={checklist.filter(c=>c.status==='pending').length} />
+        checklistPending={(() => {
+          const _n=new Date(),_m=_n.getMonth()+1,_y=_n.getFullYear();
+          const _due=(r)=>{
+            if(!r.active&&r.active!==undefined)return false;
+            if(r.frequency==='monthly')return true;
+            if(r.frequency==='bimonthly')return((_m-(r.due_month||1))%2===0)&&_m>=(r.due_month||1);
+            if(r.frequency==='quarterly')return((_m-(r.due_month||1))%3===0)&&_m>=(r.due_month||1);
+            if(r.frequency==='half_yearly')return _m===r.due_month||_m===r.due_month2;
+            if(r.frequency==='annual')return _m===r.due_month;
+            return false;
+          };
+          const _ccIds=allCC.filter(a=>(balances[a]||0)<0).map(a=>'cc-'+a);
+          const _recIds=recurring.filter(_due).map(r=>r.id);
+          return [..._ccIds,..._recIds].filter(id=>{
+            const cl=checklist.find(c=>c.recurring_id===id&&c.month===_m&&c.year===_y);
+            return !cl||cl.status!=='paid';
+          }).length;
+        })()} />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
@@ -753,7 +775,7 @@ function computeBalances(opening, txns, allBanks, allCC) {
 
 // ── HEADER ───────────────────────────────────────────
 function Header({ liquid, tab, onMenu }) {
-  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills', provision:'Provision Ledger' };
+  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills', provision:'Provision Ledger', statement:'Account Statement' };
   return (
     <div className="header">
       <button onClick={onMenu}
@@ -1353,11 +1375,19 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
   const [corrDate, setCorrDate] = useState('');
   const [corrFrom, setCorrFrom] = useState('');
   const [corrTo,   setCorrTo]   = useState('');
+  const [search,   setSearch]   = useState('');
 
   const filters = ['All','Today','Voided','UA','Income'];
   const today   = new Date().toDateString();
 
   const filtered = txns.filter(t => {
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      if (!(t.particulars||'').toLowerCase().includes(q) &&
+          !(t.category||'').toLowerCase().includes(q) &&
+          !String(t.amount).includes(q) &&
+          !(t.from_account||t.to_account||'').toLowerCase().includes(q)) return false;
+    }
     if (filter === 'Today')  return new Date(t.created_at).toDateString() === today && t.status !== 'voided';
     if (filter === 'Voided') return t.status === 'voided';
     if (filter === 'UA')     return (t.type==='UA Expense'||t.type==='UA Received') && t.status!=='voided';
@@ -1429,14 +1459,31 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
 
   return (
     <div className="fade-in">
-      <div className="chip-row" style={{padding:'12px 16px 0'}}>
+      {/* Search bar */}
+      <div style={{padding:'10px 16px 0',display:'flex',alignItems:'center',gap:8}}>
+        <div style={{flex:1,position:'relative'}}>
+          <input
+            value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);setEditMode(null);}}
+            placeholder="Search description, category, amount, account..."
+            style={{width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',
+              borderRadius:8,padding:'8px 12px 8px 32px',color:'var(--text)',
+              fontFamily:'var(--mono)',fontSize:12,outline:'none',
+              borderColor:search?'var(--blue)':'var(--border)'}} />
+          <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',
+            fontSize:13,color:'var(--text3)',pointerEvents:'none'}}>⌕</span>
+        </div>
+        {search && <button onClick={()=>setSearch('')}
+          style={{background:'none',border:'none',color:'var(--text3)',fontSize:16,cursor:'pointer',padding:'0 4px'}}>✕</button>}
+      </div>
+      <div className="chip-row" style={{padding:'8px 16px 0'}}>
         {filters.map(f => (
           <div key={f} className={'chip'+(filter===f?' sel':'')}
             onClick={() => { setFilter(f); setSelected(null); setEditMode(null); }}>{f}</div>
         ))}
       </div>
 
-      {filtered.length===0 && <div className="empty">No transactions found.</div>}
+      {search && <div style={{padding:'4px 16px',fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)'}}>{filtered.length} result{filtered.length!==1?'s':''} for "{search}"</div>}
+      {filtered.length===0 && <div className="empty">{search?'No results for "'+search+'"':'No transactions found.'}</div>}
 
       <div style={{marginTop:8}}>
         {filtered.map(t => (
@@ -2754,6 +2801,182 @@ function ProvisionLedger({ recurring, txns, allBanks, onAddTxn, showToast }) {
 }
 
 // ── SETTINGS SCREEN ──────────────────────────────────
+
+// ── STATEMENT SCREEN — Per-account ledger ───────────────
+function StatementScreen({ txns, allAccounts, allBanks, allCC, opening, balances }) {
+  const [acct, setAcct]     = useState(allBanks[0] || 'KB');
+  const [period, setPeriod] = useState('this_month');
+
+  const now   = new Date();
+  const month = now.getMonth();
+  const year  = now.getFullYear();
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  // Filter txns relevant to selected account
+  const acctTxns = txns
+    .filter(t => t.status !== 'voided')
+    .filter(t => t.from_account === acct || t.to_account === acct)
+    .filter(t => {
+      const d = new Date(t.created_at);
+      if (period === 'this_month') return d.getMonth()===month && d.getFullYear()===year;
+      if (period === 'last_month') {
+        const lm = month===0?11:month-1; const ly = month===0?year-1:year;
+        return d.getMonth()===lm && d.getFullYear()===ly;
+      }
+      if (period === 'this_year') return d.getFullYear()===year;
+      return true; // all
+    })
+    .sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+
+  // Compute opening balance for this period
+  const allBeforePeriod = txns
+    .filter(t => t.status !== 'voided')
+    .filter(t => t.from_account === acct || t.to_account === acct)
+    .filter(t => {
+      if (period === 'all') return false;
+      const d = new Date(t.created_at);
+      if (period === 'this_month') return d < new Date(year, month, 1);
+      if (period === 'last_month') {
+        const lm = month===0?11:month-1; const ly = month===0?year-1:year;
+        return d < new Date(ly, lm, 1);
+      }
+      if (period === 'this_year') return d < new Date(year, 0, 1);
+      return false;
+    });
+
+  const isCC = allCC.includes(acct);
+
+  const effectOnAcct = (t) => {
+    const amt = parseFloat(t.amount) || 0;
+    if (t.type === 'Expense' || t.type === 'UA Expense') {
+      return t.from_account === acct ? -amt : 0;
+    }
+    if (t.type === 'Income' || t.type === 'UA Received') {
+      return t.to_account === acct ? +amt : 0;
+    }
+    // Transfers
+    let effect = 0;
+    if (t.from_account === acct) effect -= amt;
+    if (t.to_account   === acct) effect += amt;
+    return effect;
+  };
+
+  const openingBal = (opening[acct] || 0) + allBeforePeriod.reduce((s,t) => s + effectOnAcct(t), 0);
+
+  // Running balance
+  let runBal = openingBal;
+  const rows = acctTxns.map(t => {
+    const effect = effectOnAcct(t);
+    runBal += effect;
+    return { ...t, effect, runBal };
+  });
+
+  const closingBal = runBal;
+  const totalIn  = rows.filter(r=>r.effect>0).reduce((s,r)=>s+r.effect,0);
+  const totalOut = rows.filter(r=>r.effect<0).reduce((s,r)=>s+Math.abs(r.effect),0);
+
+  const periodLabel = {this_month:`${MONTHS[month]} ${year}`, last_month:`${MONTHS[month===0?11:month-1]} ${month===0?year-1:year}`, this_year:`FY ${year}`, all:'All Time'}[period];
+
+  const chipS = (active) => ({
+    display:'inline-block', border: active?'1px solid var(--green)':'1px solid var(--border2)',
+    borderRadius:14, padding:'6px 12px', fontFamily:'var(--mono)', fontSize:11,
+    color: active?'var(--green)':'var(--text2)', background: active?'var(--green-bg)':'var(--bg2)',
+    cursor:'pointer', userSelect:'none', margin:'0 4px 4px 0',
+  });
+
+  return (
+    <div className="fade-in">
+
+      {/* Account selector */}
+      <p className="sec-label">Select Account</p>
+      <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>
+        {[...allBanks,...allCC].map(a => (
+          <div key={a} style={chipS(acct===a)} onClick={()=>setAcct(a)}>{a}</div>
+        ))}
+      </div>
+
+      {/* Period selector */}
+      <p className="sec-label">Period</p>
+      <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>
+        {[['this_month','This Month'],['last_month','Last Month'],['this_year','This Year'],['all','All Time']].map(([k,l]) => (
+          <div key={k} style={chipS(period===k)} onClick={()=>setPeriod(k)}>{l}</div>
+        ))}
+      </div>
+
+      {/* Summary strip */}
+      <div style={{margin:'8px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px'}}>
+        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:8,letterSpacing:'0.08em',textTransform:'uppercase'}}>{acct} — {periodLabel}</div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
+          <div>
+            <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Opening</div>
+            <div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:openingBal<0?'var(--red)':'var(--text)'}}>{openingBal<0?'−':''}{fmtAmt(Math.abs(openingBal))}</div>
+          </div>
+          <div>
+            <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{isCC?'Spent':'In / Out'}</div>
+            <div style={{fontSize:12,fontFamily:'var(--mono)'}}>
+              <span style={{color:'var(--green)'}}>+{fmtAmt(totalIn)}</span>
+              <span style={{color:'var(--text3)',margin:'0 3px'}}>/</span>
+              <span style={{color:'var(--red)'}}>−{fmtAmt(totalOut)}</span>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Closing</div>
+            <div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:closingBal<0?'var(--red)':'var(--green)'}}>{closingBal<0?'−':''}{fmtAmt(Math.abs(closingBal))}</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Transaction rows with running balance */}
+      {rows.length === 0 && <div className="empty">No transactions for this account in this period.</div>}
+
+      <div style={{margin:'0 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+        {/* Header row */}
+        {rows.length > 0 && (
+          <div style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
+            <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Description</span>
+            <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em',textAlign:'right'}}>Amount</span>
+            <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em',textAlign:'right',minWidth:80}}>Balance</span>
+          </div>
+        )}
+
+        {rows.map((t,i) => (
+          <div key={t.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:8,
+            padding:'10px 12px',borderBottom:i<rows.length-1?'1px solid var(--border)':'none',
+            background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+            {/* Left: desc + meta */}
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                {t.particulars || t.category || t.type}
+              </div>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
+                {fmtDate(t.created_at)}
+                {t.category && <span style={{marginLeft:6}}>{t.category}</span>}
+                {t.from_account===acct && t.to_account && <span style={{marginLeft:6,color:'var(--blue)'}}>→{t.to_account}</span>}
+                {t.to_account===acct && t.from_account && <span style={{marginLeft:6,color:'var(--green)'}}>←{t.from_account}</span>}
+              </div>
+            </div>
+            {/* Amount */}
+            <div style={{textAlign:'right',flexShrink:0}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
+                color:t.effect>0?'var(--green)':t.effect<0?'var(--red)':'var(--text3)'}}>
+                {t.effect>0?'+':'−'}{fmtAmt(Math.abs(t.effect))}
+              </div>
+            </div>
+            {/* Running balance */}
+            <div style={{textAlign:'right',minWidth:80,flexShrink:0}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:12,
+                color:t.runBal<0?'var(--red)':'var(--text2)'}}>
+                {t.runBal<0?'−':''}{fmtAmt(Math.abs(t.runBal))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
 function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAccounts, customCategories, onSaveCategories, budgets, onSaveBudgets }) {
   const [ob, setOb]             = useState({ ...opening });
   const [savedBal, setSavedBal] = useState(false);
@@ -2927,7 +3150,7 @@ function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAc
 
       <p className="sec-label">About</p>
       <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
-        JB Finance v1.3<br/>
+        JB Finance v1.5<br/>
         Built for Jayesh Bhagat<br/>
         Umiya Associates · Mumbai
       </div>
