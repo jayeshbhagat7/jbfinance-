@@ -981,7 +981,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
 
   const needCat  = type === 'Expense';
   const needFrom = ['Expense','UA Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(type);
-  const needTo   = ['Income','UA Received','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank'].includes(type);
+  const needTo   = ['Income','UA Received','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank','Bank-Cash'].includes(type);
 
   const fromList = () => {
     if (type === 'Bank-CC' || type === 'Bank-Bank' || type === 'Bank-Cash') return allBanks.filter(a=>a!=='Cash');
@@ -1008,11 +1008,25 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const selectType = (t) => {
     setType(t);
     setCat('');
-    setTo('');
-    // Set sensible default from_account per type
-    if (t === 'Bank-CC' || t === 'Bank-Bank' || t === 'Bank-Cash') setFrom(allBanks.find(a=>a!=='Cash')||'KB');
-    else if (t === 'Cash-Bank') setFrom('Cash');
-    else if (t === 'CC-Bank') setFrom(allCC[0]||'SBI CC');
+    // Auto-set accounts for fixed-destination transfer types
+    if (t === 'Bank-Cash') {
+      setFrom(allBanks.find(a=>a!=='Cash')||'KB');
+      setTo('Cash');
+    } else if (t === 'Cash-Bank') {
+      setFrom('Cash');
+      setTo(allBanks.find(a=>a!=='Cash')||'KB');
+    } else if (t === 'Bank-CC') {
+      setFrom(allBanks.find(a=>a!=='Cash')||'KB');
+      setTo(allCC[0]||'SBI CC');
+    } else if (t === 'Bank-Bank') {
+      setFrom(allBanks.find(a=>a!=='Cash')||'KB');
+      setTo('');
+    } else if (t === 'CC-Bank') {
+      setFrom(allCC[0]||'SBI CC');
+      setTo(allBanks.find(a=>a!=='Cash')||'KB');
+    } else {
+      setTo('');
+    }
     else setFrom('Cash');
   };
 
