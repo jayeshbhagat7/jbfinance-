@@ -1688,6 +1688,8 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   allCC    = allCC    || CC_ACCTS;
   budgets  = budgets  || {};
 
+  const [drillDown, setDrillDown] = useState(null);
+
   const now    = new Date();
   const month  = now.getMonth();
   const year   = now.getFullYear();
@@ -1710,12 +1712,10 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
   const spendable = trueSpendable !== undefined ? trueSpendable : Math.max(0, liquid - totalCC);
 
-  // Category spend this month
   const cats = {};
   thisMonth.filter(t=>t.type==='Expense').forEach(t=>{ const c=t.category||'Misc'; cats[c]=(cats[c]||0)+(+t.amount); });
   const topCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  // IT — full year
   const fy = active.filter(t=>{ const d=new Date(t.created_at); const yr=d.getFullYear(),mo=d.getMonth(); return (yr===year&&mo>=3)||(yr===year+1&&mo<3); });
   const it80C = fy.filter(t=>t.it_section==='80C').reduce((s,t)=>s+(+t.amount),0);
   const it80D = fy.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
@@ -1723,7 +1723,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   const gap80D = Math.max(0,50000-it80D);
   const taxSave = Math.round((gap80C)*0.3);
 
-  // Alerts — only real ones
   const alerts = [];
   ccDues.forEach(x => alerts.push({ r:'red', t: x.name+' — '+fmtAmt(x.due)+' due' }));
   if (uaOut>0) alerts.push({ r:'amber', t:'UA outstanding — '+fmtAmt(uaOut) });
@@ -1738,12 +1737,13 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
     </div>
   );
 
-  const Row = ({a,b,c,dim,red,grn,amb}) => (
-    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 12px',borderBottom:'1px solid var(--border)',fontSize:12,alignItems:'center'}}>
+  const Row = ({a,b,c,dim,red,grn,amb,onClick}) => (
+    <div onClick={onClick} style={{display:'flex',justifyContent:'space-between',padding:'7px 12px',borderBottom:'1px solid var(--border)',fontSize:12,alignItems:'center',cursor:onClick?'pointer':'default'}}>
       <span style={{color:dim?'var(--text3)':'var(--text2)'}}>{a}</span>
       <div style={{display:'flex',gap:12,alignItems:'center'}}>
         {c&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{c}</span>}
         <span style={{fontFamily:'var(--mono)',fontWeight:600,color:red?'var(--red)':grn?'var(--green)':amb?'var(--amber)':'var(--text)'}}>{b}</span>
+        {onClick&&<span style={{fontSize:10,color:'var(--text3)'}}>›</span>}
       </div>
     </div>
   );
@@ -1759,10 +1759,80 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
     <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',marginBottom:8}}>{children}</div>
   );
 
+  // ── DRILL-DOWN VIEW
+  if (drillDown) {
+    const drillTxns = active
+      .filter(t => {
+        if (drillDown.type === 'account')  return t.from_account === drillDown.id || t.to_account === drillDown.id;
+        if (drillDown.type === 'category') return t.category === drillDown.id && t.type === 'Expense';
+        return false;
+      })
+      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
+
+    const drillAmtColor = t => {
+      if (drillDown.type === 'category') return 'var(--red)';
+      if (t.type==='Income'||t.type==='UA Received') return 'var(--green)';
+      if (t.to_account===drillDown.id && t.from_account!==drillDown.id) return 'var(--green)';
+      return 'var(--red)';
+    };
+    const drillAmtSign = t => {
+      if (drillDown.type === 'category') return '−';
+      if (t.type==='Income'||t.type==='UA Received') return '+';
+      if (t.to_account===drillDown.id && t.from_account!==drillDown.id) return '+';
+      return '−';
+    };
+
+    return (
+      <div className="fade-in">
+        <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',
+          borderBottom:'1px solid var(--border)',background:'var(--bg2)',
+          position:'sticky',top:0,zIndex:10}}>
+          <button onClick={()=>setDrillDown(null)}
+            style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,
+              color:'var(--text2)',fontFamily:'var(--mono)',fontSize:12,
+              padding:'5px 10px',cursor:'pointer'}}>
+            ← Back
+          </button>
+          <div>
+            <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--text)'}}>{drillDown.id}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{drillTxns.length} transaction{drillTxns.length!==1?'s':''}</div>
+          </div>
+        </div>
+
+        {drillTxns.length === 0 && <div className="empty">No transactions found.</div>}
+
+        <div>
+          {drillTxns.map(t => (
+            <div key={t.id} className="txn-row">
+              <div className="txn-left">
+                <div className="txn-cat">
+                  {t.type}
+                  {t.correction_of&&<span style={{marginLeft:6,fontSize:9,color:'var(--green)',fontFamily:'var(--mono)'}}>CORRECTION</span>}
+                </div>
+                <div className="txn-desc">{t.particulars||t.category}</div>
+                <div className="txn-meta">
+                  {fmtDate(t.created_at)} {fmtTime(t.created_at)}
+                  {t.category&&t.category!==t.type&&<span style={{color:'var(--text3)',marginLeft:6}}>{t.category}</span>}
+                  {t.it_section&&<span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}
+                </div>
+              </div>
+              <div className="txn-right">
+                <div className="txn-amt" style={{color:drillAmtColor(t)}}>
+                  {drillAmtSign(t)}{fmtAmt(t.amount)}
+                </div>
+                <div className="txn-acct">{t.from_account||t.to_account}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── NORMAL DASHBOARD
   return (
     <div className="fade-in" style={{padding:'8px 12px'}}>
 
-      {/* ── ALERTS — compact pills */}
       {alerts.length>0 && (
         <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:8}}>
           {alerts.map((a,i)=>(
@@ -1773,7 +1843,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         </div>
       )}
 
-      {/* ── TOP 4 METRICS */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
         <D label="Liquid balance" val={fmtAmt(liquid)} grn/>
         <D label="Available Today" val={fmtAmt(spendable)} col={spendable<10000?'var(--red)':spendable<30000?'var(--amber)':'var(--green)'} sub="liquid − CC − provisions"/>
@@ -1781,17 +1850,16 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         <D label={MONTHS[month]+' expense'} val={expense>0?fmtAmt(expense):'—'} col="var(--red)"/>
       </div>
 
-      {/* ── BANKS + CC in one card */}
       <Card>
         <Hdr t="Accounts" v={fmtAmt(liquid)} col="var(--green)"/>
         {allBanks.map(a=>{
           const b=balances[a]||0;
-          return <Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0}/>;
+          return <Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>setDrillDown({type:'account',id:a})}/>;
         })}
         {ccDues.length>0 && (
           <>
             <div style={{padding:'5px 12px',background:'var(--bg3)',fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>CC PAYABLE</div>
-            {ccDues.map(x=><Row key={x.name} a={x.name} b={fmtAmt(x.due)} amb/>)}
+            {ccDues.map(x=><Row key={x.name} a={x.name} b={fmtAmt(x.due)} amb onClick={()=>setDrillDown({type:'account',id:x.name})}/>)}
             <div style={{padding:'6px 12px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontSize:11,fontFamily:'var(--mono)'}}>
               <span style={{color:'var(--text3)'}}>Total payable</span>
               <span style={{color:'var(--amber)',fontWeight:600}}>{fmtAmt(totalCC)}</span>
@@ -1800,7 +1868,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         )}
       </Card>
 
-      {/* ── EXPENSE + BUDGET in one card */}
       {topCats.length>0 && (
         <Card>
           <Hdr t={MONTHS[month]+' spend'} v={fmtAmt(expense)} col="var(--red)"/>
@@ -1809,13 +1876,15 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
             const over=lim>0&&v>lim;
             const pct=lim>0?Math.min(Math.round(v/lim*100),100):0;
             return (
-              <div key={c} style={{padding:'7px 12px',borderBottom:'1px solid var(--border)'}}>
+              <div key={c} onClick={()=>setDrillDown({type:'category',id:c})}
+                style={{padding:'7px 12px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:lim>0?3:0}}>
                   <span style={{color:'var(--text2)'}}>{c}</span>
                   <div style={{display:'flex',gap:8,alignItems:'center'}}>
                     {lim>0&&<span style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)'}}>{fmtAmt(lim)}</span>}
                     <span style={{fontFamily:'var(--mono)',fontWeight:600,color:over?'var(--red)':pct>=80?'var(--amber)':'var(--text)'}}>{fmtAmt(v)}</span>
                     {over&&<span style={{fontSize:9,color:'var(--red)',fontFamily:'var(--mono)'}}>OVER</span>}
+                    <span style={{fontSize:10,color:'var(--text3)'}}>›</span>
                   </div>
                 </div>
                 {lim>0&&<div style={{background:'var(--bg3)',borderRadius:2,height:3}}><div style={{height:3,borderRadius:2,width:pct+'%',background:over?'var(--red)':pct>=80?'var(--amber)':'var(--blue)'}}/></div>}
@@ -1826,7 +1895,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         </Card>
       )}
 
-      {/* ── UA outstanding — only if exists */}
       {uaOut>0 && (
         <Card>
           <Hdr t="UA outstanding" v={fmtAmt(uaOut)} col="var(--amber)"/>
@@ -1839,7 +1907,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         </Card>
       )}
 
-      {/* ── IT DEDUCTIONS — compact 2-col */}
       <Card>
         <Hdr t={'IT deductions FY'+year+'-'+(year+1).toString().slice(2)} v={taxSave>0?'Save '+fmtAmt(taxSave):undefined} col="var(--green)"/>
         <div style={{display:'grid',gridTemplateColumns:'1fr 1fr'}}>
@@ -1864,7 +1931,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         </div>
       </Card>
 
-      {/* ── CASHFLOW — only if income exists */}
       {income>0 && (
         <Card>
           <Hdr t="Next month estimate"/>
@@ -1883,6 +1949,7 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
     </div>
   );
 }
+
 
 // ── UDHARI SCREEN ────────────────────────────────────
 function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
