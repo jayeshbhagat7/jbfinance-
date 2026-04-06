@@ -2090,6 +2090,9 @@ function InvestmentsScreen({ investments, setInvestments, showToast }) {
   };
 
   const handleDelete = async (id) => {
+    // SAFETY LOCK ADDED HERE
+    if (!window.confirm('Are you sure you want to sell/remove this asset?')) return;
+    
     const { error } = await db.from('investments').delete().eq('id', id);
     if (!error) {
       setInvestments(investments.filter(i => i.id !== id));
@@ -2178,26 +2181,34 @@ function InvestmentsScreen({ investments, setInvestments, showToast }) {
                     {inv.qty} units @ ₹{inv.buy_price} · {new Date(inv.buy_date).toLocaleDateString('en-IN', {day:'numeric',month:'short'})}
                   </div>
                 </div>
-                <div style={{textAlign:'right'}}>
+                
+                {/* Cleaned up Right Side */}
+                <div style={{textAlign:'right', display:'flex', flexDirection:'column', alignItems:'flex-end'}}>
                   <div style={{fontFamily:'var(--mono)', fontSize:14, fontWeight:600}}>₹{current.toLocaleString('en-IN')}</div>
                   <div style={{fontSize:10, fontFamily:'var(--mono)', color: profit >= 0 ? 'var(--green)' : 'var(--red)', marginTop:2}}>
                     {profit >= 0 ? '+' : '−'}₹{Math.abs(profit).toLocaleString('en-IN')} ({pct.toFixed(1)}%)
                   </div>
+                  
+                  {/* Subtle Edit Button */}
+                  {editingId !== inv.id && (
+                    <button onClick={() => { setEditingId(inv.id); setEditPrice(inv.current_price); }} style={{background:'none', border:'none', color:'var(--text3)', fontFamily:'var(--mono)', fontSize:10, cursor:'pointer', marginTop:6, padding:'2px'}}>
+                      ⚙ Edit
+                    </button>
+                  )}
                 </div>
               </div>
               
-              <div style={{display:'flex', gap:8, marginTop:12}}>
-                {editingId === inv.id ? (
+              {/* Expandable Edit Row */}
+              {editingId === inv.id && (
+                <div style={{display:'flex', gap:8, marginTop:12, paddingTop:12, borderTop:'1px solid var(--border)'}}>
                   <div style={{display:'flex', gap:6, flex:1}}>
                     <input type="number" step="any" autoFocus placeholder="New Price" value={editPrice} onChange={e=>setEditPrice(e.target.value)} style={{...iS, padding:'6px 8px'}} />
                     <button onClick={() => handleUpdatePrice(inv.id)} style={{background:'var(--blue)', border:'none', borderRadius:6, color:'#fff', padding:'0 12px', fontFamily:'var(--mono)', fontSize:11, cursor:'pointer'}}>Save</button>
                     <button onClick={() => setEditingId(null)} style={{background:'none', border:'1px solid var(--border2)', borderRadius:6, color:'var(--text3)', padding:'0 10px', fontFamily:'var(--mono)', fontSize:11, cursor:'pointer'}}>✕</button>
                   </div>
-                ) : (
-                  <button onClick={() => { setEditingId(inv.id); setEditPrice(inv.current_price); }} style={{flex:1, background:'none', border:'1px solid var(--border)', borderRadius:6, color:'var(--blue)', fontFamily:'var(--mono)', fontSize:11, padding:'6px', cursor:'pointer'}}>Update Price</button>
-                )}
-                <button onClick={() => handleDelete(inv.id)} style={{flex:1, background:'none', border:'1px solid var(--border)', borderRadius:6, color:'var(--red)', fontFamily:'var(--mono)', fontSize:11, padding:'6px', cursor:'pointer'}}>Sell / Remove</button>
-              </div>
+                  <button onClick={() => handleDelete(inv.id)} style={{background:'var(--red-bg)', border:'1px solid var(--red)', borderRadius:6, color:'var(--red)', fontFamily:'var(--mono)', fontSize:11, padding:'0 12px', cursor:'pointer'}}>Sell / Remove</button>
+                </div>
+              )}
             </div>
           );
         })}
@@ -2205,7 +2216,6 @@ function InvestmentsScreen({ investments, setInvestments, showToast }) {
     </div>
   );
 }
-
 // ── UDHARI SCREEN ────────────────────────────────────
 function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
   const [view, setView]       = useState('list');   // 'list' | 'add' | 'person'
