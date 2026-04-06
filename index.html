@@ -1531,6 +1531,8 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
     return true;
   });
 
+  const filteredTotal = filtered.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
   const amtColor = t => {
     if (t.status==='voided') return '';
     if (t.type==='Income'||t.type==='UA Received') return 'in';
@@ -1637,14 +1639,34 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
                   padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}} />
             </>
           )}
-          <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginLeft:'auto'}}>
-            {filtered.length} txn{filtered.length!==1?'s':''}
-          </span>
         </div>
       </div>
 
-      {search && <div style={{padding:'4px 16px',fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)'}}>{filtered.length} result{filtered.length!==1?'s':''} for "{search}"</div>}
-      {filtered.length===0 && <div className="empty">{search?'No results for "'+search+'"':'No transactions found.'}</div>}
+      {/* ── FILTERED TOTAL STRIP */}
+      <div style={{
+        position:'sticky', top:0, zIndex:10,
+        background:'var(--bg)',
+        borderBottom:'1px solid var(--border)',
+        borderTop:'1px solid var(--border)',
+        marginTop:8,
+      }}>
+        {filtered.length > 0 ? (
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px'}}>
+            <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>
+              {filtered.length} txn{filtered.length!==1?'s':''}
+              {search && <span style={{color:'var(--blue)',marginLeft:4}}>· "{search}"</span>}
+            </span>
+            <div style={{display:'flex',alignItems:'baseline',gap:4}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>Total</span>
+              <span style={{fontFamily:'var(--mono)',fontSize:17,fontWeight:700,color:'var(--text)',letterSpacing:'-0.3px'}}>
+                ₹{filteredTotal.toLocaleString('en-IN')}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="empty">{search ? `No results for "${search}"` : 'No transactions found.'}</div>
+        )}
+      </div>
 
       <div style={{marginTop:8}}>
         {filtered.map(t => (
