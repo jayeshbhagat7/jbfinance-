@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,31 +15,31 @@
 /* ── RESET & BASE ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:       #0a0a0a;
-  --bg2:      #141414;
-  --bg3:      #1c1c1c;
-  --bg4:      #242424;
-  --border:   #2a2a2a;
-  --border2:  #333;
-  --text:     #f0f0f0;
-  --text2:    #999;
-  --text3:    #555;
-  --green:    #22c55e;
-  --green-bg: #052012;
-  --red:      #ef4444;
-  --red-bg:   #1a0505;
-  --amber:    #f59e0b;
-  --amber-bg: #1a1005;
-  --blue:     #3b82f6;
-  --blue-bg:  #05102a;
+  --bg:       #ffffff;
+  --bg2:      #f8f9fa;
+  --bg3:      #f1f3f5;
+  --bg4:      #e9ecef;
+  --border:   #e5e7eb;
+  --border2:  #d1d5db;
+  --text:     #111827;
+  --text2:    #4b5563;
+  --text3:    #6b7280;
+  --green:    #059669;
+  --green-bg: #d1fae5;
+  --red:      #dc2626;
+  --red-bg:   #fee2e2;
+  --amber:    #d97706;
+  --amber-bg: #fef3c7;
+  --blue:     #2563eb;
+  --blue-bg:  #dbeafe;
   --mono:     'IBM Plex Mono', monospace;
   --sans:     'IBM Plex Sans', sans-serif;
   --radius:   10px;
   --tab-h:    60px;
   --safe-b:   env(safe-area-inset-bottom, 0px);
 }
-html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow: hidden; }
-#root { height: 100%; display: flex; flex-direction: column; }
+html, body { height: 100%; background: #e5e7eb; color: var(--text); font-family: var(--sans); overflow: hidden; }
+#root { display: flex; flex-direction: column; height: 100vh; max-width: 600px; margin: 0 auto; position: relative; background: var(--bg); border-left: 1px solid var(--border); border-right: 1px solid var(--border); box-shadow: 0 0 20px rgba(0,0,0,0.05); }
 
 /* ── SCROLLBAR ── */
 ::-webkit-scrollbar { width: 3px; }
@@ -67,10 +67,11 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 /* ── TABS ── */
 .tabs {
-  position: fixed;
+  position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
+  width: 100%;
   height: calc(var(--tab-h) + var(--safe-b));
   padding-bottom: var(--safe-b);
   background: var(--bg2);
@@ -158,9 +159,9 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 
 /* ── BADGE ── */
 .badge { font-family: var(--mono); font-size: 9px; font-weight: 600; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.05em; text-transform: uppercase; display: inline-block; }
-.badge-pending { background: var(--amber-bg); color: var(--amber); border: 1px solid #3a2500; }
-.badge-ua      { background: var(--amber-bg); color: var(--amber); border: 1px solid #3a2500; }
-.badge-in      { background: var(--green-bg); color: var(--green); border: 1px solid #052012; }
+.badge-pending { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+.badge-ua      { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber); }
+.badge-in      { background: var(--green-bg); color: var(--green); border: 1px solid var(--green); }
 
 /* ── METRIC CARD ── */
 .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 16px; }
@@ -203,6 +204,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 input[type=number], input[type=text] { background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 8px 10px; color: var(--text); font-family: var(--mono); font-size: 13px; outline: none; width: 100%; -webkit-appearance: none; }
 input[type=number]:focus, input[type=text]:focus { border-color: var(--green); }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -329,6 +331,7 @@ function App() {
   const [menuOpen, setMenuOpen]             = useState(false);
   const [quickAdd, setQuickAdd]             = useState(false);
   const [loading, setLoading]               = useState(true);
+  const [globalSearch, setGlobalSearch]     = useState('');
 
   const showToast = msg => {
     setToast(msg);
@@ -579,11 +582,13 @@ function App() {
         )}
         {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn}
           onVoidAndCorrect={voidAndCorrect} allAccounts={allAccounts}
-          allBanks={allBanks} allCC={allCC} allCategories={allCategories} />}
+          allBanks={allBanks} allCC={allCC} allCategories={allCategories}
+          globalSearch={globalSearch} setGlobalSearch={setGlobalSearch} />}
         {!loading && tab === 'dash' && (
           <DashScreen balances={balances} txns={txns} liquid={liquid}
             allBanks={allBanks} allCC={allCC} budgets={budgets}
-            trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} />
+            trueSpendable={trueSpendable} recurring={recurring} checklist={checklist}
+            setGlobalSearch={setGlobalSearch} setTab={setTab} />
         )}
         {!loading && tab === 'provision' && (
           <ProvisionLedger recurring={recurring} txns={txns}
@@ -1442,8 +1447,10 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
 }
 
 // ── TRANSACTIONS SCREEN ──────────────────────────────
-function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, allCC, allCategories }) {
-  const [filter,   setFilter]   = useState('All');
+function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, allCC, allCategories, globalSearch, setGlobalSearch }) {
+  const [dateFilter,  setDateFilter]  = useState('This Month');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd,   setCustomEnd]   = useState('');
   const [selected, setSelected] = useState(null);
   const [editMode, setEditMode] = useState(null);
   const [saving,   setSaving]   = useState(false);
@@ -1455,12 +1462,37 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
   const [corrDate, setCorrDate] = useState('');
   const [corrFrom, setCorrFrom] = useState('');
   const [corrTo,   setCorrTo]   = useState('');
-  const [search,   setSearch]   = useState('');
+  const [search,   setSearch]   = useState(globalSearch || '');
 
-  const filters = ['All','Today','Voided','UA','Income'];
-  const today   = new Date().toDateString();
+  useEffect(() => { setSearch(globalSearch || ''); }, [globalSearch]);
+
+  const now2 = new Date();
+  const curMonth = now2.getMonth();
+  const curYear  = now2.getFullYear();
+
+  const inDateWindow = (t) => {
+    const d = new Date(t.created_at);
+    if (dateFilter === 'This Month')   return d.getMonth()===curMonth && d.getFullYear()===curYear;
+    if (dateFilter === 'Last Month') {
+      const lm = curMonth===0?11:curMonth-1;
+      const ly = curMonth===0?curYear-1:curYear;
+      return d.getMonth()===lm && d.getFullYear()===ly;
+    }
+    if (dateFilter === 'Past 3 Months') {
+      const cutoff = new Date(now2); cutoff.setMonth(cutoff.getMonth()-3); cutoff.setDate(1);
+      return d >= cutoff;
+    }
+    if (dateFilter === 'This Year')  return d.getFullYear()===curYear;
+    if (dateFilter === 'Custom') {
+      if (customStart && d < new Date(customStart)) return false;
+      if (customEnd   && d > new Date(customEnd + 'T23:59:59')) return false;
+      return true;
+    }
+    return true; // All Time
+  };
 
   const filtered = txns.filter(t => {
+    if (!inDateWindow(t)) return false;
     if (search.trim()) {
       const q = search.toLowerCase();
       if (!(t.particulars||'').toLowerCase().includes(q) &&
@@ -1468,11 +1500,9 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
           !String(t.amount).includes(q) &&
           !(t.from_account||t.to_account||'').toLowerCase().includes(q)) return false;
     }
-    if (filter === 'Today')  return new Date(t.created_at).toDateString() === today && t.status !== 'voided';
-    if (filter === 'Voided') return t.status === 'voided';
-    if (filter === 'UA')     return (t.type==='UA Expense'||t.type==='UA Received') && t.status!=='voided';
-    if (filter === 'Income') return (t.type==='Income'||t.type==='UA Received') && t.status!=='voided';
-    return t.status !== 'voided';
+    if (t.status === 'voided') return false;
+    if (dateFilter === 'This Month' || dateFilter === 'Last Month' || dateFilter === 'Past 3 Months' || dateFilter === 'This Year' || dateFilter === 'All Time' || dateFilter === 'Custom') return true;
+    return true;
   });
 
   const amtColor = t => {
@@ -1539,27 +1569,52 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
 
   return (
     <div className="fade-in">
-      {/* Search bar */}
-      <div style={{padding:'10px 16px 0',display:'flex',alignItems:'center',gap:8}}>
-        <div style={{flex:1,position:'relative'}}>
-          <input
-            value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);setEditMode(null);}}
-            placeholder="Search description, category, amount, account..."
-            style={{width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',
-              borderRadius:8,padding:'8px 12px 8px 32px',color:'var(--text)',
-              fontFamily:'var(--mono)',fontSize:12,outline:'none',
-              borderColor:search?'var(--blue)':'var(--border)'}} />
-          <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',
-            fontSize:13,color:'var(--text3)',pointerEvents:'none'}}>⌕</span>
+      {/* Search + Date Filter bar */}
+      <div style={{padding:'10px 16px 0',display:'flex',flexDirection:'column',gap:8}}>
+        {/* Search row */}
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{flex:1,position:'relative'}}>
+            <input
+              value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);setEditMode(null);}}
+              placeholder="Search description, category, amount, account..."
+              style={{width:'100%',background:'var(--bg2)',border:'1px solid var(--border)',
+                borderRadius:8,padding:'8px 12px 8px 32px',color:'var(--text)',
+                fontFamily:'var(--mono)',fontSize:12,outline:'none',
+                borderColor:search?'var(--blue)':'var(--border)'}} />
+            <span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',
+              fontSize:13,color:'var(--text3)',pointerEvents:'none'}}>⌕</span>
+          </div>
+          {search && <button onClick={()=>{setSearch('');setGlobalSearch&&setGlobalSearch('');}}
+            style={{background:'none',border:'none',color:'var(--text3)',fontSize:16,cursor:'pointer',padding:'0 4px'}}>✕</button>}
         </div>
-        {search && <button onClick={()=>setSearch('')}
-          style={{background:'none',border:'none',color:'var(--text3)',fontSize:16,cursor:'pointer',padding:'0 4px'}}>✕</button>}
-      </div>
-      <div className="chip-row" style={{padding:'8px 16px 0'}}>
-        {filters.map(f => (
-          <div key={f} className={'chip'+(filter===f?' sel':'')}
-            onClick={() => { setFilter(f); setSelected(null); setEditMode(null); }}>{f}</div>
-        ))}
+        {/* Date filter row */}
+        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+          <select value={dateFilter} onChange={e=>{setDateFilter(e.target.value);setSelected(null);setEditMode(null);}}
+            style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,
+              padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,
+              outline:'none',cursor:'pointer'}}>
+            <option>This Month</option>
+            <option>Last Month</option>
+            <option>Past 3 Months</option>
+            <option>This Year</option>
+            <option>All Time</option>
+            <option>Custom</option>
+          </select>
+          {dateFilter === 'Custom' && (
+            <>
+              <input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)}
+                style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,
+                  padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}} />
+              <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span>
+              <input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)}
+                style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,
+                  padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}} />
+            </>
+          )}
+          <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginLeft:'auto'}}>
+            {filtered.length} txn{filtered.length!==1?'s':''}
+          </span>
+        </div>
       </div>
 
       {search && <div style={{padding:'4px 16px',fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)'}}>{filtered.length} result{filtered.length!==1?'s':''} for "{search}"</div>}
@@ -1683,12 +1738,15 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
 
 
 // ── DASHBOARD SCREEN — COMPACT ───────────────────────
-function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpendable, recurring, checklist }) {
+function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpendable, recurring, checklist, setGlobalSearch, setTab }) {
   allBanks = allBanks || BANKS;
   allCC    = allCC    || CC_ACCTS;
   budgets  = budgets  || {};
 
-  const [drillDown, setDrillDown] = useState(null);
+  const drillTo = (term) => { setGlobalSearch(term); setTab('txns'); };
+
+  const chartRef      = useRef(null);
+  const chartInstance = useRef(null);
 
   const now    = new Date();
   const month  = now.getMonth();
@@ -1715,6 +1773,42 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   const cats = {};
   thisMonth.filter(t=>t.type==='Expense').forEach(t=>{ const c=t.category||'Misc'; cats[c]=(cats[c]||0)+(+t.amount); });
   const topCats = Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // Chart.js pie chart effect
+  useEffect(() => {
+    if (!chartRef.current || topCats.length === 0) return;
+    if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null; }
+    const CHART_COLORS = ['#059669','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2','#65a30d'];
+    chartInstance.current = new Chart(chartRef.current, {
+      type: 'doughnut',
+      data: {
+        labels: topCats.map(([c]) => c),
+        datasets: [{
+          data: topCats.map(([,v]) => v),
+          backgroundColor: CHART_COLORS.slice(0, topCats.length),
+          borderColor: '#ffffff',
+          borderWidth: 2,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { font: { family: 'IBM Plex Mono', size: 10 }, color: '#4b5563', padding: 12, boxWidth: 12 },
+          },
+          tooltip: {
+            callbacks: {
+              label: ctx => ' ₹' + Math.round(ctx.parsed).toLocaleString('en-IN'),
+            },
+          },
+        },
+        cutout: '60%',
+      },
+    });
+    return () => { if (chartInstance.current) { chartInstance.current.destroy(); chartInstance.current = null; } };
+  }, [topCats]);
 
   const fy = active.filter(t=>{ const d=new Date(t.created_at); const yr=d.getFullYear(),mo=d.getMonth(); return (yr===year&&mo>=3)||(yr===year+1&&mo<3); });
   const it80C = fy.filter(t=>t.it_section==='80C').reduce((s,t)=>s+(+t.amount),0);
@@ -1759,76 +1853,6 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
     <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',marginBottom:8}}>{children}</div>
   );
 
-  // ── DRILL-DOWN VIEW
-  if (drillDown) {
-    const drillTxns = active
-      .filter(t => {
-        if (drillDown.type === 'account')  return t.from_account === drillDown.id || t.to_account === drillDown.id;
-        if (drillDown.type === 'category') return t.category === drillDown.id && t.type === 'Expense';
-        return false;
-      })
-      .sort((a,b) => new Date(b.created_at) - new Date(a.created_at));
-
-    const drillAmtColor = t => {
-      if (drillDown.type === 'category') return 'var(--red)';
-      if (t.type==='Income'||t.type==='UA Received') return 'var(--green)';
-      if (t.to_account===drillDown.id && t.from_account!==drillDown.id) return 'var(--green)';
-      return 'var(--red)';
-    };
-    const drillAmtSign = t => {
-      if (drillDown.type === 'category') return '−';
-      if (t.type==='Income'||t.type==='UA Received') return '+';
-      if (t.to_account===drillDown.id && t.from_account!==drillDown.id) return '+';
-      return '−';
-    };
-
-    return (
-      <div className="fade-in">
-        <div style={{display:'flex',alignItems:'center',gap:10,padding:'12px 16px',
-          borderBottom:'1px solid var(--border)',background:'var(--bg2)',
-          position:'sticky',top:0,zIndex:10}}>
-          <button onClick={()=>setDrillDown(null)}
-            style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,
-              color:'var(--text2)',fontFamily:'var(--mono)',fontSize:12,
-              padding:'5px 10px',cursor:'pointer'}}>
-            ← Back
-          </button>
-          <div>
-            <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--text)'}}>{drillDown.id}</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{drillTxns.length} transaction{drillTxns.length!==1?'s':''}</div>
-          </div>
-        </div>
-
-        {drillTxns.length === 0 && <div className="empty">No transactions found.</div>}
-
-        <div>
-          {drillTxns.map(t => (
-            <div key={t.id} className="txn-row">
-              <div className="txn-left">
-                <div className="txn-cat">
-                  {t.type}
-                  {t.correction_of&&<span style={{marginLeft:6,fontSize:9,color:'var(--green)',fontFamily:'var(--mono)'}}>CORRECTION</span>}
-                </div>
-                <div className="txn-desc">{t.particulars||t.category}</div>
-                <div className="txn-meta">
-                  {fmtDate(t.created_at)} {fmtTime(t.created_at)}
-                  {t.category&&t.category!==t.type&&<span style={{color:'var(--text3)',marginLeft:6}}>{t.category}</span>}
-                  {t.it_section&&<span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}
-                </div>
-              </div>
-              <div className="txn-right">
-                <div className="txn-amt" style={{color:drillAmtColor(t)}}>
-                  {drillAmtSign(t)}{fmtAmt(t.amount)}
-                </div>
-                <div className="txn-acct">{t.from_account||t.to_account}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
   // ── NORMAL DASHBOARD
   return (
     <div className="fade-in" style={{padding:'8px 12px'}}>
@@ -1854,12 +1878,12 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         <Hdr t="Accounts" v={fmtAmt(liquid)} col="var(--green)"/>
         {allBanks.map(a=>{
           const b=balances[a]||0;
-          return <Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>setDrillDown({type:'account',id:a})}/>;
+          return <Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>drillTo(a)}/>;
         })}
         {ccDues.length>0 && (
           <>
             <div style={{padding:'5px 12px',background:'var(--bg3)',fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em',borderTop:'1px solid var(--border)',borderBottom:'1px solid var(--border)'}}>CC PAYABLE</div>
-            {ccDues.map(x=><Row key={x.name} a={x.name} b={fmtAmt(x.due)} amb onClick={()=>setDrillDown({type:'account',id:x.name})}/>)}
+            {ccDues.map(x=><Row key={x.name} a={x.name} b={fmtAmt(x.due)} amb onClick={()=>drillTo(x.name)}/>)}
             <div style={{padding:'6px 12px',borderTop:'1px solid var(--border)',display:'flex',justifyContent:'space-between',fontSize:11,fontFamily:'var(--mono)'}}>
               <span style={{color:'var(--text3)'}}>Total payable</span>
               <span style={{color:'var(--amber)',fontWeight:600}}>{fmtAmt(totalCC)}</span>
@@ -1871,12 +1895,15 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
       {topCats.length>0 && (
         <Card>
           <Hdr t={MONTHS[month]+' spend'} v={fmtAmt(expense)} col="var(--red)"/>
+          <div style={{padding:'12px 16px 4px'}}>
+            <canvas ref={chartRef} style={{maxHeight:'220px',margin:'0 auto'}}></canvas>
+          </div>
           {topCats.map(([c,v])=>{
             const lim=budgets[c]||0;
             const over=lim>0&&v>lim;
             const pct=lim>0?Math.min(Math.round(v/lim*100),100):0;
             return (
-              <div key={c} onClick={()=>setDrillDown({type:'category',id:c})}
+              <div key={c} onClick={()=>drillTo(c)}
                 style={{padding:'7px 12px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:lim>0?3:0}}>
                   <span style={{color:'var(--text2)'}}>{c}</span>
