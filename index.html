@@ -313,11 +313,13 @@ const fmtTime = d => {
 //   source text default 'app'
 // );
 // CREATE TABLE settings (key text primary key, value text);
+// CREATE TABLE investments (id uuid default gen_random_uuid() primary key, asset_name text, asset_type text, buy_date date, qty numeric, buy_price numeric, current_price numeric, created_at timestamptz default now());
 
 // ── MAIN APP ─────────────────────────────────────────
 function App() {
   const [tab, setTab]                       = useState('dash');
   const [txns, setTxns]                     = useState([]);
+  const [investments, setInvestments]       = useState([]);
   const [opening, setOpening]               = useState(DEFAULT_OPENING);
   const [customAccounts, setCustomAccounts] = useState([]);
   const [customCategories, setCustomCategories] = useState([]);
@@ -343,6 +345,12 @@ function App() {
     try {
       const { data } = await db.from('transactions').select('*').order('created_at', { ascending: false }).limit(500);
       setTxns(data || []);
+
+      // Load investments
+      try {
+        const { data: inv } = await db.from('investments').select('*').order('created_at', { ascending: false });
+        setInvestments(inv || []);
+      } catch(e) { setInvestments([]); }
 
       // Load udhari — graceful fail if table not yet created
       try {
@@ -406,17 +414,13 @@ function App() {
   };
 
   const deleteTxn = async (id) => {
-    // Soft delete — mark as voided, don't actually delete
     const { error } = await db.from('transactions').update({ status: 'voided' }).eq('id', id);
     if (!error) { showToast('↩ Voided'); loadData(); }
     else showToast('⚠ Error voiding');
   };
 
   const voidAndCorrect = async (original, corrections) => {
-    // Step 1: void the original entry
     await db.from('transactions').update({ status: 'voided' }).eq('id', original.id);
-
-    // Step 2: insert corrected entry linked to original
     const corrected = {
       type:           original.type,
       amount:         corrections.amount,
@@ -494,15 +498,9 @@ function App() {
     const now   = new Date().toISOString();
     const nowD  = new Date();
 
-    // Determine transaction type based on account
     const isCC = allCC.includes(fromAccount);
-    const txnType = rec.is_cc_payment
-      ? 'Bank→CC'
-      : rec.is_provision
-      ? 'Bank→Bank'
-      : 'Expense';
+    const txnType = rec.is_cc_payment ? 'Bank→CC' : rec.is_provision ? 'Bank→Bank' : 'Expense';
 
-    // Build transaction
     const txn = {
       type:         txnType,
       amount:       amtPaid,
@@ -517,28 +515,19 @@ function App() {
       created_at:   now,
     };
 
-    try {
-      await db.from('transactions').insert([txn]);
-    } catch(e) { /* continue even if txn fails */ }
+    try { await db.from('transactions').insert([txn]); } catch(e) { }
 
-    // Mark checklist as paid
     if (cl?.id) {
-      await db.from('checklist').update({
-        status:'paid', amount_paid:amtPaid, paid_at:now
-      }).eq('id', cl.id);
+      await db.from('checklist').update({ status:'paid', amount_paid:amtPaid, paid_at:now }).eq('id', cl.id);
     } else {
       await db.from('checklist').insert([{
-        recurring_id: rec.id,
-        month:  nowD.getMonth() + 1,
-        year:   nowD.getFullYear(),
-        status: 'paid',
-        amount_paid: amtPaid,
-        paid_at: now,
+        recurring_id: rec.id, month: nowD.getMonth() + 1, year: nowD.getFullYear(),
+        status: 'paid', amount_paid: amtPaid, paid_at: now,
       }]);
     }
 
     loadData();
-    showToast('✓ ' + rec.name + ' — logged to transactions');
+    showToast('✓ ' + rec.name + ' — logged');
   };
 
   const deleteRecurring = async (id) => {
@@ -546,15 +535,13 @@ function App() {
     showToast('↩ Deleted'); loadData();
   };
 
-  // ── True spendable: liquid − CC − recurring provisions this month
   const monthlyProvisions = recurring
     .filter(r => r.active !== false && r.frequency === 'monthly')
     .reduce((s,r) => s + (parseFloat(r.amount)||0), 0);
   const totalCC = allCC.reduce((s,a) => s + Math.max(0, -(balances[a]||0)), 0);
   const trueSpendable = Math.max(0, liquid - totalCC - monthlyProvisions);
 
-  const udhariOutstanding = udhari.filter(u => u.direction==='given')
-    .reduce((s,u) => s + u.amount, 0) -
+  const udhariOutstanding = udhari.filter(u => u.direction==='given').reduce((s,u) => s + u.amount, 0) -
     udhari.filter(u => u.direction==='received').reduce((s,u) => s + u.amount, 0);
 
   const addUdhari = async (entry) => {
@@ -588,7 +575,10 @@ function App() {
           <DashScreen balances={balances} txns={txns} liquid={liquid}
             allBanks={allBanks} allCC={allCC} budgets={budgets}
             trueSpendable={trueSpendable} recurring={recurring} checklist={checklist}
-            setGlobalSearch={setGlobalSearch} setTab={setTab} />
+            setGlobalSearch={setGlobalSearch} setTab={setTab} investments={investments} />
+        )}
+        {!loading && tab === 'investments' && (
+          <InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast} />
         )}
         {!loading && tab === 'provision' && (
           <ProvisionLedger recurring={recurring} txns={txns}
@@ -677,6 +667,7 @@ function App() {
               {label:'Dashboard',icon:'◈',id:'dash'},
               {label:'Add Entry',icon:'+',id:'add'},
               {label:'Transaction Log',icon:'≡',id:'txns'},
+              {label:'Wealth & Portfolio',icon:'📈',id:'investments'},
               {label:'Account Statement',icon:'◧',id:'statement'},
               {label:'Site Ledger',icon:'🏗',id:'site_ledger'},
               {label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},
@@ -810,7 +801,7 @@ function computeBalances(opening, txns, allBanks, allCC) {
 
 // ── HEADER ───────────────────────────────────────────
 function Header({ liquid, tab, onMenu }) {
-  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills', provision:'Provision Ledger', statement:'Account Statement', site_ledger:'Site Ledger & Tally', cc_bill:'CC Bill Reconcile' };
+  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills', provision:'Provision Ledger', statement:'Account Statement', site_ledger:'Site Ledger & Tally', cc_bill:'CC Bill Reconcile', investments: 'Wealth & Portfolio' };
   return (
     <div className="header">
       <button onClick={onMenu}
@@ -1790,7 +1781,7 @@ function TxnsScreen({ txns, onDelete, onVoidAndCorrect, allAccounts, allBanks, a
 
 
 // ── DASHBOARD SCREEN — COMPACT ───────────────────────
-function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpendable, recurring, checklist, setGlobalSearch, setTab }) {
+function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpendable, recurring, checklist, setGlobalSearch, setTab, investments }) {
   allBanks = allBanks || BANKS;
   allCC    = allCC    || CC_ACCTS;
   budgets  = budgets  || {};
@@ -1821,6 +1812,10 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   const ccDues  = allCC.map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
   const totalCC = ccDues.reduce((s,x)=>s+x.due,0);
   const spendable = trueSpendable !== undefined ? trueSpendable : Math.max(0, liquid - totalCC);
+
+  // TRUE NET WORTH CALCULATION
+  const totalInv = (investments || []).reduce((s, i) => s + (i.qty * i.current_price), 0);
+  const netWorth = liquid - totalCC + totalInv;
 
   const cats = {};
   thisMonth.filter(t=>t.type==='Expense').forEach(t=>{ const c=t.category||'Misc'; cats[c]=(cats[c]||0)+(+t.amount); });
@@ -1908,6 +1903,24 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   // ── NORMAL DASHBOARD
   return (
     <div className="fade-in" style={{padding:'8px 12px'}}>
+
+      {/* ── TRUE NET WORTH HERO CARD ── */}
+      <div style={{background:'linear-gradient(135deg, #111827 0%, #374151 100%)', borderRadius:10, padding:'20px 16px', marginBottom:12, boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}} onClick={() => setTab('investments')}>
+        <div style={{fontSize:10, color:'rgba(255,255,255,0.7)', fontFamily:'var(--mono)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6}}>True Net Worth</div>
+        <div style={{fontFamily:'var(--mono)', fontSize:32, fontWeight:700, color:'#fff', letterSpacing:'-1px'}}>
+          ₹{netWorth.toLocaleString('en-IN')}
+        </div>
+        <div style={{display:'flex', gap:20, marginTop:16, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.15)'}}>
+          <div>
+            <div style={{fontSize:9, color:'rgba(255,255,255,0.6)', fontFamily:'var(--mono)', textTransform:'uppercase'}}>Liquid (Net)</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:14, fontWeight:600, color:'#fff', marginTop:2}}>₹{(liquid - totalCC).toLocaleString('en-IN')}</div>
+          </div>
+          <div>
+            <div style={{fontSize:9, color:'rgba(255,255,255,0.6)', fontFamily:'var(--mono)', textTransform:'uppercase'}}>Invested</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:14, fontWeight:600, color:'var(--green-bg)', marginTop:2}}>₹{totalInv.toLocaleString('en-IN')}</div>
+          </div>
+        </div>
+      </div>
 
       {alerts.length>0 && (
         <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:8}}>
@@ -2051,6 +2064,147 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   );
 }
 
+// ── INVESTMENTS SCREEN ───────────────────────────────
+function InvestmentsScreen({ investments, setInvestments, showToast }) {
+  const [form, setForm] = useState({ name: '', type: 'Equity', date: new Date().toISOString().slice(0,10), qty: '', buy: '', current: '' });
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [editPrice, setEditPrice] = useState('');
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    setSaving(true);
+    const payload = {
+      asset_name: form.name, asset_type: form.type, buy_date: form.date, 
+      qty: parseFloat(form.qty), buy_price: parseFloat(form.buy), current_price: parseFloat(form.current)
+    };
+    const { data, error } = await db.from('investments').insert([payload]).select();
+    if (data && !error) { 
+      setInvestments([data[0], ...investments]); 
+      setForm({ name: '', type: 'Equity', date: new Date().toISOString().slice(0,10), qty: '', buy: '', current: '' }); 
+      showToast('✓ Investment Logged');
+    } else {
+      showToast('⚠ Error Saving');
+    }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id) => {
+    const { error } = await db.from('investments').delete().eq('id', id);
+    if (!error) {
+      setInvestments(investments.filter(i => i.id !== id));
+      showToast('↩ Asset Removed');
+    }
+  };
+
+  const handleUpdatePrice = async (id) => {
+    if (!editPrice) return setEditingId(null);
+    const { error } = await db.from('investments').update({ current_price: parseFloat(editPrice) }).eq('id', id);
+    if (!error) {
+      setInvestments(investments.map(i => i.id === id ? { ...i, current_price: parseFloat(editPrice) } : i));
+      showToast('✓ Price Updated');
+    }
+    setEditingId(null); setEditPrice('');
+  };
+
+  const totalInv = investments.reduce((s, i) => s + (i.qty * i.buy_price), 0);
+  const totalCur = investments.reduce((s, i) => s + (i.qty * i.current_price), 0);
+  const totalProfit = totalCur - totalInv;
+  const profitPct = totalInv > 0 ? (totalProfit / totalInv * 100) : 0;
+
+  const iS = { background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:8, padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)', fontSize:12, outline:'none', width:'100%' };
+
+  return (
+    <div className="fade-in" style={{paddingBottom:'24px'}}>
+      
+      {/* Summary Card */}
+      <div style={{margin:'12px 16px', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:10, padding:'16px'}}>
+        <div style={{fontSize:10, color:'var(--text3)', fontFamily:'var(--mono)', textTransform:'uppercase', letterSpacing:'0.06em'}}>Total Portfolio Value</div>
+        <div style={{fontSize:28, fontWeight:700, fontFamily:'var(--mono)', marginTop:4}}>₹{totalCur.toLocaleString('en-IN')}</div>
+        <div style={{display:'flex', gap:16, marginTop:12}}>
+          <div>
+            <div style={{fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', textTransform:'uppercase'}}>Invested</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:13, fontWeight:600}}>₹{totalInv.toLocaleString('en-IN')}</div>
+          </div>
+          <div>
+            <div style={{fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)', textTransform:'uppercase'}}>P&L</div>
+            <div style={{fontFamily:'var(--mono)', fontSize:13, fontWeight:600, color: totalProfit >= 0 ? 'var(--green)' : 'var(--red)'}}>
+              {totalProfit >= 0 ? '+' : '−'}₹{Math.abs(totalProfit).toLocaleString('en-IN')} ({profitPct.toFixed(2)}%)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="sec-label" style={{marginTop:8}}>Add Investment</p>
+      <form onSubmit={handleAdd} style={{padding:'0 16px', display:'flex', flexDirection:'column', gap:8}}>
+        <input placeholder="Asset Name (e.g. RELIANCE, SGB 2026)" value={form.name} onChange={e=>setForm({...form, name:e.target.value})} style={iS} required />
+        <div style={{display:'flex', gap:8}}>
+          <select value={form.type} onChange={e=>setForm({...form, type:e.target.value})} style={{...iS, flex:1}}>
+            <option>Equity</option><option>SGB</option><option>Mutual Fund</option>
+          </select>
+          <input type="date" value={form.date} onChange={e=>setForm({...form, date:e.target.value})} style={{...iS, flex:1}} required />
+        </div>
+        <div style={{display:'flex', gap:8}}>
+          <input type="number" step="any" placeholder="Qty" value={form.qty} onChange={e=>setForm({...form, qty:e.target.value})} style={{...iS, flex:1}} required />
+          <input type="number" step="any" placeholder="Buy Price" value={form.buy} onChange={e=>setForm({...form, buy:e.target.value})} style={{...iS, flex:1}} required />
+          <input type="number" step="any" placeholder="Current Price" value={form.current} onChange={e=>setForm({...form, current:e.target.value})} style={{...iS, flex:1}} required />
+        </div>
+        <button type="submit" disabled={saving} style={{background: saving ? 'var(--bg3)' : 'var(--blue)', color: saving ? 'var(--text3)' : '#fff', border:'none', borderRadius:8, padding:'12px', fontFamily:'var(--mono)', fontSize:13, fontWeight:600, cursor:'pointer', marginTop:4}}>
+          {saving ? 'Saving...' : 'Log Investment'}
+        </button>
+      </form>
+
+      <p className="sec-label" style={{marginTop:16}}>Holdings</p>
+      {investments.length === 0 && <div className="empty" style={{paddingTop:20}}>No investments logged yet.</div>}
+      <div style={{padding:'0 16px'}}>
+        {investments.map(inv => {
+          const daysHeld = Math.floor((new Date() - new Date(inv.buy_date)) / (1000 * 60 * 60 * 24));
+          const isLTCG = daysHeld >= 365;
+          const invested = inv.qty * inv.buy_price;
+          const current = inv.qty * inv.current_price;
+          const profit = current - invested;
+          const pct = invested > 0 ? (profit/invested*100) : 0;
+          return (
+            <div key={inv.id} style={{padding:'12px', background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:10, marginBottom:8}}>
+              <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
+                <div>
+                  <div style={{fontSize:14, fontWeight:600, color:'var(--text)', display:'flex', alignItems:'center', gap:6}}>
+                    {inv.asset_name} 
+                    <span style={{fontSize:8, padding:'2px 6px', borderRadius:4, fontFamily:'var(--mono)', background: isLTCG ? 'var(--green-bg)' : 'var(--amber-bg)', color: isLTCG ? 'var(--green)' : 'var(--amber)'}}>
+                      {isLTCG ? 'LTCG' : 'STCG'}
+                    </span>
+                  </div>
+                  <div style={{fontSize:10, color:'var(--text3)', fontFamily:'var(--mono)', marginTop:4}}>
+                    {inv.qty} units @ ₹{inv.buy_price} · {new Date(inv.buy_date).toLocaleDateString('en-IN', {day:'numeric',month:'short'})}
+                  </div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontFamily:'var(--mono)', fontSize:14, fontWeight:600}}>₹{current.toLocaleString('en-IN')}</div>
+                  <div style={{fontSize:10, fontFamily:'var(--mono)', color: profit >= 0 ? 'var(--green)' : 'var(--red)', marginTop:2}}>
+                    {profit >= 0 ? '+' : '−'}₹{Math.abs(profit).toLocaleString('en-IN')} ({pct.toFixed(1)}%)
+                  </div>
+                </div>
+              </div>
+              
+              <div style={{display:'flex', gap:8, marginTop:12}}>
+                {editingId === inv.id ? (
+                  <div style={{display:'flex', gap:6, flex:1}}>
+                    <input type="number" step="any" autoFocus placeholder="New Price" value={editPrice} onChange={e=>setEditPrice(e.target.value)} style={{...iS, padding:'6px 8px'}} />
+                    <button onClick={() => handleUpdatePrice(inv.id)} style={{background:'var(--blue)', border:'none', borderRadius:6, color:'#fff', padding:'0 12px', fontFamily:'var(--mono)', fontSize:11, cursor:'pointer'}}>Save</button>
+                    <button onClick={() => setEditingId(null)} style={{background:'none', border:'1px solid var(--border2)', borderRadius:6, color:'var(--text3)', padding:'0 10px', fontFamily:'var(--mono)', fontSize:11, cursor:'pointer'}}>✕</button>
+                  </div>
+                ) : (
+                  <button onClick={() => { setEditingId(inv.id); setEditPrice(inv.current_price); }} style={{flex:1, background:'none', border:'1px solid var(--border)', borderRadius:6, color:'var(--blue)', fontFamily:'var(--mono)', fontSize:11, padding:'6px', cursor:'pointer'}}>Update Price</button>
+                )}
+                <button onClick={() => handleDelete(inv.id)} style={{flex:1, background:'none', border:'1px solid var(--border)', borderRadius:6, color:'var(--red)', fontFamily:'var(--mono)', fontSize:11, padding:'6px', cursor:'pointer'}}>Sell / Remove</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 // ── UDHARI SCREEN ────────────────────────────────────
 function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
@@ -3594,7 +3748,7 @@ function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAc
 
       <p className="sec-label">About</p>
       <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>
-        JB Finance v1.5<br/>
+        JB Finance v1.6 (Wealth Engine)<br/>
         Built for Jayesh Bhagat<br/>
         Umiya Associates · Mumbai
       </div>
