@@ -603,7 +603,7 @@ function App() {
         {!loading && tab === 'cc_bill' && (
           <CCBillScreen txns={txns} customAccounts={customAccounts} />
         )}
-        {!loading && tab === 'settings' && (
+                {!loading && tab === 'settings' && (
           <SettingsScreen
             opening={opening} onSave={saveOpening}
             allAccounts={allAccounts}
@@ -613,6 +613,9 @@ function App() {
             customSites={customSites} onSaveSites={saveCustomSites}
             customTeam={customTeam} onSaveTeam={saveCustomTeam}
           />
+        )}
+        {!loading && tab === 'ai_command' && (
+         <AiCommandScreen investments={investments} setInvestments={setInvestments} showToast={showToast} />
         )}
       </div>
 
@@ -672,6 +675,7 @@ function App() {
               {label:'Site Ledger',icon:'🏗',id:'site_ledger'},
               {label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},
               {label:'Udhari Ledger',icon:'◎',id:'udhari'},
+              {label:'AI Command Center',icon:'🧠',id:'ai_command'},
             ].map(item => (
               <div key={item.id} onClick={() => { setTab(item.id); setMenuOpen(false); }}
                 style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}>
@@ -2216,6 +2220,99 @@ function InvestmentsScreen({ investments, setInvestments, showToast }) {
     </div>
   );
 }
+
+// ── AI COMMAND CENTER ────────────────────────────────
+function AiCommandScreen({ investments, setInvestments, showToast }) {
+  const [jsonStr, setJsonStr] = useState('');
+  const [picks, setPicks] = useState([]);
+  const [acceptingPick, setAcceptingPick] = useState(null);
+  const [qty, setQty] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const handleProcess = () => {
+    try {
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed)) setPicks(parsed);
+      else showToast('⚠ Invalid JSON');
+    } catch(e) { showToast('⚠ Error parsing JSON'); }
+  };
+
+  const handleConfirmAccept = async (pick) => {
+    if (!qty || parseFloat(qty) <= 0) return;
+    setSaving(true);
+    const payload = {
+      asset_name: pick.asset_name, asset_type: 'Equity', buy_date: new Date().toISOString().slice(0,10),
+      qty: parseFloat(qty), buy_price: parseFloat(pick['entry_price_₹']), current_price: parseFloat(pick['entry_price_₹'])
+    };
+    const { data, error } = await db.from('investments').insert([payload]).select();
+    if (data && !error) {
+      setInvestments([data[0], ...investments]);
+      setPicks(picks.filter(p => p.asset_name !== pick.asset_name));
+      showToast('✓ ' + pick.asset_name + ' added to Portfolio!');
+    } else { showToast('⚠ Error Saving'); }
+    setSaving(false); setAcceptingPick(null); setQty('');
+  };
+
+  return (
+    <div className="fade-in" style={{paddingBottom:'24px'}}>
+      <div style={{padding:'16px'}}>
+        <p className="sec-label" style={{padding:'0 0 8px'}}>Quant Engine Input</p>
+        <textarea 
+          placeholder="Paste JSON output from Python script here..." 
+          value={jsonStr} onChange={e=>setJsonStr(e.target.value)}
+          style={{width:'100%', height:'120px', background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:8, padding:'10px', fontFamily:'var(--mono)', fontSize:11, outline:'none'}} 
+        />
+        <button onClick={handleProcess} style={{background:'var(--text)', color:'var(--bg)', border:'none', borderRadius:8, padding:'12px', fontFamily:'var(--mono)', fontSize:12, fontWeight:600, width:'100%', marginTop:8, cursor:'pointer'}}>
+          Process AI Picks
+        </button>
+      </div>
+
+      <div style={{padding:'0 16px'}}>
+        {picks.length > 0 && <p className="sec-label" style={{padding:'8px 0'}}>AI Recommendations</p>}
+        {picks.map((pick, i) => (
+          <div key={i} style={{background:'var(--bg2)', border:'1px solid var(--border)', borderRadius:10, padding:'14px', marginBottom:12}}>
+            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+              <span style={{fontFamily:'var(--mono)', fontSize:18, fontWeight:700, color:'var(--blue)'}}>{pick.asset_name}</span>
+              <span style={{fontFamily:'var(--mono)', fontSize:10, background:'var(--blue-bg)', color:'var(--blue)', padding:'4px 8px', borderRadius:20}}>2% TARGET</span>
+            </div>
+            
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginTop:12}}>
+              <div>
+                <div style={{fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)'}}>ENTRY PRICE</div>
+                <div style={{fontFamily:'var(--mono)', fontSize:15, fontWeight:600}}>₹{pick['entry_price_₹']}</div>
+              </div>
+              <div>
+                <div style={{fontSize:9, color:'var(--text3)', fontFamily:'var(--mono)'}}>TARGET PRICE</div>
+                <div style={{fontFamily:'var(--mono)', fontSize:15, fontWeight:600, color:'var(--green)'}}>₹{pick['target_price_₹']}</div>
+              </div>
+            </div>
+
+            <div style={{background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'10px', marginTop:12, fontSize:11, lineHeight:1.5}}>
+              <strong style={{color:'var(--text)'}}>Thesis:</strong> {pick.thesis}
+              <hr style={{border:'none', borderTop:'1px dashed var(--border2)', margin:'8px 0'}} />
+              <strong style={{color:'var(--red)'}}>Exit:</strong> {pick.exit_condition}
+            </div>
+
+            {acceptingPick === pick.asset_name ? (
+              <div style={{display:'flex', gap:8, marginTop:12}}>
+                <input type="number" step="any" autoFocus placeholder="Qty Bought" value={qty} onChange={e=>setQty(e.target.value)} style={{background:'var(--bg)', border:'1px solid var(--blue)', borderRadius:6, padding:'8px 12px', fontFamily:'var(--mono)', fontSize:12, outline:'none', flex:1}} />
+                <button onClick={() => handleConfirmAccept(pick)} disabled={saving} style={{background:'var(--blue)', color:'#fff', border:'none', borderRadius:6, padding:'0 16px', fontFamily:'var(--mono)', fontSize:12, cursor:'pointer'}}>{saving ? '...' : 'Confirm'}</button>
+                <button onClick={() => setAcceptingPick(null)} style={{background:'none', border:'1px solid var(--border)', borderRadius:6, padding:'0 12px', fontFamily:'var(--mono)', fontSize:12, cursor:'pointer'}}>✕</button>
+              </div>
+            ) : (
+              <div style={{display:'flex', gap:8, marginTop:12}}>
+                <button onClick={() => setAcceptingPick(pick.asset_name)} style={{flex:1, background:'var(--green)', color:'#000', border:'none', borderRadius:6, padding:'10px', fontFamily:'var(--mono)', fontSize:12, fontWeight:600, cursor:'pointer'}}>Accept & Log</button>
+                <button onClick={() => setPicks(picks.filter(p => p.asset_name !== pick.asset_name))} style={{flex:1, background:'none', border:'1px solid var(--border2)', color:'var(--text2)', borderRadius:6, padding:'10px', fontFamily:'var(--mono)', fontSize:12, cursor:'pointer'}}>Reject</button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 // ── UDHARI SCREEN ────────────────────────────────────
 function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
   const [view, setView]       = useState('list');   // 'list' | 'add' | 'person'
