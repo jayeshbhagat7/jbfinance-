@@ -608,7 +608,7 @@ function App() {
             allBanks={allBanks} allCC={allCC} opening={opening} balances={balances} />
         )}
         {!loading && tab === 'site_ledger' && (
-          <SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} />
+          <SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} opening={opening} />
         )}
         {!loading && tab === 'settings' && (
           <SettingsScreen
@@ -1010,12 +1010,14 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const [tower,     setTower]     = useState('');
 
   // Site domain state
-  const [siteType,    setSiteType]    = useState('Expense');
-  const [siteName,    setSiteName]    = useState((customSites && customSites[0]) || '');
-  const [siteUser,    setSiteUser]    = useState('');
-  const [siteCat,     setSiteCat]     = useState('Labour');
+  const [siteType,     setSiteType]     = useState('Expense');
+  const [siteName,     setSiteName]     = useState((customSites && customSites[0]) || '');
+  const [siteUser,     setSiteUser]     = useState('');
+  const [siteCat,      setSiteCat]      = useState('Labour');
+  const [transferDir,  setTransferDir]  = useState('Given');
+  const [transferUser, setTransferUser] = useState(customTeam?.[0] || '');
 
-  const SITE_CATS = ['Labour','Material','Kharchi','Fuel','Misc'];
+  const SITE_CATS = ['Labour','Material','Kharchi','Fuel','Transport','Misc'];
 
   const fmt    = n => Math.abs(Math.round(n)).toLocaleString('en-IN');
   const fmtAmt = n => '₹' + fmt(n);
@@ -1088,16 +1090,24 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
     } else {
       const isSiteTransfer = siteType === 'Site Transfer';
       const autoUser = (!isSiteTransfer && from !== 'Site Cash') ? 'JAYESH' : null;
+      let siteFrom, siteTo;
+      if (isSiteTransfer) {
+        siteFrom = transferDir === 'Given'    ? 'Site Cash' : transferUser;
+        siteTo   = transferDir === 'Given'    ? transferUser : 'Site Cash';
+      } else {
+        siteFrom = from;
+        siteTo   = null;
+      }
       txn = {
         domain:       'Site',
         type:         isSiteTransfer ? 'Bank→Bank' : 'Expense',
         amount:       parseFloat(amt),
         category:     siteCat,
-        from_account: from,
-        to_account:   isSiteTransfer ? siteUser || null : null,
+        from_account: siteFrom,
+        to_account:   siteTo,
         particulars:  desc || null,
         site_name:    siteName,
-        site_user:    isSiteTransfer ? siteUser || null : autoUser,
+        site_user:    isSiteTransfer ? transferUser : autoUser,
         status:       'complete',
         source:       'app',
         created_at,
@@ -1105,7 +1115,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
     }
 
     await onSave(txn);
-    setAmt(''); setDesc(''); setCat(''); setTower(''); setSiteUser('');
+    setAmt(''); setDesc(''); setCat(''); setTower(''); setSiteUser(''); setTransferUser(customTeam?.[0]||'');
     setSaving(false);
   };
 
@@ -1130,6 +1140,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
 
   // ── SITE DOMAIN UI
   if (domain === 'Site') {
+    const selStyle = {...iS, cursor:'pointer'};
     return (
       <div className="fade-in" style={{padding:'12px 16px',paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)',display:'flex',flexDirection:'column',gap:12}}>
 
@@ -1139,14 +1150,16 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
           <span style={chipStyle(domain==='Site')} onClick={()=>setDomain('Site')}>Site</span>
         </div>
 
-        {/* Site selector */}
+        {/* Site selector — chips (few items) */}
         <div>
           <p className="sec-label" style={{padding:'0 0 6px'}}>Site</p>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            {(customSites&&customSites.length>0) ? customSites.map(s => (
-              <span key={s} style={chipStyle(siteName===s)} onClick={()=>setSiteName(s)}>{s}</span>
-            )) : <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No sites — add in Setup</span>}
-          </div>
+          {(customSites&&customSites.length>0) ? (
+            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+              {customSites.map(s => (
+                <span key={s} style={chipStyle(siteName===s)} onClick={()=>setSiteName(s)}>{s}</span>
+              ))}
+            </div>
+          ) : <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No sites — add in Setup</span>}
         </div>
 
         {/* Type */}
@@ -1158,44 +1171,54 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
           </div>
         </div>
 
-        {/* Category (Expense only) */}
+        {/* Category — dropdown (Expense only) */}
         {siteType === 'Expense' && (
           <div>
             <p className="sec-label" style={{padding:'0 0 6px'}}>Category</p>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              {SITE_CATS.map(c => (
-                <span key={c} style={chipStyle(siteCat===c)} onClick={()=>setSiteCat(c)}>{c}</span>
-              ))}
-            </div>
+            <select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selStyle}>
+              {SITE_CATS.map(c => <option key={c}>{c}</option>)}
+            </select>
           </div>
         )}
 
-        {/* Paid To (Site Transfer only) */}
+        {/* Site Transfer: Direction + Person */}
         {siteType === 'Site Transfer' && (
-          <div>
-            <p className="sec-label" style={{padding:'0 0 6px'}}>Paid To / Received From</p>
-            <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-              {(customTeam&&customTeam.length>0) ? customTeam.map(m => (
-                <span key={m} style={chipStyle(siteUser===m)} onClick={()=>setSiteUser(m)}>{m}</span>
-              )) : <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No team — add in Setup</span>}
+          <>
+            <div>
+              <p className="sec-label" style={{padding:'0 0 6px'}}>Direction</p>
+              <div style={{display:'flex',gap:6}}>
+                <span style={chipStyle(transferDir==='Given')}    onClick={()=>setTransferDir('Given')}>Given →</span>
+                <span style={chipStyle(transferDir==='Received')} onClick={()=>setTransferDir('Received')}>← Received</span>
+              </div>
+              <div style={{marginTop:6,fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>
+                {transferDir==='Given' ? 'Site Cash → Person' : 'Person → Site Cash'}
+              </div>
             </div>
-          </div>
+            <div>
+              <p className="sec-label" style={{padding:'0 0 6px'}}>Person</p>
+              {(customTeam&&customTeam.length>0) ? (
+                <select value={transferUser} onChange={e=>setTransferUser(e.target.value)} style={selStyle}>
+                  {customTeam.map(m => <option key={m}>{m}</option>)}
+                </select>
+              ) : <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No team — add in Setup</span>}
+            </div>
+          </>
         )}
 
-        {/* Paid From */}
-        <div>
-          <p className="sec-label" style={{padding:'0 0 6px'}}>PAID FROM</p>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            {['Site Cash', ...allAccounts].map(a => (
-              <span key={a} style={chipStyle(from===a)} onClick={()=>setFrom(a)}>{a}</span>
-            ))}
+        {/* Paid From — dropdown (Expense only) */}
+        {siteType === 'Expense' && (
+          <div>
+            <p className="sec-label" style={{padding:'0 0 6px'}}>Paid From</p>
+            <select value={from} onChange={e=>setFrom(e.target.value)} style={selStyle}>
+              {['Site Cash', ...allAccounts].map(a => <option key={a}>{a}</option>)}
+            </select>
+            {from !== 'Site Cash' && (
+              <div style={{marginTop:6,fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)'}}>
+                ⚡ Personal account — auto-tagged as JAYESH
+              </div>
+            )}
           </div>
-          {siteType==='Expense' && from !== 'Site Cash' && (
-            <div style={{marginTop:6,fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)'}}>
-              ⚡ Personal account — auto-tagged as JAYESH
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Amount */}
         <input type="number" inputMode="decimal" placeholder="Amount (₹)"
@@ -1212,17 +1235,20 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
             borderColor:date!==today?'var(--amber)':'var(--border2)'}} />
         {date!==today && <span style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)'}}>⚠ Backdated entry</span>}
 
-        {/* Account summary tag */}
+        {/* Flow summary */}
         <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',padding:'2px 0'}}>
-          From: <span style={{color: from==='Site Cash'?'var(--text2)':'var(--amber)'}}>{from}</span>
-          {siteType==='Expense' && from!=='Site Cash' && <span style={{color:'var(--amber)'}}> → JAYESH</span>}
-          {siteType==='Site Transfer' && siteUser && <span> → <span style={{color:'var(--green)'}}>{siteUser}</span></span>}
+          {siteType==='Expense'
+            ? <>From: <span style={{color:from==='Site Cash'?'var(--text2)':'var(--amber)'}}>{from}</span>{from!=='Site Cash'&&<span style={{color:'var(--amber)'}}> → JAYESH</span>}</>
+            : transferDir==='Given'
+              ? <><span style={{color:'var(--green)'}}>Site Cash</span> → <span style={{color:'var(--blue)'}}>{transferUser||'?'}</span></>
+              : <><span style={{color:'var(--blue)'}}>{transferUser||'?'}</span> → <span style={{color:'var(--green)'}}>Site Cash</span></>
+          }
         </div>
 
         {/* Save */}
         <button onClick={handleSave} disabled={!canSave||saving}
           style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',border:'none',borderRadius:10,
-            color:canSave&&!saving?'#000':'var(--text3)',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
+            color:canSave&&!saving?'#fff':'var(--text3)',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
             padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>
           {saving ? 'Saving...' : canSave ? `Save  ₹${fmt(parseFloat(amt)||0)}` : 'Fill required fields'}
         </button>
@@ -1874,9 +1900,31 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
         <D label={MONTHS[month]+' expense'} val={expense>0?fmtAmt(expense):'—'} col="var(--red)"/>
       </div>
 
+      {/* ── NET PHYSICAL CASH card */}
+      {(() => {
+        const netCash = (balances['Cash']||0) + (balances['Site Cash']||0);
+        const pCash   = balances['Cash']||0;
+        const sCash   = balances['Site Cash']||0;
+        const col = netCash < 0 ? 'var(--red)' : netCash === 0 ? 'var(--text3)' : 'var(--green)';
+        return (
+          <div style={{background:'var(--green-bg)',border:'2px solid var(--green)',borderRadius:10,
+            padding:'12px 14px',marginBottom:8}}>
+            <div style={{fontSize:9,color:'var(--green)',fontFamily:'var(--mono)',marginBottom:4,
+              textTransform:'uppercase',letterSpacing:'0.1em',fontWeight:600}}>Net Physical Cash</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:700,color:col,marginBottom:6}}>
+              {netCash<0?'−':''}{fmtAmt(Math.abs(netCash))}
+            </div>
+            <div style={{display:'flex',gap:16,fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>
+              <span>Personal: <span style={{fontWeight:600,color:pCash<0?'var(--red)':'var(--text)'}}>{pCash<0?'−':''}{fmtAmt(Math.abs(pCash))}</span></span>
+              <span>Site Cash: <span style={{fontWeight:600,color:sCash<0?'var(--red)':'var(--text)'}}>{sCash<0?'−':''}{fmtAmt(Math.abs(sCash))}</span></span>
+            </div>
+          </div>
+        );
+      })()}
+
       <Card>
         <Hdr t="Accounts" v={fmtAmt(liquid)} col="var(--green)"/>
-        {allBanks.map(a=>{
+        {allBanks.filter(a=>a!=='Site Cash').map(a=>{
           const b=balances[a]||0;
           return <Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>drillTo(a)}/>;
         })}
@@ -3019,7 +3067,7 @@ function StatementScreen({ txns, allAccounts, allBanks, allCC, opening, balances
 }
 
 // ── SITE LEDGER SCREEN ───────────────────────────────
-function SiteLedgerScreen({ txns, customSites, customTeam }) {
+function SiteLedgerScreen({ txns, customSites, customTeam, opening }) {
   const sites  = customSites  || [];
   const team   = customTeam   || [];
 
@@ -3041,13 +3089,15 @@ function SiteLedgerScreen({ txns, customSites, customTeam }) {
   // Received = Site Transfer amount where site_user === member (money given TO member)
   // Paid     = Expense amount where site_user === member (expense attributed to member)
   const teamTally = team.map(m => {
+    const ob = (opening && opening[m]) || 0;
     const received = siteTxns
       .filter(t => t.type === 'Bank→Bank' && t.site_user === m)
       .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
     const paid = siteTxns
       .filter(t => t.type === 'Expense' && t.site_user === m)
       .reduce((sum, t) => sum + (parseFloat(t.amount) || 0), 0);
-    return { member: m, received, paid, balance: received - paid };
+    const bal = ob + received - paid;
+    return { member: m, ob, received, paid, balance: bal };
   });
 
   // ── Recent site transactions (last 50)
@@ -3108,15 +3158,19 @@ function SiteLedgerScreen({ txns, customSites, customTeam }) {
             <thead>
               <tr>
                 <th style={thStyle}>Member</th>
+                <th style={{...thStyle,textAlign:'right'}}>Opening</th>
                 <th style={{...thStyle,textAlign:'right'}}>Received</th>
                 <th style={{...thStyle,textAlign:'right'}}>Paid</th>
                 <th style={{...thStyle,textAlign:'right'}}>Balance</th>
               </tr>
             </thead>
             <tbody>
-              {teamTally.map(({ member, received, paid, balance }) => (
+              {teamTally.map(({ member, ob, received, paid, balance }) => (
                 <tr key={member}>
                   <td style={tdStyle()}>{member}</td>
+                  <td style={{...tdStyle(ob>0?'green':ob<0?'red':''),textAlign:'right'}}>
+                    {ob===0?'—':(ob>0?'+':'-')+fmtAmt(Math.abs(ob))}
+                  </td>
                   <td style={{...tdStyle('green'),textAlign:'right'}}>{received>0?fmtAmt(received):'—'}</td>
                   <td style={{...tdStyle('red'),textAlign:'right'}}>{paid>0?fmtAmt(paid):'—'}</td>
                   <td style={{...tdStyle(balance>=0?'green':'red'),textAlign:'right',fontWeight:600}}>
@@ -3128,6 +3182,9 @@ function SiteLedgerScreen({ txns, customSites, customTeam }) {
             <tfoot>
               <tr style={{background:'var(--bg3)'}}>
                 <td style={{...tdStyle(),fontWeight:600,color:'var(--text2)'}}>Total</td>
+                <td style={{...tdStyle(),textAlign:'right',fontWeight:600}}>
+                  {(() => { const t=teamTally.reduce((s,r)=>s+r.ob,0); return t===0?'—':(t>0?'+':'-')+fmtAmt(Math.abs(t)); })()}
+                </td>
                 <td style={{...tdStyle('green'),textAlign:'right',fontWeight:600}}>
                   {fmtAmt(teamTally.reduce((s,r)=>s+r.received,0))}
                 </td>
@@ -3318,7 +3375,7 @@ function SettingsScreen({ opening, onSave, allAccounts, customAccounts, onSaveAc
       {/* ── OPENING BALANCES ── */}
       <p className="sec-label" style={{marginTop:4}}>Opening Balances — month start</p>
       <p style={{padding:'0 16px 10px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>CC me jo amount aap owe karte ho wo negative enter karo. e.g. SBI CC due ₹9,342 → -9342</p>
-      {allAccounts.map(a => (
+      {[...allAccounts, 'Site Cash', ...(customTeam||[])].map(a => (
         <div key={a} className="settings-row">
           <span style={{fontFamily:'var(--mono)',fontSize:12}}>{a}</span>
           <input type="number" style={{width:120,textAlign:'right'}} value={ob[a]||''} placeholder="0" onChange={e=>setOb(prev=>({...prev,[a]:parseFloat(e.target.value)||0}))} />
