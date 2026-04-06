@@ -610,6 +610,9 @@ function App() {
         {!loading && tab === 'site_ledger' && (
           <SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} opening={opening} />
         )}
+        {!loading && tab === 'cc_bill' && (
+          <CCBillScreen txns={txns} customAccounts={customAccounts} />
+        )}
         {!loading && tab === 'settings' && (
           <SettingsScreen
             opening={opening} onSave={saveOpening}
@@ -676,6 +679,7 @@ function App() {
               {label:'Transaction Log',icon:'≡',id:'txns'},
               {label:'Account Statement',icon:'◧',id:'statement'},
               {label:'Site Ledger',icon:'🏗',id:'site_ledger'},
+              {label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},
               {label:'Udhari Ledger',icon:'◎',id:'udhari'},
             ].map(item => (
               <div key={item.id} onClick={() => { setTab(item.id); setMenuOpen(false); }}
@@ -806,7 +810,7 @@ function computeBalances(opening, txns, allBanks, allCC) {
 
 // ── HEADER ───────────────────────────────────────────
 function Header({ liquid, tab, onMenu }) {
-  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills', provision:'Provision Ledger', statement:'Account Statement', site_ledger:'Site Ledger & Tally' };
+  const titles = { add:'Add Entry', txns:'Transactions', dash:'Dashboard', settings:'Settings', udhari:'Udhari Ledger', checklist:'Monthly Bills', provision:'Provision Ledger', statement:'Account Statement', site_ledger:'Site Ledger & Tally', cc_bill:'CC Bill Reconcile' };
   return (
     <div className="header">
       <button onClick={onMenu}
@@ -3083,6 +3087,185 @@ function StatementScreen({ txns, allAccounts, allBanks, allCC, opening, balances
           </div>
         ))}
       </div>
+
+    </div>
+  );
+}
+
+// ── CC BILL RECONCILE SCREEN ─────────────────────────
+function CCBillScreen({ txns, customAccounts }) {
+  const ccAccounts = [
+    ...['SBI CC','HDFC CC','RBL CC','AXIS CC'],
+    ...(customAccounts || []).filter(a => a.type === 'cc').map(a => a.name),
+  ];
+
+  const now = new Date();
+  const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString().slice(0,10);
+  const lastOfMonth  = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    .toISOString().slice(0,10);
+
+  const [selectedCC,       setSelectedCC]       = useState(ccAccounts[0] || '');
+  const [startDate,        setStartDate]         = useState(firstOfMonth);
+  const [endDate,          setEndDate]           = useState(lastOfMonth);
+  const [statementAmount,  setStatementAmount]   = useState('');
+
+  const fmt    = n => Math.abs(Math.round(n)).toLocaleString('en-IN');
+  const fmtAmt = n => '₹' + fmt(n);
+
+  // Filter txns: from_account === selectedCC, non-voided, Expense, within date range
+  const trackedTxns = txns.filter(t => {
+    if (t.status === 'voided') return false;
+    if (t.from_account !== selectedCC) return false;
+    if (t.type !== 'Expense' && t.type !== 'UA Expense') return false;
+    const d = new Date(t.created_at);
+    if (startDate && d < new Date(startDate)) return false;
+    if (endDate   && d > new Date(endDate + 'T23:59:59')) return false;
+    return true;
+  });
+
+  const trackedSpends   = trackedTxns.reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const stmtAmt         = parseFloat(statementAmount) || 0;
+  const difference      = stmtAmt - trackedSpends;
+  const hasStatement    = statementAmount !== '' && stmtAmt > 0;
+
+  const iS = {
+    background:'var(--bg2)', border:'1px solid var(--border2)', borderRadius:8,
+    padding:'9px 12px', color:'var(--text)', fontFamily:'var(--mono)',
+    fontSize:12, outline:'none', width:'100%',
+  };
+
+  return (
+    <div className="fade-in">
+
+      {/* ── INPUTS ── */}
+      <p className="sec-label">Credit Card</p>
+      <div style={{padding:'0 16px 4px'}}>
+        <select value={selectedCC} onChange={e=>setSelectedCC(e.target.value)} style={iS}>
+          {ccAccounts.map(a => <option key={a}>{a}</option>)}
+        </select>
+        {ccAccounts.length === 0 && (
+          <p style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:6}}>
+            No CC accounts found. Add in Setup.
+          </p>
+        )}
+      </div>
+
+      <p className="sec-label" style={{marginTop:8}}>Statement Period</p>
+      <div style={{padding:'0 16px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)}
+          style={{...iS,flex:1,minWidth:130}} />
+        <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span>
+        <input type="date" value={endDate} onChange={e=>setEndDate(e.target.value)}
+          style={{...iS,flex:1,minWidth:130}} />
+      </div>
+
+      <p className="sec-label" style={{marginTop:8}}>Bank Statement Amount (₹)</p>
+      <div style={{padding:'0 16px'}}>
+        <input type="number" inputMode="decimal" placeholder="Enter total bill amount from bank"
+          value={statementAmount} onChange={e=>setStatementAmount(e.target.value)}
+          style={{...iS,fontSize:16,fontWeight:600}} />
+      </div>
+
+      {/* ── RESULTS CARD ── */}
+      <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',
+        borderRadius:10,overflow:'hidden'}}>
+
+        {/* Header */}
+        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',
+          display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',
+            textTransform:'uppercase',letterSpacing:'0.08em'}}>{selectedCC} · Reconciliation</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>
+            {trackedTxns.length} txn{trackedTxns.length!==1?'s':''}
+          </span>
+        </div>
+
+        {/* App tracked */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+          padding:'12px 14px',borderBottom:'1px solid var(--border)'}}>
+          <span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>
+            {fmtAmt(trackedSpends)}
+          </span>
+        </div>
+
+        {/* Statement amount */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+          padding:'12px 14px',borderBottom:'1px solid var(--border)'}}>
+          <span style={{fontSize:13,color:'var(--text2)'}}>Bank Statement Amount</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,
+            color:hasStatement?'var(--text)':'var(--text3)'}}>
+            {hasStatement ? fmtAmt(stmtAmt) : '—'}
+          </span>
+        </div>
+
+        {/* Difference */}
+        {hasStatement && (
+          <div style={{
+            padding:'14px',
+            background: difference === 0 ? 'var(--green-bg)' : difference > 0 ? 'var(--red-bg)' : 'var(--green-bg)',
+            borderTop: '2px solid ' + (difference === 0 ? 'var(--green)' : difference > 0 ? 'var(--red)' : 'var(--green)'),
+          }}>
+            <div style={{
+              fontFamily:'var(--mono)', fontSize:11, fontWeight:600,
+              color: difference === 0 ? 'var(--green)' : difference > 0 ? 'var(--red)' : 'var(--green)',
+              textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:4,
+            }}>
+              {difference === 0
+                ? '✓ Perfectly Matched!'
+                : difference > 0
+                  ? 'Unaccounted Bank Charges'
+                  : 'Cashbacks / Refunds'}
+            </div>
+            <div style={{
+              fontFamily:'var(--mono)', fontSize:22, fontWeight:800,
+              color: difference === 0 ? 'var(--green)' : difference > 0 ? 'var(--red)' : 'var(--green)',
+            }}>
+              {difference === 0
+                ? fmtAmt(0)
+                : difference > 0
+                  ? '+' + fmtAmt(difference)
+                  : '−' + fmtAmt(Math.abs(difference))}
+            </div>
+          </div>
+        )}
+        {!hasStatement && (
+          <div style={{padding:'14px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>
+            Enter bank statement amount above to see reconciliation.
+          </div>
+        )}
+      </div>
+
+      {/* ── TRACKED TRANSACTIONS LIST ── */}
+      {trackedTxns.length > 0 && (
+        <>
+          <p className="sec-label" style={{marginTop:16}}>Tracked Transactions</p>
+          <div style={{marginBottom:24}}>
+            {[...trackedTxns]
+              .sort((a,b) => new Date(b.created_at)-new Date(a.created_at))
+              .map(t => (
+              <div key={t.id} className="txn-row">
+                <div className="txn-left">
+                  <div className="txn-cat">{t.category}</div>
+                  <div className="txn-desc">{t.particulars || t.category}</div>
+                  <div className="txn-meta">
+                    {new Date(t.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
+                    {' '}{new Date(t.created_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true})}
+                  </div>
+                </div>
+                <div className="txn-right">
+                  <div className="txn-amt out">−{fmtAmt(t.amount)}</div>
+                  <div className="txn-acct">{t.from_account}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {trackedTxns.length === 0 && (
+        <div className="empty">No tracked transactions for {selectedCC} in this period.</div>
+      )}
 
     </div>
   );
