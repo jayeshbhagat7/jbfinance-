@@ -120,12 +120,6 @@ html, body { height: 100%; background: #e5e7eb; color: var(--text); font-family:
 .amt-value { font-family: var(--mono); font-size: 40px; font-weight: 600; color: var(--text); letter-spacing: -1px; min-height: 48px; }
 .amt-value.has-val { color: var(--green); }
 
-/* ── KEYPAD ── */
-.keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--radius); margin: 0 16px; overflow: hidden; }
-.key { background: var(--bg2); border: none; color: var(--text); font-family: var(--mono); font-size: 20px; font-weight: 500; padding: 18px 0; cursor: pointer; transition: background 0.1s; -webkit-tap-highlight-color: transparent; }
-.key:active { background: var(--bg4); }
-.key.action { color: var(--text2); font-size: 14px; }
-.key.del { color: var(--red); font-size: 16px; }
 
 /* ── CHIP SELECTOR ── */
 .chip-row { display: flex; gap: 6px; padding: 0 16px; flex-wrap: wrap; }
@@ -334,6 +328,7 @@ function App() {
   const [quickAdd, setQuickAdd]             = useState(false);
   const [loading, setLoading]               = useState(true);
   const [globalSearch, setGlobalSearch]     = useState('');
+  const [addPrefill, setAddPrefill]         = useState(null);
 
   const showToast = msg => {
     setToast(msg);
@@ -565,7 +560,8 @@ function App() {
             allAccounts={allAccounts} allBanks={allBanks}
             allCC={allCC} allCategories={allCategories}
             onAddCategory={addCustomCategory}
-            customSites={customSites} customTeam={customTeam} />
+            customSites={customSites} customTeam={customTeam}
+            prefill={addPrefill} onClearPrefill={() => setAddPrefill(null)} />
         )}
         {!loading && tab === 'txns' && <TxnsScreen txns={txns} onDelete={deleteTxn}
           onVoidAndCorrect={voidAndCorrect} allAccounts={allAccounts}
@@ -588,7 +584,8 @@ function App() {
           <ChecklistScreen recurring={recurring} checklist={checklist}
             onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring}
             allAccounts={allAccounts} allBanks={allBanks} allCC={allCC}
-            allCategories={allCategories} balances={balances} />
+            allCategories={allCategories} balances={balances}
+            setTab={setTab} onPrefill={(rec) => { setAddPrefill(rec); setTab('add'); }} />
         )}
         {!loading && tab === 'udhari' && (
           <UdhariScreen udhari={udhari} onAdd={addUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} />
@@ -647,7 +644,8 @@ function App() {
               allAccounts={allAccounts} allBanks={allBanks}
               allCC={allCC} allCategories={allCategories}
               onAddCategory={addCustomCategory}
-              customSites={customSites} customTeam={customTeam} />
+              customSites={customSites} customTeam={customTeam}
+              prefill={addPrefill} onClearPrefill={() => setAddPrefill(null)} />
           </div>
         </div>
       )}
@@ -988,7 +986,7 @@ function CategoryPicker({ allCategories, value, onChange, onAddNew }) {
 }
 
 // ── ADD SCREEN ───────────────────────────────────────
-function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategories, onAddCategory, customSites, customTeam }) {
+function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategories, onAddCategory, customSites, customTeam, prefill, onClearPrefill }) {
   const today = new Date().toISOString().slice(0,10);
 
   // Domain toggle
@@ -999,8 +997,6 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const [desc,      setDesc]      = useState('');
   const [date,      setDate]      = useState(today);
   const [saving,    setSaving]    = useState(false);
-  const [mode,      setMode]      = useState('form');
-
   // Personal domain state
   const [type,      setType]      = useState('Expense');
   const [cat,       setCat]       = useState('');
@@ -1015,6 +1011,17 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   const [siteCat,      setSiteCat]      = useState('Labour');
   const [transferDir,  setTransferDir]  = useState('Given');
   const [transferUser, setTransferUser] = useState(customTeam?.[0] || '');
+
+  // ── Prefill from checklist (Task 3) ──────────────────
+  useEffect(() => {
+    if (!prefill) return;
+    setDomain('Personal');
+    setType('Expense');
+    if (prefill.amount && parseFloat(prefill.amount) > 0) setAmt(String(prefill.amount));
+    if (prefill.name) setDesc(prefill.name);
+    if (prefill.category) setCat(prefill.category);
+    if (typeof onClearPrefill === 'function') onClearPrefill();
+  }, [prefill]);
 
   const SITE_CATS = ['Labour','Material','Kharchi','Fuel','Transport','Misc'];
 
@@ -1256,7 +1263,6 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
   }
 
   // ── PERSONAL DOMAIN — FORM MODE
-  if (mode === 'form') {
     return (
       <div className="fade-in" style={{padding:'12px 16px',paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)',display:'flex',flexDirection:'column',gap:12}}>
 
@@ -1264,12 +1270,6 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
         <div style={{display:'flex',gap:6}}>
           <span style={chipStyle(domain==='Personal')} onClick={()=>setDomain('Personal')}>Personal</span>
           <span style={chipStyle(domain==='Site')} onClick={()=>setDomain('Site')}>Site</span>
-        </div>
-
-        {/* Mode toggle */}
-        <div style={{display:'flex',justifyContent:'flex-end',gap:6}}>
-          <span style={chipStyle(mode==='form')} onClick={()=>setMode('form')}>Form</span>
-          <span style={chipStyle(mode==='keypad')} onClick={()=>setMode('keypad')}>Keypad</span>
         </div>
 
         {/* Type */}
@@ -1349,126 +1349,7 @@ function AddScreen({ onSave, showToast, allAccounts, allBanks, allCC, allCategor
 
       </div>
     );
-  }
 
-  // ── PERSONAL DOMAIN — KEYPAD MODE
-  return (
-    <div className="fade-in" style={{paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)'}}>
-      {/* Domain toggle */}
-      <div style={{display:'flex',gap:6,padding:'8px 16px 0'}}>
-        <span style={chipStyle(domain==='Personal')} onClick={()=>setDomain('Personal')}>Personal</span>
-        <span style={chipStyle(domain==='Site')} onClick={()=>setDomain('Site')}>Site</span>
-      </div>
-      {/* Mode toggle */}
-      <div style={{display:'flex',justifyContent:'flex-end',gap:6,padding:'8px 16px 0'}}>
-        <span style={chipStyle(mode==='form')} onClick={()=>setMode('form')}>Form</span>
-        <span style={chipStyle(mode==='keypad')} onClick={()=>setMode('keypad')}>Keypad</span>
-      </div>
-
-      {/* Type */}
-      <p className="sec-label">TYPE</p>
-      <div className="chip-row">
-        {TYPES_PERSONAL.map(t => (
-          <div key={t.key} className={'chip'+(type===t.key?' sel':'')} onClick={()=>selectType(t.key)}>{t.label}</div>
-        ))}
-      </div>
-
-      {/* Amount display */}
-      <div className="amt-display">
-        <div className="amt-label">Amount (₹)</div>
-        <div className={'amt-value'+(parseFloat(amt)>0?' has-val':'')}>
-          {parseFloat(amt)>0 ? fmt(parseFloat(amt)) : '0'}
-        </div>
-      </div>
-
-      {/* Keypad */}
-      <div className="keypad">
-        {['1','2','3','4','5','6','7','8','9','.',  '0','⌫'].map(k => (
-          <button key={k} className={'key'+(k==='⌫'?' del':'')} onClick={() => {
-            if (k==='⌫') setAmt(a => a.slice(0,-1));
-            else if (k==='.' && amt.includes('.')) return;
-            else setAmt(a => (a+k).replace(/^0+(\d)/,'$1'));
-          }}>{k}</button>
-        ))}
-      </div>
-
-      {/* Description */}
-      <p className="sec-label" style={{marginTop:12}}>DESCRIPTION</p>
-      <input className="desc-input" placeholder="Optional note"
-        value={desc} onChange={e=>setDesc(e.target.value)} />
-
-      {/* Date */}
-      <p className="sec-label" style={{marginTop:8}}>DATE</p>
-      <div style={{display:'flex',gap:8,padding:'0 16px'}}>
-        <input type="date" value={date} max={today} onChange={e=>setDate(e.target.value)}
-          style={{flex:1,background:'var(--bg2)',border:`1px solid ${date!==today?'var(--amber)':'var(--border)'}`,
-            borderRadius:8,padding:'8px 12px',color:date!==today?'var(--amber)':'var(--text)',
-            fontFamily:'var(--mono)',fontSize:12,outline:'none'}} />
-        <button onClick={()=>setDate(today)}
-          style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,
-            color:'var(--text2)',fontFamily:'var(--mono)',fontSize:11,padding:'8px 12px',cursor:'pointer'}}>Today</button>
-      </div>
-
-      {/* Category */}
-      {needCat && (
-        <>
-          <p className="sec-label" style={{marginTop:8}}>CATEGORY</p>
-          <div style={{padding:'0 16px'}}>
-            <CategoryPicker allCategories={allCategories} value={cat} onChange={setCat} onAddNew={onAddCategory} />
-          </div>
-        </>
-      )}
-
-      {/* From */}
-      {needFrom && (
-        <>
-          <p className="sec-label" style={{marginTop:8}}>PAID FROM</p>
-          <div className="chip-row">
-            {fromList().map(a => <div key={a} className={'chip'+(from===a?' sel':'')} onClick={()=>setFrom(a)}>{a}</div>)}
-          </div>
-        </>
-      )}
-
-      {/* To */}
-      {needTo && (
-        <>
-          <p className="sec-label" style={{marginTop:8}}>{type==='Income'||type==='UA Received'?'TO ACCOUNT':'TO'}</p>
-          <div className="chip-row">
-            {toList().map(a => <div key={a} className={'chip'+(to===a?' sel':'')} onClick={()=>setTo(a)}>{a}</div>)}
-          </div>
-        </>
-      )}
-
-      {/* Tower */}
-      {(type==='UA Expense'||type==='UA Received') && (
-        <>
-          <p className="sec-label" style={{marginTop:8}}>TOWER / SITE</p>
-          <div className="chip-row">
-            {['D5','E2','C3','Common'].map(t => (
-              <div key={t} className={'chip'+(tower===t?' sel':'')} onClick={()=>setTower(tower===t?'':t)}>{t}</div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Warnings + Save */}
-      <div style={{padding:'12px 16px 16px',display:'flex',flexDirection:'column',gap:8}}>
-        {type==='UA Expense' && from && from!=='Cash' && (
-          <div style={{background:'var(--amber-bg)',border:'1px solid #3a2500',borderRadius:8,
-            padding:'8px 12px',fontSize:11,color:'var(--amber)'}}>
-            ⚠ {from} se pay kiya — recover bhi bank se hi karo
-          </div>
-        )}
-        {catInfo && catInfo.it && <span className="badge badge-in">IT: {catInfo.it} Eligible</span>}
-        <button onClick={handleSave} disabled={!canSave||saving}
-          style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',border:'none',borderRadius:10,
-            color:canSave&&!saving?'#000':'var(--text3)',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,
-            padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>
-          {saving ? 'Saving...' : canSave ? `Save  ₹${fmt(parseFloat(amt)||0)}` : 'Fill required fields'}
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // ── TRANSACTIONS SCREEN ──────────────────────────────
@@ -1908,21 +1789,15 @@ function DashScreen({ balances, txns, liquid, allBanks, allCC, budgets, trueSpen
   return (
     <div className="fade-in" style={{padding:'8px 12px'}}>
 
-      {/* ── TRUE NET WORTH HERO CARD ── */}
-      <div style={{background:'linear-gradient(135deg, #111827 0%, #374151 100%)', borderRadius:10, padding:'20px 16px', marginBottom:12, boxShadow:'0 4px 12px rgba(0,0,0,0.1)'}} onClick={() => setTab('investments')}>
-        <div style={{fontSize:10, color:'rgba(255,255,255,0.7)', fontFamily:'var(--mono)', textTransform:'uppercase', letterSpacing:'0.1em', marginBottom:6}}>True Net Worth</div>
-        <div style={{fontFamily:'var(--mono)', fontSize:32, fontWeight:700, color:'#fff', letterSpacing:'-1px'}}>
-          ₹{netWorth.toLocaleString('en-IN')}
-        </div>
-        <div style={{display:'flex', gap:20, marginTop:16, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.15)'}}>
-          <div>
-            <div style={{fontSize:9, color:'rgba(255,255,255,0.6)', fontFamily:'var(--mono)', textTransform:'uppercase'}}>Liquid (Net)</div>
-            <div style={{fontFamily:'var(--mono)', fontSize:14, fontWeight:600, color:'#fff', marginTop:2}}>₹{(liquid - totalCC).toLocaleString('en-IN')}</div>
-          </div>
-          <div>
-            <div style={{fontSize:9, color:'rgba(255,255,255,0.6)', fontFamily:'var(--mono)', textTransform:'uppercase'}}>Invested</div>
-            <div style={{fontFamily:'var(--mono)', fontSize:14, fontWeight:600, color:'var(--green-bg)', marginTop:2}}>₹{totalInv.toLocaleString('en-IN')}</div>
-          </div>
+      {/* ── TRUE NET WORTH — 1-LINE STRIP ── */}
+      <div onClick={() => setTab('investments')}
+        style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+          background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,
+          padding:'7px 12px',marginBottom:8,cursor:'pointer'}}>
+        <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Net Worth</span>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <span style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:'var(--text)'}}>{fmtAmt(netWorth)}</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>›</span>
         </div>
       </div>
 
@@ -2512,111 +2387,54 @@ function UdhariScreen({ udhari, onAdd, onDelete, allAccounts, allBanks }) {
   );
 }
 
-// ── RECURRING ITEM ROW — outside ChecklistScreen to avoid remount bug ──
-function RecItem({ rec, cl, onTick, allAccounts, allBanks }) {
-  const [open,     setOpen]    = useState(false);
-  const [payAmt,   setPayAmt]  = useState('');
-  const [payAcct,  setPayAcct] = useState(rec.account || 'Cash');
-  const [saving,   setSaving]  = useState(false);
-
+// ── RECURRING ITEM ROW — lean prefill version (Task 3) ──
+function RecItem({ rec, cl, onPrefill }) {
   const isPaid = cl?.status === 'paid';
   const isVar  = !rec.amount || parseFloat(rec.amount) === 0;
 
-  const chipS = (active) => ({
-    display:'inline-block',
-    border: active ? '1px solid var(--green)' : '1px solid var(--border2)',
-    borderRadius:16, padding:'5px 10px', fontFamily:'var(--mono)', fontSize:10,
-    color: active ? 'var(--green)' : 'var(--text2)',
-    background: active ? 'var(--green-bg)' : 'var(--bg2)',
-    cursor:'pointer', userSelect:'none', margin:'0 4px 4px 0',
-  });
-
-  const handlePay = async () => {
-    const amt = parseFloat(payAmt) || parseFloat(rec.amount) || 0;
-    if (!amt) return;
-    setSaving(true);
-    await onTick(rec, cl, amt, payAcct);
-    setSaving(false);
-    setOpen(false);
-    setPayAmt('');
+  const handleClick = () => {
+    if (isPaid) return;
+    if (typeof onPrefill === 'function') onPrefill(rec);
   };
 
   return (
-    <div style={{borderBottom:'1px solid var(--border)',background:isPaid?'var(--green-bg)':'var(--bg2)'}}>
-      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px'}}>
-        {/* Checkbox */}
-        <div
-          onClick={() => !isPaid && setOpen(o=>!o)}
-          style={{width:22,height:22,borderRadius:6,flexShrink:0,cursor:isPaid?'default':'pointer',
-            border: isPaid ? '1.5px solid var(--green)' : open ? '1.5px solid var(--blue)' : '1.5px solid var(--border2)',
-            background: isPaid ? 'var(--green)' : 'none',
-            display:'flex',alignItems:'center',justifyContent:'center'}}>
-          {isPaid && <span style={{color:'#000',fontSize:11,fontWeight:700}}>✓</span>}
-          {!isPaid && open && <span style={{color:'var(--blue)',fontSize:14}}>−</span>}
+    <div onClick={handleClick}
+      style={{borderBottom:'1px solid var(--border)',background:isPaid?'var(--green-bg)':'var(--bg2)',
+        cursor:isPaid?'default':'pointer',display:'flex',alignItems:'center',gap:10,padding:'10px 14px'}}>
+      {/* Checkbox */}
+      <div style={{width:22,height:22,borderRadius:6,flexShrink:0,
+          border: isPaid ? '1.5px solid var(--green)' : '1.5px solid var(--border2)',
+          background: isPaid ? 'var(--green)' : 'none',
+          display:'flex',alignItems:'center',justifyContent:'center'}}>
+        {isPaid && <span style={{color:'#000',fontSize:11,fontWeight:700}}>✓</span>}
+        {!isPaid && <span style={{color:'var(--text3)',fontSize:12}}>›</span>}
+      </div>
+      {/* Name + amount */}
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontSize:13,color:isPaid?'var(--text3)':'var(--text)',
+            textDecoration:isPaid?'line-through':'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+            {rec.name}
+          </span>
+          <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,flexShrink:0,marginLeft:8,
+            color:isPaid?'var(--green)':isVar?'var(--text3)':'var(--text)'}}>
+            {isPaid ? fmtAmt(cl.amount_paid||rec.amount||0) : isVar ? 'variable' : fmtAmt(rec.amount)}
+          </span>
         </div>
-        {/* Name + amount */}
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-            <span style={{fontSize:13,color:isPaid?'var(--text3)':'var(--text)',
-              textDecoration:isPaid?'line-through':'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-              {rec.name}
-            </span>
-            <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,flexShrink:0,marginLeft:8,
-              color:isPaid?'var(--green)':isVar?'var(--text3)':'var(--text)'}}>
-              {isPaid ? fmtAmt(cl.amount_paid||rec.amount||0) : isVar ? 'variable' : fmtAmt(rec.amount)}
-            </span>
-          </div>
-          <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2,display:'flex',gap:8,flexWrap:'wrap'}}>
-            {rec.due_day && <span>due {rec.due_day}{['','st','nd','rd'][rec.due_day]||'th'}</span>}
-            {rec.account && <span>{rec.account}</span>}
-            {rec.category && <span>{rec.category}</span>}
-            {isPaid && cl.paid_at && <span style={{color:'var(--green)'}}>paid {fmtDate(cl.paid_at)}</span>}
-          </div>
+        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2,display:'flex',gap:8,flexWrap:'wrap'}}>
+          {rec.due_day && <span>due {rec.due_day}{['','st','nd','rd'][rec.due_day]||'th'}</span>}
+          {rec.account && <span>{rec.account}</span>}
+          {rec.category && <span>{rec.category}</span>}
+          {isPaid && cl.paid_at && <span style={{color:'var(--green)'}}>paid {fmtDate(cl.paid_at)}</span>}
+          {!isPaid && <span style={{color:'var(--text3)',fontStyle:'italic'}}>tap to fill in Add</span>}
         </div>
       </div>
-
-      {/* Payment form — expands below */}
-      {open && !isPaid && (
-        <div style={{padding:'0 14px 12px',display:'flex',flexDirection:'column',gap:8}}>
-          {/* Amount */}
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <div style={{background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:8,
-              padding:'8px 12px',display:'flex',alignItems:'center',gap:6,flex:1}}>
-              <span style={{color:'var(--text3)',fontFamily:'var(--mono)'}}>₹</span>
-              <input
-                type="number" inputMode="decimal"
-                placeholder={rec.amount||'Enter amount'}
-                value={payAmt}
-                onChange={e => setPayAmt(e.target.value)}
-                style={{flex:1,background:'none',border:'none',outline:'none',
-                  color:'var(--green)',fontFamily:'var(--mono)',fontSize:16,fontWeight:600}}
-              />
-            </div>
-          </div>
-          {/* Account */}
-          <div>
-            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>PAID FROM</div>
-            <div style={{display:'flex',flexWrap:'wrap'}}>
-              {allAccounts.map(a => (
-                <span key={a} style={chipS(payAcct===a)} onClick={() => setPayAcct(a)}>{a}</span>
-              ))}
-            </div>
-          </div>
-          {/* Confirm */}
-          <button onClick={handlePay} disabled={saving || !payAmt}
-            style={{background:saving||!payAmt?'var(--bg3)':'var(--green)',border:'none',
-              borderRadius:8,color:saving||!payAmt?'var(--text3)':'#000',
-              fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:10,cursor:'pointer'}}>
-            {saving ? 'Saving...' : `Mark paid — ${fmtAmt(parseFloat(payAmt)||0)} from ${payAcct}`}
-          </button>
-        </div>
-      )}
     </div>
   );
 }
 
 // ── CHECKLIST SCREEN ─────────────────────────────────
-function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAccounts, allBanks, allCC, allCategories, balances }) {
+function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAccounts, allBanks, allCC, allCategories, balances, setTab, onPrefill }) {
   const now   = new Date();
   const month = now.getMonth() + 1;
   const year  = now.getFullYear();
@@ -2871,7 +2689,7 @@ function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAcc
           <p className="sec-label" style={{color:'var(--amber)'}}>Pending — {pending.length}</p>
           {pending.map(rec => (
             <RecItem key={rec.id} rec={rec} cl={getCL(rec.id)}
-              onTick={onTick} allAccounts={allAccounts} allBanks={allBanks} />
+              onPrefill={onPrefill} />
           ))}
         </>
       )}
@@ -2882,7 +2700,7 @@ function ChecklistScreen({ recurring, checklist, onTick, onAdd, onDelete, allAcc
           <p className="sec-label">Done — {paid.length}</p>
           {paid.map(rec => (
             <RecItem key={rec.id} rec={rec} cl={getCL(rec.id)}
-              onTick={onTick} allAccounts={allAccounts} allBanks={allBanks} />
+              onPrefill={onPrefill} />
           ))}
         </>
       )}
