@@ -169,6 +169,7 @@ const CATEGORIES = [
   {id:'Donation',emoji:'🙏',color:'green',parent:null,it:'80G'},{id:'Mobile Recharge',emoji:'📱',color:'blue',parent:null},
   {id:'UDHARI',emoji:'↗',color:'amber',parent:null},{id:'Society Maintenance',emoji:'🏘',color:'amber',parent:null},
   {id:'UA Expense',emoji:'🏗',color:'amber',parent:null,ua:true},{id:'Misc',emoji:'•',color:'none',parent:null},
+  {id:'Suspense (Uncategorized)',emoji:'🔍',color:'amber',parent:null},
 ];
 
 const fmt    = n => Math.abs(Math.round(n)).toLocaleString('en-IN');
@@ -214,9 +215,9 @@ function App() {
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
   useEffect(()=>{
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('jbf_theme', theme);
-  }, [theme]);
+    document.documentElement.setAttribute('data-theme',theme);
+    localStorage.setItem('jbf_theme',theme);
+  },[theme]);
 
   const loadData = useCallback(async ()=>{
     setLoading(true);
@@ -294,7 +295,12 @@ function App() {
     const updated=[...customCategories.filter(c=>c.name!==catObj.name&&!c.archived),{name:catObj.name,emoji:catObj.emoji||'•',it:catObj.it||'',parent:catObj.parent||null}];
     await saveCustomCategories(updated);
   };
-  const saveTheme = async t=>{setTheme(t);await db.from('settings').upsert({key:'theme',value:t});};
+  const saveTheme = t=>{
+    setTheme(t);
+    document.documentElement.setAttribute('data-theme',t);
+    localStorage.setItem('jbf_theme',t);
+    db.from('settings').upsert({key:'theme',value:t}).catch(()=>{});
+  };
   const addRecurring = async entry=>{const{error}=await db.from('recurring').insert([entry]);if(!error){showToast('✓ Saved');loadData();}else showToast('⚠ '+(error.message||'Error'));};
   const deleteRecurring = async id=>{await db.from('recurring').delete().eq('id',id);showToast('↩ Deleted');loadData();};
 
@@ -358,7 +364,14 @@ function App() {
         {loading&&<div className="empty">Loading...</div>}
         {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch}/>}
-        {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} investments={investments}/>}
+        {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} investments={investments} onAuditSync={async(real)=>{
+          const diff=real-liquid;
+          if(Math.abs(diff)<1){showToast('✓ Balances match perfectly!');return;}
+          const isIncome=diff>0;
+          const txn={domain:'Personal',type:isIncome?'Income':'Expense',amount:Math.abs(diff),category:'Suspense (Uncategorized)',from_account:isIncome?null:(allBanks.find(b=>b!=='Cash')||'Cash'),to_account:isIncome?(allBanks.find(b=>b!=='Cash')||'Cash'):null,particulars:'Audit Sync '+(isIncome?'surplus':'deficit')+' ₹'+fmt(Math.abs(diff)),status:'complete',source:'audit',created_at:new Date().toISOString()};
+          await addTxn(txn);
+          showToast((isIncome?'↑ Income':'↓ Expense')+' ₹'+fmt(Math.abs(diff))+' — Suspense entry created');
+        }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
         {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} showToast={showToast}/>}
         {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}}/>}
@@ -389,12 +402,26 @@ function App() {
 }
 /* ── computeBalances ── */
 function computeBalances(opening,txns,allBanks,allCC){
-  const bal={...opening};
+  const bal={};
+  /* seed opening amounts — handle both legacy number and new {amount, opening_date} format */
+  Object.entries(opening||{}).forEach(([acc,val])=>{
+    bal[acc]=(typeof val==='object'&&val!==null)?(val.amount||0):(val||0);
+  });
   txns.filter(t=>t.status!=='voided').forEach(t=>{
+    const txnDate=(t.created_at||'').slice(0,10);
     const amt=parseFloat(t.amount)||0,from=t.from_account,to=t.to_account,type=t.type;
-    if(type==='Expense'||type==='UA Expense'){if(from)bal[from]=(bal[from]||0)-amt;}
-    if(type==='Income'||type==='UA Received'){if(to)bal[to]=(bal[to]||0)+amt;}
-    if(['Bank→Bank','Bank→CC','Bank→Cash','Cash→Bank','CC→Bank'].includes(type)){if(from)bal[from]=(bal[from]||0)-amt;if(to)bal[to]=(bal[to]||0)+amt;}
+    /* only include transaction if it's on/after the account's opening_date */
+    const after=acc=>{
+      const val=opening[acc];
+      if(!val||typeof val!=='object'||!val.opening_date)return true;
+      return txnDate>=val.opening_date;
+    };
+    if(type==='Expense'||type==='UA Expense'){if(from&&after(from))bal[from]=(bal[from]||0)-amt;}
+    if(type==='Income'||type==='UA Received'){if(to&&after(to))bal[to]=(bal[to]||0)+amt;}
+    if(['Bank→Bank','Bank→CC','Bank→Cash','Cash→Bank','CC→Bank'].includes(type)){
+      if(from&&after(from))bal[from]=(bal[from]||0)-amt;
+      if(to&&after(to))bal[to]=(bal[to]||0)+amt;
+    }
   });
   return bal;
 }
@@ -618,11 +645,12 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
     </div>
   );
 }
-/* ── DashScreen — Hero Box + Collapsed Cards + Clickable Chart ── */
-function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,recurring,checklist,setGlobalSearch,setTab,investments}){
+/* ── DashScreen — Waterfall Hero + Audit Sync + Collapsed Cards + Clickable Chart ── */
+function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,recurring,checklist,setGlobalSearch,setTab,investments,onAuditSync}){
   budgets=budgets||{};
   const [bankOpen,setBankOpen]=useState(false);
   const [ccOpen,setCcOpen]=useState(false);
+  const [auditLoading,setAuditLoading]=useState(false);
   const chartRef=useRef(null);const chartInst=useRef(null);
   const drillTo=term=>{setGlobalSearch(term);setTab('txns');};
   const now=new Date();const month=now.getMonth();const year=now.getFullYear();
@@ -636,13 +664,26 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const uaOut=uaExp-uaRecv;
   const ccDues=(allCCAll||allCC).map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
   const totalCC=ccDues.reduce((s,x)=>s+x.due,0);
+  const monthlyProv=recurring.filter(r=>r.active!==false&&r.is_provision&&r.frequency==='monthly').reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
+  const reservedCapital=totalCC+monthlyProv;
+  const safeToSpend=liquid-reservedCapital;
   const spendable=trueSpendable!==undefined?trueSpendable:Math.max(0,liquid-totalCC);
   const totalInv=(investments||[]).reduce((s,i)=>s+(i.qty*i.current_price),0);
   const netWorth=liquid-totalCC+totalInv;
-  const spendCol=spendable<10000?'var(--red)':spendable<30000?'var(--amber)':'var(--green)';
+  const safeCol=safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)';
   const cats={};thisMonth.filter(t=>t.type==='Expense').forEach(t=>{const c=t.category||'Misc';cats[c]=(cats[c]||0)+(+t.amount);});
   const topCats=Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const COLORS=['#059669','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2'];
+
+  const handleAuditSync=async()=>{
+    const inputStr=window.prompt(`🔍 AUDIT SYNC\n\nApp Calculated Bank Balance: ₹${fmt(liquid)}\n\nEnter your REAL total bank balance (excluding CCs):`, fmt(liquid).replace(/,/g,''));
+    if(inputStr===null)return;
+    const real=parseFloat(inputStr.replace(/,/g,''));
+    if(isNaN(real)){alert('Invalid amount. Please enter a number.');return;}
+    setAuditLoading(true);
+    await onAuditSync(real);
+    setAuditLoading(false);
+  };
 
   useEffect(()=>{
     if(!chartRef.current||topCats.length===0)return;
@@ -651,7 +692,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
       type:'doughnut',
       data:{labels:topCats.map(([c])=>c),datasets:[{data:topCats.map(([,v])=>v),backgroundColor:COLORS.slice(0,topCats.length),borderColor:'rgba(0,0,0,0.1)',borderWidth:2}]},
       options:{responsive:true,maintainAspectRatio:true,cutout:'65%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' ₹'+Math.round(ctx.parsed).toLocaleString('en-IN')}}},
-        onClick:(evt,els)=>{if(els.length>0){const clickedCategory=topCats[els[0].index][0];setGlobalSearch(clickedCategory);setTab('txns');}},
+        onClick:(evt,els)=>{if(els.length>0)drillTo(topCats[els[0].index][0]);},
         onHover:(evt,els)=>{evt.native.target.style.cursor=els.length>0?'pointer':'default';}
       }
     });
@@ -680,19 +721,39 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
     <div className="fade-in" style={{padding:'8px 10px'}}>
       {/* Net Worth strip */}
       <div onClick={()=>setTab('investments')} style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'6px 12px',marginBottom:6,cursor:'pointer'}}>
-        <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Net Worth</span>
+        <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>True Net Worth (Liquid + Portfolio)</span>
         <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--text)'}}>{fmtAmt(netWorth)}</span><span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>›</span></div>
       </div>
 
-      {/* Hero Box */}
-      <div className="hero-box" style={{borderColor:spendCol}}>
-        <div className="hero-label">Available Today</div>
-        <div className="hero-amount" style={{color:spendCol}}>{fmtAmt(spendable)}</div>
-        <div className="hero-sub">
-          Liquid <span>{fmtAmt(liquid)}</span>
-          <span style={{margin:'0 8px',opacity:0.4}}>·</span>
-          {MONTHS[month]} Spent <span style={{color:'var(--red)'}}>{expense>0?fmtAmt(expense):'—'}</span>
-          {income>0&&<><span style={{margin:'0 8px',opacity:0.4}}>·</span>Income <span style={{color:'var(--green)'}}>{fmtAmt(income)}</span></>}
+      {/* ── WATERFALL HERO ── */}
+      <div style={{background:'var(--bg2)',border:'1.5px solid var(--border2)',borderRadius:12,marginBottom:6,overflow:'hidden'}}>
+        {/* Row 1: Actual Bank Balance */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+          <div>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:2}}>🏦 Actual Bank Balance</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>Sum of all bank accounts</div>
+          </div>
+          <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:'var(--text)'}}>{fmtAmt(liquid)}</div>
+        </div>
+        {/* Row 2: Reserved Capital */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'2px solid var(--border2)',background:'var(--red-bg)'}}>
+          <div>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:2}}>− Reserved Capital</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>CC Dues {fmtAmt(totalCC)} · Provisions {fmtAmt(monthlyProv)}</div>
+          </div>
+          <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--red)'}}>−{fmtAmt(reservedCapital)}</div>
+        </div>
+        {/* Row 3: Safe to Spend — PROMINENT */}
+        <div style={{padding:'14px 16px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)',borderBottom:'1px solid var(--border)'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:9,color:safeCol,textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:4}}>= Safe to Spend</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:38,fontWeight:800,color:safeCol,letterSpacing:'-1px',lineHeight:1}}>{safeToSpend<0?'−':''}{fmtAmt(Math.abs(safeToSpend))}</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:10,color:safeCol,marginTop:4,opacity:0.8}}>{MONTHS[month]} Spent <span style={{color:'var(--red)'}}>{expense>0?fmtAmt(expense):'—'}</span>{income>0&&<> · Income <span style={{color:'var(--green)'}}>{fmtAmt(income)}</span></>}</div>
+        </div>
+        {/* Audit Sync Button */}
+        <div style={{padding:'8px 16px',display:'flex',justifyContent:'flex-end',background:'var(--bg3)'}}>
+          <button onClick={handleAuditSync} disabled={auditLoading} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text2)',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'5px 12px',cursor:'pointer',letterSpacing:'0.06em',display:'flex',alignItems:'center',gap:5}}>
+            {auditLoading?'⏳ Syncing...':'🔍 Audit Sync'}
+          </button>
         </div>
       </div>
 
@@ -991,8 +1052,8 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
   const handleQuick=async(prov,type,amt,note)=>{
     if(!amt||parseFloat(amt)<=0)return;setSaving(true);
     const isAdd=type==='add';
-    const from_=isAdd?prov.account:prov.provision_account;
-    const to_=isAdd?prov.provision_account:prov.account;
+    const from_=isAdd?(prov.account||allBanks.find(b=>b!=='Cash')||'KB'):prov.provision_account;
+    const to_=isAdd?prov.provision_account:(prov.account||allBanks.find(b=>b!=='Cash')||'KB');
     const label=isAdd?prov.name:'[WITHDRAW] '+prov.name;
     await onAddTxn({type:'Bank→Bank',amount:parseFloat(amt),category:'Provision',from_account:from_,to_account:to_,particulars:label+(note?' — '+note:''),status:'complete',source:'provision',created_at:new Date().toISOString()});
     setQAction(null);setQAmt('');setQNote('');setSaving(false);
@@ -1001,7 +1062,7 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
 
   const handleAddProv=async()=>{
     if(!form.name.trim()||!form.from_account||!form.to_account)return;setFormSaving(true);
-    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,category:'Provision',active:true});
+    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
     setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});setFormSaving(false);setAddOpen(false);
   };
 
@@ -1089,7 +1150,8 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances}){
   const beforePeriod=txns.filter(t=>t.status!=='voided').filter(t=>t.from_account===acct||t.to_account===acct).filter(t=>{if(period==='all')return false;const d=new Date(t.created_at);if(period==='this_month')return d<new Date(year,month,1);if(period==='last_month'){const lm=month===0?11:month-1,ly=month===0?year-1:year;return d<new Date(ly,lm,1);}if(period==='this_year')return d<new Date(year,0,1);return false;});
   const isCC=allCC.includes(acct);
   const eff=t=>{const a=parseFloat(t.amount)||0;if(t.type==='Expense'||t.type==='UA Expense')return t.from_account===acct?-a:0;if(t.type==='Income'||t.type==='UA Received')return t.to_account===acct?+a:0;let e=0;if(t.from_account===acct)e-=a;if(t.to_account===acct)e+=a;return e;};
-  const openBal=(opening[acct]||0)+beforePeriod.reduce((s,t)=>s+eff(t),0);
+  const rawOpen=opening[acct];const openingAmt=typeof rawOpen==='object'&&rawOpen!==null?(rawOpen.amount||0):(rawOpen||0);
+  const openBal=openingAmt+beforePeriod.reduce((s,t)=>s+eff(t),0);
   let runBal=openBal;const rows=acctTxns.map(t=>{const effect=eff(t);runBal+=effect;return{...t,effect,runBal};});
   const closeBal=runBal,totIn=rows.filter(r=>r.effect>0).reduce((s,r)=>s+r.effect,0),totOut=rows.filter(r=>r.effect<0).reduce((s,r)=>s+Math.abs(r.effect),0);
   const periodLabel={this_month:`${MONTHS[month]} ${year}`,last_month:`${MONTHS[month===0?11:month-1]} ${month===0?year-1:year}`,this_year:`FY ${year}`,all:'All Time'}[period];
@@ -1167,7 +1229,9 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
 }
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
 function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme}){
-  const [ob,setOb]=useState({...opening});const [savedBal,setSavedBal]=useState(false);const [bg,setBg]=useState({...budgets});
+  /* Normalize opening — support both legacy number and new {amount, opening_date} */
+  const normalizeOB=ob=>{const r={};Object.entries(ob||{}).forEach(([acc,val])=>{r[acc]=typeof val==='object'&&val!==null?{amount:val.amount||0,opening_date:val.opening_date||''}:{amount:val||0,opening_date:''};});return r;};
+  const [ob,setOb]=useState(()=>normalizeOB(opening));const [savedBal,setSavedBal]=useState(false);const [bg,setBg]=useState({...budgets});
   const [newAccName,setNewAccName]=useState('');const [newAccType,setNewAccType]=useState('bank');
   const [newCatName,setNewCatName]=useState('');const [newCatEmoji,setNewCatEmoji]=useState('');const [newCatIT,setNewCatIT]=useState('');
   const [newSite,setNewSite]=useState('');const [newMember,setNewMember]=useState('');
@@ -1270,8 +1334,20 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
 
     {/* Opening Balances */}
     <Acc id="balances" title="Opening Balances" emoji="₹">
-      <p style={{padding:'8px 16px 4px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>CC me jo amount owe karte ho wo negative enter karo. e.g. SBI CC due ₹9,342 → -9342</p>
-      {[...allAccountsH,'Site Cash',...(customTeam||[])].map(a=><div key={a} className="settings-row"><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text)'}}>{a}</span><input type="number" style={{width:120,textAlign:'right'}} value={ob[a]||''} placeholder="0" onChange={e=>setOb(p=>({...p,[a]:parseFloat(e.target.value)||0}))}/></div>)}
+      <p style={{padding:'8px 16px 4px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>Set the balance each account had on its opening date. Only transactions on/after that date are counted. CC: enter negative for dues (e.g. −9342).</p>
+      {[...allAccountsH,'Site Cash',...(customTeam||[])].map(a=>{
+        const val=ob[a]||{amount:0,opening_date:''};
+        return(<div key={a} style={{borderBottom:'1px solid var(--border)',padding:'10px 16px'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginBottom:6,fontWeight:600}}>{a}</div>
+          <div style={{display:'flex',gap:8}}>
+            <input type="number" style={{flex:'0 0 130px',textAlign:'right'}} value={val.amount||''} placeholder="0"
+              onChange={e=>setOb(p=>({...p,[a]:{...(p[a]||{}),amount:parseFloat(e.target.value)||0}}))}/>
+            <input type="date" style={{flex:1}} value={val.opening_date||''}
+              onChange={e=>setOb(p=>({...p,[a]:{...(p[a]||{}),opening_date:e.target.value}}))}/>
+          </div>
+          {val.opening_date&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:4}}>Only txns from {val.opening_date} count toward balance</div>}
+        </div>);
+      })}
       <div style={{padding:'14px 16px'}}><button onClick={handleSaveBal} style={{background:savedBal?'var(--green-bg)':'var(--green)',border:savedBal?'1px solid var(--green)':'none',color:savedBal?'var(--green)':'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,borderRadius:10,padding:14,width:'100%',cursor:'pointer',transition:'all 0.2s'}}>{savedBal?'✓ Saved':'Save Opening Balances'}</button></div>
     </Acc>
 
