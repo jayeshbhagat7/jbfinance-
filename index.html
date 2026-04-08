@@ -214,9 +214,9 @@ function App() {
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
   useEffect(()=>{
-    document.documentElement.setAttribute('data-theme',theme);
-    localStorage.setItem('jbf_theme',theme);
-  },[theme]);
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('jbf_theme', theme);
+  }, [theme]);
 
   const loadData = useCallback(async ()=>{
     setLoading(true);
@@ -651,7 +651,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
       type:'doughnut',
       data:{labels:topCats.map(([c])=>c),datasets:[{data:topCats.map(([,v])=>v),backgroundColor:COLORS.slice(0,topCats.length),borderColor:'rgba(0,0,0,0.1)',borderWidth:2}]},
       options:{responsive:true,maintainAspectRatio:true,cutout:'65%',plugins:{legend:{display:false},tooltip:{callbacks:{label:ctx=>' ₹'+Math.round(ctx.parsed).toLocaleString('en-IN')}}},
-        onClick:(evt,els)=>{if(els.length>0)drillTo(topCats[els[0].index][0]);},
+        onClick:(evt,els)=>{if(els.length>0){const clickedCategory=topCats[els[0].index][0];setGlobalSearch(clickedCategory);setTab('txns');}},
         onHover:(evt,els)=>{evt.native.target.style.cursor=els.length>0?'pointer':'default';}
       }
     });
@@ -991,8 +991,8 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
   const handleQuick=async(prov,type,amt,note)=>{
     if(!amt||parseFloat(amt)<=0)return;setSaving(true);
     const isAdd=type==='add';
-    const from_=isAdd?(prov.account||allBanks.find(b=>b!=='Cash')||'KB'):prov.provision_account;
-    const to_=isAdd?prov.provision_account:(prov.account||allBanks.find(b=>b!=='Cash')||'KB');
+    const from_=isAdd?prov.account:prov.provision_account;
+    const to_=isAdd?prov.provision_account:prov.account;
     const label=isAdd?prov.name:'[WITHDRAW] '+prov.name;
     await onAddTxn({type:'Bank→Bank',amount:parseFloat(amt),category:'Provision',from_account:from_,to_account:to_,particulars:label+(note?' — '+note:''),status:'complete',source:'provision',created_at:new Date().toISOString()});
     setQAction(null);setQAmt('');setQNote('');setSaving(false);
@@ -1001,7 +1001,7 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
 
   const handleAddProv=async()=>{
     if(!form.name.trim()||!form.from_account||!form.to_account)return;setFormSaving(true);
-    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
+    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,category:'Provision',active:true});
     setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});setFormSaving(false);setAddOpen(false);
   };
 
