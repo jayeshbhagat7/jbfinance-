@@ -15,7 +15,7 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 
 /* ── THEME: DEEP AUTUMN (default) ── */
-[data-theme="autumn"]{
+html[data-theme="autumn"]{
   --bg:#faf6f0;--bg2:#f3ede3;--bg3:#ece4d5;--bg4:#e1d7c4;
   --border:#d0c5ae;--border2:#bfb399;
   --text:#2c1f0e;--text2:#5c4a2a;--text3:#8b7355;
@@ -25,7 +25,7 @@
   --blue:#2c5f8a;--blue-bg:#ddeaf5;
 }
 /* ── THEME: EXECUTIVE MIDNIGHT ── */
-[data-theme="midnight"]{
+html[data-theme="midnight"]{
   --bg:#0a0d12;--bg2:#111722;--bg3:#171f30;--bg4:#1e2840;
   --border:#1e2d45;--border2:#243655;
   --text:#e8ecf4;--text2:#8fa4c8;--text3:#4a6080;
@@ -35,7 +35,7 @@
   --blue:#3a7fff;--blue-bg:#0a1830;
 }
 /* ── THEME: NORDIC LIGHT ── */
-[data-theme="nordic"]{
+html[data-theme="nordic"]{
   --bg:#ffffff;--bg2:#f7f9fc;--bg3:#eef2f7;--bg4:#e2e8f0;
   --border:#d8e0eb;--border2:#c8d4e3;
   --text:#1a202c;--text2:#4a5568;--text3:#718096;
@@ -45,7 +45,7 @@
   --blue:#3182ce;--blue-bg:#bee3f8;
 }
 /* ── THEME: TERMINAL QUANT ── */
-[data-theme="terminal"]{
+html[data-theme="terminal"]{
   --bg:#070a07;--bg2:#0b100b;--bg3:#101810;--bg4:#152015;
   --border:#1a2e1a;--border2:#1f3c1f;
   --text:#00e066;--text2:#00aa44;--text3:#006628;
@@ -67,7 +67,7 @@
   --radius:10px;--tab-h:60px;--safe-b:env(safe-area-inset-bottom,0px);
 }
 html,body{height:100%;background:var(--bg3);color:var(--text);font-family:var(--sans);overflow:hidden;}
-#root{display:flex;flex-direction:column;height:100vh;max-width:600px;margin:0 auto;position:relative;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border);box-shadow:0 0 20px rgba(0,0,0,0.08);}
+#root{display:flex;flex-direction:column;height:100dvh;max-width:600px;margin:0 auto;position:relative;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border);box-shadow:0 0 20px rgba(0,0,0,0.08);}
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 .header{padding:10px 16px 8px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:10;}
 .header-title{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.1em;color:var(--text2);text-transform:uppercase;}
