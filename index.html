@@ -653,6 +653,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   budgets=budgets||{};
   const [bankOpen,setBankOpen]=useState(false);
   const [ccOpen,setCcOpen]=useState(false);
+  const [resCapOpen,setResCapOpen]=useState(false);
   const [auditLoading,setAuditLoading]=useState(false);
   const chartRef=useRef(null);const chartInst=useRef(null);
   const drillTo=term=>{setGlobalSearch(term);setTab('txns');};
@@ -707,29 +708,10 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const it80D=fy.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
   const gap80C=Math.max(0,150000-it80C);const taxSave=Math.round(gap80C*0.3);
   const alerts=[];
-  /* CC dues removed from alerts — visible in dedicated CC Outstanding card below */
+  /* CC dues removed from alerts — visible in dedicated CC Dues card below */
   if(uaOut>0)alerts.push({r:'amber',t:'UA outstanding — '+fmtAmt(uaOut)});
   topCats.forEach(([c,v])=>{if(budgets[c]&&v>budgets[c])alerts.push({r:'amber',t:c+' over budget'});});
   if(gap80C>0&&month>=1&&month<=2)alerts.push({r:'blue',t:'80C gap ₹'+Math.round(gap80C/1000)+'k — before 31 Mar'});
-  /* R4: Envelope due-soon alerts (≤60 days, gap > 0) */
-  const nowMs=Date.now();
-  (recurring||[]).filter(r=>r.is_provision&&r.active!==false&&r.due_date&&parseFloat(r.target_amount)>0).forEach(r=>{
-    const daysLeft=Math.round((new Date(r.due_date)-nowMs)/(1000*60*60*24));
-    if(daysLeft<=60&&daysLeft>0){
-      /* compute gap from txns */
-      const rTxns=active.filter(t=>t.type==='Bank→Bank'&&t.particulars);
-      const dep_=rTxns.filter(t=>t.particulars.includes(r.name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]')&&!t.particulars.includes('[GOAL_PAID]')&&!t.particulars.includes('[SURPLUS_RELEASE]')).reduce((s,t)=>s+(+t.amount),0);
-      const wdr_=rTxns.filter(t=>t.particulars.includes('[WITHDRAW] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
-      const ret_=rTxns.filter(t=>t.particulars.includes('[RETURN] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
-      const paid_=rTxns.filter(t=>t.particulars.includes('[GOAL_PAID] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
-      const surplus_=rTxns.filter(t=>t.particulars.includes('[SURPLUS_RELEASE] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
-      const bal=dep_+ret_-wdr_-paid_-surplus_;
-      const tgt=parseFloat(r.target_amount)||0;
-      const rem=Math.max(0,tgt-paid_-surplus_);
-      const gap=Math.max(0,rem-bal);
-      if(gap>0)alerts.push({r:'red',t:`📦 ${r.name} — due in ${daysLeft}d, gap ${fmtAmt(gap)}`});
-    }
-  });
 
   const bankTotal=allBanks.filter(a=>a!=='Site Cash').reduce((s,a)=>s+(balances[a]||0),0);
   const netCash=(balances['Cash']||0)+(balances['Site Cash']||0);
@@ -757,13 +739,50 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
           </div>
           <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:'var(--text)'}}>{fmtAmt(liquid)}</div>
         </div>
-        {/* Row 2: Reserved Capital */}
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'2px solid var(--border2)',background:'var(--red-bg)'}}>
-          <div>
-            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:2}}>− Reserved Capital</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>CC Dues: {fmtAmt(totalCC)} | Provisions: {fmtAmt(monthlyProv)}</div>
+        {/* Row 2: Reserved Capital — clickable accordion */}
+        <div style={{borderBottom:'2px solid var(--border2)'}}>
+          <div onClick={()=>setResCapOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',background:'var(--red-bg)',cursor:'pointer',userSelect:'none'}}>
+            <div>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:2}}>− Reserved Capital</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>CC Outstanding: {fmtAmt(totalCC)} | Provisions: {fmtAmt(monthlyProv)}</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--red)'}}>−{fmtAmt(reservedCapital)}</div>
+              <span style={{fontSize:10,color:'var(--red)',display:'inline-block',transform:resCapOpen?'rotate(180deg)':'none',transition:'transform 0.2s',lineHeight:1}}>▼</span>
+            </div>
           </div>
-          <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--red)'}}>−{fmtAmt(reservedCapital)}</div>
+          {resCapOpen&&(
+            <div style={{background:'var(--bg)',borderTop:'1px solid var(--border)'}}>
+              {/* Credit Cards sub-section */}
+              <div style={{padding:'6px 20px 2px',fontFamily:'var(--mono)',fontSize:9,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.12em'}}>Credit Cards</div>
+              {ccDues.length===0&&<div style={{padding:'4px 20px 6px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No outstanding dues</div>}
+              {ccDues.map(x=>(
+                <div key={x.name} onClick={()=>drillTo(x.name)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 20px',cursor:'pointer',borderBottom:'1px solid var(--border)'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>💳</span>
+                    <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{x.name}</span>
+                  </div>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--amber)'}}>{fmtAmt(x.due)}</span>
+                    <span style={{fontSize:9,color:'var(--text3)'}}>›</span>
+                  </div>
+                </div>
+              ))}
+              {/* Provisions sub-section */}
+              <div style={{padding:'8px 20px 2px',fontFamily:'var(--mono)',fontSize:9,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.12em'}}>Provisions</div>
+              {recurring.filter(r=>r.active!==false&&r.is_provision&&r.frequency==='monthly').length===0&&<div style={{padding:'4px 20px 8px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No active monthly provisions</div>}
+              {recurring.filter(r=>r.active!==false&&r.is_provision&&r.frequency==='monthly').map(r=>(
+                <div key={r.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'5px 20px',borderBottom:'1px solid var(--border)'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6}}>
+                    <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>📦</span>
+                    <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{r.name}</span>
+                  </div>
+                  <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--blue)'}}>{fmtAmt(parseFloat(r.amount)||0)}<span style={{fontSize:9,color:'var(--text3)',fontWeight:400}}>/mo</span></span>
+                </div>
+              ))}
+              <div style={{padding:'6px 20px',fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',fontStyle:'italic'}}>Tap a CC card to filter transactions</div>
+            </div>
+          )}
         </div>
         {/* Row 3: Safe to Spend — PROMINENT */}
         <div style={{padding:'14px 16px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)',borderBottom:'1px solid var(--border)'}}>
@@ -1035,296 +1054,78 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
     {recurring.filter(r=>!r.is_provision).length>0&&<><p className="sec-label" style={{marginTop:16}}>All recurring bills</p>{recurring.filter(r=>!r.is_provision).map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 14px',borderBottom:'1px solid var(--border)',fontSize:12}}><div style={{flex:1,minWidth:0}}><div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{FREQS.find(f=>f.k===r.frequency)?.l||r.frequency} · {r.account}</div></div><div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{r.amount?fmtAmt(r.amount):'var'}</span><button onClick={()=>onDelete(r.id)} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',padding:'3px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div></div>)}</>}
   </div>);
 }
-/* ── ProvisionLedger — 5-Button Corporate Vault Architecture ── */
+/* ── ProvisionLedger — CFO Envelope System ── */
 function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showToast}){
   const [sel,setSel]=useState(null);
-  /* qAction: {id, type: 'add'|'borrow'|'return'|'pay_goal'|'surplus_release'} */
-  const [qAction,setQAction]=useState(null);
+  const [qAction,setQAction]=useState(null); /* {id,type:'add'|'withdraw'} */
   const [qAmt,setQAmt]=useState('');const [qNote,setQNote]=useState('');const [saving,setSaving]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
   const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});
   const [formSaving,setFormSaving]=useState(false);
-  const [editProvId,setEditProvId]=useState(null);
-  const [editProvForm,setEditProvForm]=useState({name:'',target_amount:'',due_date:'',monthly_contribution:''});
-  const [editProvSaving,setEditProvSaving]=useState(false);
-  const [completedOpen,setCompletedOpen]=useState(false);
 
-  /* R1: Advanced getLedger with 5-tag parsing */
+  const provisions=recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
   const activeTxns=txns.filter(t=>t.status!=='voided');
+
   const getLedger=prov=>{
-    const name=prov.name;
-    /* deps: has name but NO special tag — plain adds */
-    const deps=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes(name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]')&&!t.particulars.includes('[GOAL_PAID]')&&!t.particulars.includes('[SURPLUS_RELEASE]'));
-    const wdrs=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[WITHDRAW] '+name));
-    const rets=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[RETURN] '+name));
-    const paid_txns=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[GOAL_PAID] '+name));
-    const surplus_txns=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[SURPLUS_RELEASE] '+name));
-    const dep_=deps.reduce((s,t)=>s+(+t.amount),0);
-    const wdr_=wdrs.reduce((s,t)=>s+(+t.amount),0);
-    const ret_=rets.reduce((s,t)=>s+(+t.amount),0);
-    const paid_=paid_txns.reduce((s,t)=>s+(+t.amount),0);
-    const surplus_=surplus_txns.reduce((s,t)=>s+(+t.amount),0);
-    const bal=dep_+ret_-wdr_-paid_-surplus_;
-    const tgt=parseFloat(prov.target_amount)||0;
-    const rem_target=Math.max(0,tgt-paid_-surplus_);
-    const gap=Math.max(0,rem_target-bal);
-    const pct=tgt>0?Math.min(Math.round((paid_+surplus_+bal)/tgt*100),100):0;
-    const allTxns=[...deps,...wdrs,...rets,...paid_txns,...surplus_txns];
-    return{deps,wdrs,rets,paid_txns,surplus_txns,dep_,wdr_,ret_,paid_,surplus_,bal,tgt,rem_target,gap,pct,allTxns};
+    const deps=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes(prov.name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]'));
+    const wdrs=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[WITHDRAW] '+prov.name));
+    const rets=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[RETURN] '+prov.name));
+    const dep_=deps.reduce((s,t)=>s+(+t.amount),0);const wdr_=wdrs.reduce((s,t)=>s+(+t.amount),0);const ret_=rets.reduce((s,t)=>s+(+t.amount),0);
+    const bal=dep_-wdr_+ret_;const tgt=parseFloat(prov.target_amount)||0;const pct=tgt>0?Math.min(Math.round(bal/tgt*100),100):0;
+    return{deps,wdrs,rets,dep_,wdr_,ret_,bal,tgt,pct};
   };
 
-  /* R2: 5-Button handleQuick with correct routing */
   const handleQuick=async(prov,type,amt,note)=>{
-    if(!amt||parseFloat(amt)<=0)return;
-    setSaving(true);
-    const srcBank=prov.account||allBanks.find(b=>b!=='Cash')||'KB';
-    const envBank=prov.provision_account||srcBank;
-    let from_,to_,label,toastMsg;
-    if(type==='add'){
-      from_=srcBank;to_=envBank;label=prov.name;toastMsg='✓ Funds added to envelope';
-    } else if(type==='borrow'){
-      from_=envBank;to_=srcBank;label='[WITHDRAW] '+prov.name;toastMsg='↩ Borrow logged';
-    } else if(type==='return'){
-      from_=srcBank;to_=envBank;label='[RETURN] '+prov.name;toastMsg='↪ Return logged';
-    } else if(type==='pay_goal'){
-      from_=envBank;to_=srcBank;label='[GOAL_PAID] '+prov.name;toastMsg='✓ Goal payment recorded — target reduced';
-    } else if(type==='surplus_release'){
-      from_=envBank;to_=srcBank;label='[SURPLUS_RELEASE] '+prov.name;toastMsg='⏏ Surplus released — goal completed';
-    }
-    if(from_&&to_&&from_===to_){alert('⚠ Self-transfer not allowed.');setSaving(false);return;}
+    if(!amt||parseFloat(amt)<=0)return;setSaving(true);
+    const isAdd=type==='add';
+    const from_=isAdd?(prov.account||allBanks.find(b=>b!=='Cash')||'KB'):prov.provision_account;
+    const to_=isAdd?prov.provision_account:(prov.account||allBanks.find(b=>b!=='Cash')||'KB');
+    if(from_&&to_&&from_===to_){alert('⚠ Self-transfer not allowed. Source and destination accounts are the same.');setSaving(false);return;}
+    const label=isAdd?prov.name:'[WITHDRAW] '+prov.name;
     await onAddTxn({type:'Bank→Bank',amount:parseFloat(amt),category:'Provision',from_account:from_,to_account:to_,particulars:label+(note?' — '+note:''),status:'complete',source:'provision',created_at:new Date().toISOString()});
     setQAction(null);setQAmt('');setQNote('');setSaving(false);
-    showToast(toastMsg);
-  };
-
-  /* R3: Pause / Resume */
-  const handlePause=async(prov)=>{
-    const paused=parseFloat(prov.amount)===0;
-    if(!paused){
-      if(!window.confirm('This will set monthly contribution to ₹0. Proceed?'))return;
-      const notes=(prov.notes||'')+' [PAUSED_AMT:'+prov.amount+']';
-      await db.from('recurring').update({amount:0,notes}).eq('id',prov.id);
-      showToast('⏸ EMI paused');
-    } else {
-      /* try to recover old amount from notes */
-      const m=(prov.notes||'').match(/\[PAUSED_AMT:([\d.]+)\]/);
-      const oldAmt=m?parseFloat(m[1]):0;
-      const resumeAmt=oldAmt||parseFloat(window.prompt('Enter monthly contribution to resume (₹):','0')||'0');
-      if(!resumeAmt||resumeAmt<=0){showToast('⚠ Invalid amount');return;}
-      const notes=(prov.notes||'').replace(/\[PAUSED_AMT:[\d.]+\]/g,'').trim();
-      await db.from('recurring').update({amount:resumeAmt,notes}).eq('id',prov.id);
-      showToast('▶ EMI resumed — ₹'+fmt(resumeAmt)+'/mo');
-    }
-    setTimeout(()=>window.location.reload(),600);
-  };
-
-  /* R2: Edit save */
-  const handleSaveEditProv=async(provId)=>{
-    if(!editProvForm.name.trim())return;
-    setEditProvSaving(true);
-    const{error}=await db.from('recurring').update({name:editProvForm.name.trim(),target_amount:parseFloat(editProvForm.target_amount)||0,due_date:editProvForm.due_date||null,amount:parseFloat(editProvForm.monthly_contribution)||0}).eq('id',provId);
-    if(!error)showToast('✓ Envelope updated');else showToast('⚠ '+(error.message||'Error'));
-    setEditProvId(null);setEditProvSaving(false);
-    setTimeout(()=>window.location.reload(),600);
+    showToast(isAdd?'✓ Funds added to envelope':'↩ Withdrawal logged');
   };
 
   const handleAddProv=async()=>{
     if(!form.name.trim()||!form.from_account||!form.to_account)return;
-    if(form.from_account===form.to_account){alert('⚠ Self-transfer not allowed.');return;}
-    if(!form.due_date){alert('⚠ Due date is mandatory.');return;}
+    if(form.from_account===form.to_account){alert('⚠ Self-transfer not allowed. Source account and envelope account must be different.');return;}
+    if(!form.due_date){alert('⚠ Due date is mandatory. Please set a target date for this envelope.');return;}
     setFormSaving(true);
-    const provPayload={name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,due_date:form.due_date||null,is_provision:true,active:true};
-    await onAddRecurring(provPayload);
+    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
     setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});setFormSaving(false);setAddOpen(false);
   };
 
-  const newTgt=parseFloat(form.target_amount)||0;const newSaved=parseFloat(form.already_saved)||0;const newGap=Math.max(0,newTgt-newSaved);
-  const newDueDate=form.due_date?new Date(form.due_date):null;
-  const newMonthsLeft=newDueDate?Math.max(1,Math.round((newDueDate-new Date())/(1000*60*60*24*30))):0;
-  const newSugMonth=newMonthsLeft>0?Math.ceil(newGap/newMonthsLeft):0;
-
-  const provisions=recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
-  /* R3: split active vs completed */
-  const activeProvisions=[];const completedProvisions=[];
-  provisions.forEach(prov=>{
-    const{tgt,rem_target}=getLedger(prov);
-    if(tgt>0&&rem_target===0){completedProvisions.push(prov);}else{activeProvisions.push(prov);}
-  });
+  const tgt=parseFloat(form.target_amount)||0;const saved=parseFloat(form.already_saved)||0;const gap=Math.max(0,tgt-saved);
+  const dueDate=form.due_date?new Date(form.due_date):null;
+  const monthsLeft=dueDate?Math.max(1,Math.round((dueDate-new Date())/(1000*60*60*24*30))):0;
+  const sugMonth=monthsLeft>0?Math.ceil(gap/monthsLeft):0;
 
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const cS=a=>({display:'inline-block',border:a?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:16,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,color:a?'var(--green)':'var(--text2)',background:a?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',margin:'0 4px 4px 0'});
 
-  /* R4: Smart edit calc box */
-  const EditCalcBox=({prov})=>{
-    const{bal,rem_target,gap}=getLedger(prov);
-    const eDue=editProvForm.due_date?new Date(editProvForm.due_date):null;
-    const eMo=eDue?Math.max(1,Math.round((eDue-new Date())/(1000*60*60*24*30))):0;
-    const eTgt=parseFloat(editProvForm.target_amount)||0;
-    const eGap=Math.max(0,eTgt-bal);
-    const eSug=eMo>0?Math.ceil(eGap/eMo):0;
-    if(!eTgt)return null;
-    return(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 16px',marginBottom:8}}>
-      <span>Bal in vault: <strong style={{color:'var(--green)'}}>{fmtAmt(bal)}</strong></span>
-      <span>Rem. target: <strong style={{color:'var(--red)'}}>{fmtAmt(eTgt)}</strong></span>
-      <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(eGap)}</strong></span>
-      {eSug>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(eSug)}/mo</strong></span>}
-      {eMo>0&&<span>Months left: <strong>{eMo}</strong></span>}
-    </div>);
-  };
-
-  /* Envelope card renderer — shared for active & completed */
-  const renderCard=(prov,isCompleted)=>{
-    const{deps,wdrs,rets,paid_txns,surplus_txns,dep_,wdr_,ret_,paid_,surplus_,bal,tgt,rem_target,gap,pct,allTxns}=getLedger(prov);
-    const isOpen=sel===prov.id;const monthly=parseFloat(prov.amount)||0;const isPaused=monthly===0;
-    const qType=qAction?.id===prov.id?qAction.type:null;
-    const btnActive=(t)=>qType===t;
-    const btnStyle=(col,active)=>({flex:1,background:active?col:'transparent',border:'1px solid '+col,borderRadius:6,color:active?'#fff':col,fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'6px 2px',cursor:'pointer',transition:'all 0.15s',minWidth:0});
-    const setQ=(t)=>{if(qType===t){setQAction(null);}else{setQAction({id:prov.id,type:t});setQAmt('');setQNote('');}};
-
-    /* Safety rail messages */
-    const safetyMsg={
-      pay_goal:'⚠ IRREVERSIBLE: This permanently reduces your remaining target. Use ONLY when paying the actual vendor/goal.',
-      surplus_release:'⚠ This moves remaining vault funds back to your bank and reduces the target to ₹0, effectively completing this goal.'
-    };
-
-    /* confirm button colour/text per type */
-    const confirmStyle={
-      add:{bg:'var(--green)',border:'var(--green)',col:'#000',label:'Confirm — Add'},
-      borrow:{bg:'var(--red-bg)',border:'var(--red)',col:'var(--red)',label:'Confirm — Borrow'},
-      return:{bg:'var(--blue-bg)',border:'var(--blue)',col:'var(--blue)',label:'Confirm — Return'},
-      pay_goal:{bg:'#0d9488',border:'#0d9488',col:'#fff',label:'Confirm — Pay Goal'},
-      surplus_release:{bg:'var(--amber-bg)',border:'var(--amber)',col:'var(--amber)',label:'Confirm — Release Surplus'},
-    };
-    const cs=qType&&confirmStyle[qType];
-
-    return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px',opacity:isCompleted?0.85:1}}>
-      {/* Header */}
-      <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{if(editProvId!==prov.id)setSel(isOpen?null:prov.id);}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13,fontWeight:600,color:'var(--text)',display:'flex',alignItems:'center',gap:6}}>
-              {prov.name}
-              {isPaused&&!isCompleted&&<span style={{fontFamily:'var(--mono)',fontSize:8,background:'var(--amber-bg)',color:'var(--amber)',border:'1px solid var(--amber)',borderRadius:10,padding:'1px 6px'}}>PAUSED</span>}
-              {isCompleted&&<span style={{fontFamily:'var(--mono)',fontSize:8,background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green)',borderRadius:10,padding:'1px 6px'}}>✓ COMPLETE</span>}
-            </div>
-            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
-              {!isCompleted&&monthly>0?fmtAmt(monthly)+'/mo · ':''}
-              {prov.account&&prov.provision_account?prov.account+'→'+prov.provision_account:''}
-              {prov.due_date&&<span style={{marginLeft:4}}>· due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</span>}
-            </div>
-          </div>
-          <div style={{display:'flex',alignItems:'flex-start',gap:6,flexShrink:0}}>
-            {!isCompleted&&<>
-              <button onClick={e=>{e.stopPropagation();handlePause(prov);}} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',fontFamily:'var(--mono)',fontSize:9,padding:'3px 7px',cursor:'pointer'}}>{isPaused?'▶ Resume':'⏸ Pause'}</button>
-              <button onClick={e=>{e.stopPropagation();setEditProvId(editProvId===prov.id?null:prov.id);setEditProvForm({name:prov.name||'',target_amount:String(prov.target_amount||''),due_date:prov.due_date||'',monthly_contribution:String(prov.amount||'')});setSel(null);}} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',fontFamily:'var(--mono)',fontSize:9,padding:'3px 7px',cursor:'pointer'}}>⚙ Edit</button>
-            </>}
-            <div style={{textAlign:'right'}}>
-              <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:bal>0?'var(--green)':'var(--text3)'}}>{fmtAmt(bal)}</div>
-              {tgt>0&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pct}% of {fmtAmt(tgt)}</div>}
-            </div>
-          </div>
-        </div>
-        {/* Progress bar */}
-        {tgt>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
-        {/* Gap alert */}
-        {!isCompleted&&gap>0&&rem_target>0&&<div style={{marginTop:5,fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)'}}>Gap: {fmtAmt(gap)} remaining</div>}
-        {/* Missing target warning */}
-        {!isCompleted&&(!tgt||!prov.due_date)&&<div style={{marginTop:6,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)'}}>⚠ Target/Schedule Missing</div>}
-      </div>
-
-      {/* R2: Inline Edit Form */}
-      {editProvId===prov.id&&!isCompleted&&(
-        <div style={{margin:'0 14px 12px',background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:8,padding:'12px'}}>
-          <p style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',fontWeight:600,letterSpacing:'0.06em'}}>EDIT ENVELOPE</p>
-          <EditCalcBox prov={prov}/>
-          <div style={{display:'flex',flexDirection:'column',gap:8}}>
-            <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>NAME</div><input style={iS} value={editProvForm.name} onChange={e=>setEditProvForm(f=>({...f,name:e.target.value}))}/></div>
-            <div style={{display:'flex',gap:8}}>
-              <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET (₹)</div><input style={iS} type="number" step="0.01" value={editProvForm.target_amount} onChange={e=>setEditProvForm(f=>({...f,target_amount:e.target.value}))}/></div>
-              <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY (₹)</div><input style={iS} type="number" step="0.01" value={editProvForm.monthly_contribution} onChange={e=>setEditProvForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
-            </div>
-            <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DATE</div><input style={iS} type="date" value={editProvForm.due_date} onChange={e=>setEditProvForm(f=>({...f,due_date:e.target.value}))}/></div>
-            <div style={{display:'flex',gap:8}}>
-              <button onClick={()=>handleSaveEditProv(prov.id)} disabled={editProvSaving||!editProvForm.name.trim()} style={{flex:1,background:editProvSaving||!editProvForm.name.trim()?'var(--bg3)':'var(--blue)',border:'none',borderRadius:6,color:editProvSaving?'var(--text3)':'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:'pointer'}}>{editProvSaving?'Saving...':'Save Changes'}</button>
-              <button onClick={()=>setEditProvId(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'9px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* R2: 5-Button Vault */}
-      {!isCompleted&&(<div style={{display:'flex',gap:4,padding:'0 14px 10px'}}>
-        <button onClick={e=>{e.stopPropagation();setQ('add');}} style={btnStyle('var(--green)',btnActive('add'))}>+ Add</button>
-        <button onClick={e=>{e.stopPropagation();setQ('borrow');}} style={btnStyle('var(--red)',btnActive('borrow'))}>− Borrow</button>
-        <button onClick={e=>{e.stopPropagation();setQ('return');}} style={btnStyle('var(--blue)',btnActive('return'))}>↪ Return</button>
-        <button onClick={e=>{e.stopPropagation();setQ('pay_goal');}} style={btnStyle('#0d9488',btnActive('pay_goal'))}>✓ Pay</button>
-        <button onClick={e=>{e.stopPropagation();setQ('surplus_release');}} style={btnStyle('var(--amber)',btnActive('surplus_release'))}>⏏ Release</button>
-      </div>)}
-
-      {/* R2: Quick Action Form with Safety Rails */}
-      {qType&&qAction?.id===prov.id&&(<div style={{padding:'0 14px 12px',borderTop:'1px solid var(--border)'}}>
-        {safetyMsg[qType]&&<div style={{background:qType==='pay_goal'?'var(--red-bg)':'var(--amber-bg)',border:'1px solid '+(qType==='pay_goal'?'var(--red)':'var(--amber)'),borderRadius:7,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:10,fontWeight:700,color:qType==='pay_goal'?'var(--red)':'var(--amber)',marginBottom:8,lineHeight:1.5}}>{safetyMsg[qType]}</div>}
-        <div style={{display:'flex',gap:6,marginBottom:6}}>
-          <input type="number" step="0.01" autoFocus placeholder="Amount (₹)" value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:2}}/>
-          <input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:3}}/>
-        </div>
-        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:6}}>
-          {qType==='add'&&<>Debit: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>}
-          {qType==='borrow'&&<>Debit: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}
-          {qType==='return'&&<>Return: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>}
-          {qType==='pay_goal'&&<>Pay out: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}
-          {qType==='surplus_release'&&<>Release: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}
-        </div>
-        {cs&&<button onClick={()=>handleQuick(prov,qType,qAmt,qNote)} disabled={saving||!qAmt} style={{width:'100%',background:saving||!qAmt?'var(--bg2)':cs.bg,border:'1px solid '+(saving||!qAmt?'var(--border)':cs.border),borderRadius:6,color:saving||!qAmt?'var(--text3)':cs.col,fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:!qAmt?'default':'pointer'}}>{saving?'Logging...':(cs.label+' '+(qAmt?fmtAmt(parseFloat(qAmt)):''))}</button>}
-      </div>)}
-
-      {/* Expanded Ledger */}
-      {isOpen&&(<div style={{borderTop:'1px solid var(--border)'}}>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',borderBottom:'1px solid var(--border)'}}>
-          {[['Added',fmtAmt(dep_),'var(--green)'],['Borrowed',fmtAmt(wdr_),wdr_>0?'var(--red)':'var(--text3)'],['Returned',fmtAmt(ret_),ret_>0?'var(--blue)':'var(--text3)'],['Paid Out',fmtAmt(paid_),paid_>0?'#0d9488':'var(--text3)'],['Released',fmtAmt(surplus_),surplus_>0?'var(--amber)':'var(--text3)']].map(([l,v,c])=>(
-            <div key={l} style={{padding:'6px 4px',textAlign:'center',borderRight:'1px solid var(--border)'}}>
-              <div style={{fontSize:8,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:2}}>{l.toUpperCase()}</div>
-              <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:c}}>{v}</div>
-            </div>
-          ))}
-        </div>
-        {[...allTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{
-          const p=t.particulars||'';
-          const isW=p.includes('[WITHDRAW]'),isR=p.includes('[RETURN]'),isPG=p.includes('[GOAL_PAID]'),isSR=p.includes('[SURPLUS_RELEASE]');
-          const [icon,col,label]=isW?['↩','var(--red)','Borrowed']:isR?['↪','var(--blue)','Returned']:isPG?['✓','#0d9488','Goal Paid']:isSR?['⏏','var(--amber)','Surplus Released']:['↑','var(--green)','Added'];
-          const sign=isW||isPG||isSR?'−':'+';
-          return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}>
-            <div><div style={{color:col,fontFamily:'var(--mono)'}}>{icon} {label}</div><div style={{color:'var(--text3)',marginTop:1,fontSize:10}}>{fmtDate(t.created_at)}{p.split('—')[1]?<span style={{marginLeft:4,fontStyle:'italic'}}>· {p.split('—')[1].trim()}</span>:null}</div></div>
-            <span style={{fontFamily:'var(--mono)',fontWeight:600,color:col}}>{sign}{fmtAmt(t.amount)}</span>
-          </div>);
-        })}
-        {allTxns.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No transactions yet. Use the buttons above to start.</div>}
-      </div>)}
-    </div>);
-  };
-
   return(<div className="fade-in" style={{paddingBottom:8}}>
     <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-      <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Wealth Envelopes</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>Corporate Vault · {activeProvisions.length} active{completedProvisions.length>0?` · ${completedProvisions.length} completed`:''}</div></div>
+      <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Wealth Envelopes</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>Locked savings goals</div></div>
       <button onClick={()=>setAddOpen(o=>!o)} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>+ New</button>
     </div>
 
-    {/* New Envelope Form */}
+    {/* Smart Add Envelope Form */}
     {addOpen&&(<div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
       <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 12px',fontWeight:600,letterSpacing:'0.06em'}}>NEW WEALTH ENVELOPE</p>
       <div style={{display:'flex',flexDirection:'column',gap:8}}>
-        <input style={iS} placeholder="Envelope name (e.g. LIC Premium 2026)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+        <input style={iS} placeholder="Envelope name (e.g. LIC Premium Oct)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
         <div style={{display:'flex',gap:8}}>
           <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET AMOUNT</div><input style={iS} type="number" step="0.01" placeholder="₹ Total needed" value={form.target_amount} onChange={e=>setForm(f=>({...f,target_amount:e.target.value}))}/></div>
           <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>ALREADY SAVED</div><input style={iS} type="number" step="0.01" placeholder="₹ In bank now" value={form.already_saved} onChange={e=>setForm(f=>({...f,already_saved:e.target.value}))}/></div>
         </div>
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
-        {newTgt>0&&(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'flex',gap:16,flexWrap:'wrap'}}>
-          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(newGap)}</strong></span>
-          {newDueDate&&<span>Months left: <strong>{newMonthsLeft}</strong></span>}
-          {newSugMonth>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(newSugMonth)}/mo</strong></span>}
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>PROVISIONED TILL DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
+        {tgt>0&&(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'flex',gap:16,flexWrap:'wrap'}}>
+          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(gap)}</strong></span>
+          {dueDate&&<span>Months left: <strong>{monthsLeft}</strong></span>}
+          {sugMonth>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(sugMonth)}/mo</strong></span>}
         </div>)}
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY CONTRIBUTION</div><input style={iS} type="number" step="0.01" placeholder={newSugMonth>0?`Suggested: ₹${fmt(newSugMonth)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY CONTRIBUTION</div><input style={iS} type="number" step="0.01" placeholder={sugMonth>0?`Suggested: ₹${fmt(sugMonth)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
         <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>DEBIT FROM (source bank)</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.filter(b=>b!=='Cash').map(a=><span key={a} style={cS(form.from_account===a)} onClick={()=>setForm(f=>({...f,from_account:a}))}>{a}</span>)}</div></div>
         <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>ENVELOPE ACCOUNT (save into)</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.filter(b=>b!=='Cash').map(a=><span key={a} style={cS(form.to_account===a)} onClick={()=>setForm(f=>({...f,to_account:a}))}>{a}</span>)}</div></div>
         <div style={{display:'flex',gap:8}}>
@@ -1334,19 +1135,41 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
       </div>
     </div>)}
 
-    {activeProvisions.length===0&&!addOpen&&<div className="empty">No active envelopes.<br/>Tap "+ New" to create your first savings goal.</div>}
-    {activeProvisions.map(prov=>renderCard(prov,false))}
+    {provisions.length===0&&!addOpen&&<div className="empty">No envelopes yet.<br/>Tap "+ New" to create your first savings goal.</div>}
 
-    {/* R3: Completed Goals Accordion */}
-    {completedProvisions.length>0&&(
-      <div style={{margin:'8px 10px 0',border:'1px solid var(--green)',borderRadius:10,overflow:'hidden'}}>
-        <div onClick={()=>setCompletedOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'var(--green-bg)',cursor:'pointer'}}>
-          <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--green)',letterSpacing:'0.06em'}}>✓ COMPLETED GOALS ({completedProvisions.length})</span>
-          <span style={{fontSize:10,color:'var(--green)',transform:completedOpen?'rotate(180deg)':'none',display:'inline-block',transition:'transform 0.2s'}}>▼</span>
+    {provisions.map(prov=>{
+      const{deps,wdrs,rets,dep_,wdr_,ret_,bal,tgt,pct}=getLedger(prov);
+      const isOpen=sel===prov.id;const monthly=parseFloat(prov.amount)||0;
+      const isQAdd=qAction?.id===prov.id&&qAction?.type==='add';const isQWdr=qAction?.id===prov.id&&qAction?.type==='withdraw';
+      return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px'}}>
+        {/* Header */}
+        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>setSel(isOpen?null:prov.id)}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{prov.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{monthly>0?fmtAmt(monthly)+'/mo':''}{prov.account&&prov.provision_account?' · '+prov.account+'→'+prov.provision_account:''}{prov.due_date&&<span style={{marginLeft:6}}>· due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</span>}</div></div>
+            <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:bal>0?'var(--green)':'var(--text3)'}}>{fmtAmt(bal)}</div>{tgt>0&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pct}% of {fmtAmt(tgt)}</div>}</div>
+          </div>
+          {tgt>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
+          {(!tgt||!prov.due_date)&&<div style={{marginTop:6,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)',letterSpacing:'0.04em'}}>⚠ Target/Schedule Missing</div>}
         </div>
-        {completedOpen&&completedProvisions.map(prov=>renderCard(prov,true))}
-      </div>
-    )}
+        {/* Action Buttons */}
+        <div style={{display:'flex',gap:6,padding:'0 14px 10px'}}>
+          <button onClick={e=>{e.stopPropagation();setQAction(isQAdd?null:{id:prov.id,type:'add'});setQAmt('');setQNote('');}} style={{flex:1,background:isQAdd?'var(--green)':'var(--green-bg)',border:'1px solid var(--green)',borderRadius:6,color:isQAdd?'#000':'var(--green)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'7px 0',cursor:'pointer'}}>{isQAdd?'▲ Cancel':'+ Add Funds'}</button>
+          <button onClick={e=>{e.stopPropagation();setQAction(isQWdr?null:{id:prov.id,type:'withdraw'});setQAmt('');setQNote('');}} style={{flex:1,background:isQWdr?'var(--red)':'var(--red-bg)',border:'1px solid var(--red)',borderRadius:6,color:isQWdr?'#fff':'var(--red)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'7px 0',cursor:'pointer'}}>{isQWdr?'▼ Cancel':'− Withdraw'}</button>
+        </div>
+        {/* Quick Action Form */}
+        {(isQAdd||isQWdr)&&(<div style={{padding:'0 14px 12px',borderTop:'1px solid var(--border)'}}>
+          <div style={{display:'flex',gap:6,marginBottom:6}}><input type="number" step="0.01" autoFocus placeholder={isQAdd?"Amount to add":"Amount to withdraw"} value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:2}}/><input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:3}}/></div>
+          <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:6}}>{isQAdd?<>Debit: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>:<>Debit: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}</div>
+          <button onClick={()=>handleQuick(prov,isQAdd?'add':'withdraw',qAmt,qNote)} disabled={saving||!qAmt} style={{width:'100%',background:saving||!qAmt?'var(--bg2)':isQAdd?'var(--green)':'var(--red-bg)',border:'1px solid '+(saving||!qAmt?'var(--border)':isQAdd?'var(--green)':'var(--red)'),borderRadius:6,color:saving||!qAmt?'var(--text3)':isQAdd?'#000':'var(--red)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:'pointer'}}>{saving?'Logging...':'Confirm — '+(isQAdd?'Add':'Withdraw')+' '+(qAmt?fmtAmt(parseFloat(qAmt)):'')}</button>
+        </div>)}
+        {/* Expanded Ledger */}
+        {isOpen&&(<div style={{borderTop:'1px solid var(--border)'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',borderBottom:'1px solid var(--border)'}}>{[['Added Funds',fmtAmt(dep_),'var(--green)'],['Funds Used',fmtAmt(wdr_),wdr_>0?'var(--red)':'var(--text3)'],['Returned',fmtAmt(ret_),ret_>0?'var(--blue)':'var(--text3)']].map(([l,v,c])=><div key={l} style={{padding:'7px',textAlign:'center',borderRight:'1px solid var(--border)'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>{l.toUpperCase()}</div><div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:c}}>{v}</div></div>)}</div>
+          {[...deps,...wdrs,...rets].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{const isW=t.particulars?.includes('[WITHDRAW]');const isR=t.particulars?.includes('[RETURN]');return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'8px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}><div><div style={{color:isW?'var(--red)':isR?'var(--blue)':'var(--green)',fontFamily:'var(--mono)'}}>{isW?'↩ Funds Used':isR?'↪ Returned':'↑ Added Funds'}</div><div style={{color:'var(--text3)',marginTop:2,fontSize:10}}>{fmtDate(t.created_at)}</div></div><span style={{fontFamily:'var(--mono)',fontWeight:600,color:isW?'var(--red)':isR?'var(--blue)':'var(--green)'}}>{isW?'−':'+'}{fmtAmt(t.amount)}</span></div>);})}
+          {deps.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No transactions yet. Use "+ Add Funds" to start.</div>}
+        </div>)}
+      </div>);
+    })}
   </div>);
 }
 /* ── StatementScreen ── */
