@@ -175,7 +175,7 @@ const CATEGORIES = [
   {id:'Suspense (Uncategorized)',emoji:'🔍',color:'amber',parent:null},
 ];
 
-const fmt    = n => parseFloat(Math.abs(n||0)).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmt    = n => parseFloat(Math.abs(n)).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtAmt = n => '₹' + fmt(n);
 const fmtDate= d => new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
 const fmtTime= d => new Date(d).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
@@ -206,7 +206,6 @@ function App() {
   const [checklist,setChecklist]             = useState([]);
   const [customSites,setCustomSites]         = useState([]);
   const [customTeam,setCustomTeam]           = useState([]);
-  const [customSiteCats,setCustomSiteCats]   = useState([]);
   const [toast,setToast]                     = useState(null);
   const [menuOpen,setMenuOpen]               = useState(false);
   const [quickAdd,setQuickAdd]               = useState(false);
@@ -241,8 +240,6 @@ function App() {
         if(g('budgets'))          setBudgets(JSON.parse(g('budgets').value));
         if(g('custom_sites'))     setCustomSites(JSON.parse(g('custom_sites').value));
         if(g('custom_team'))      setCustomTeam(JSON.parse(g('custom_team').value));
-        if(g('custom_site_categories')){setCustomSiteCats(JSON.parse(g('custom_site_categories').value));}
-        else{const seed=['Misc.','Transportation','Labour Salary','KHARCHI','Medical','Hardware','Maintenance','Food','UDHARI','Stationary','Fuel','Travelling'];setCustomSiteCats(seed.map(n=>({name:n,archived:false})));}
         if(g('theme'))            { setTheme(g('theme').value); document.documentElement.setAttribute('data-theme',g('theme').value); localStorage.setItem('jbf_theme',g('theme').value); }
       }
     } catch(e){console.error(e);}
@@ -296,7 +293,6 @@ function App() {
   const saveBudgets = async bg=>{await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)});setBudgets(bg);showToast('✓ Budgets saved');};
   const saveCustomSites = async list=>{await db.from('settings').upsert({key:'custom_sites',value:JSON.stringify(list)});setCustomSites(list);showToast('✓ Sites updated');};
   const saveCustomTeam = async list=>{await db.from('settings').upsert({key:'custom_team',value:JSON.stringify(list)});setCustomTeam(list);showToast('✓ Team updated');};
-  const saveCustomSiteCategories = async list=>{await db.from('settings').upsert({key:'custom_site_categories',value:JSON.stringify(list)});setCustomSiteCats(list);showToast('✓ Site categories updated');};
   const saveCustomCategories = async list=>{await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(list)});setCustomCategories(list);showToast('✓ Categories updated');};
   const addCustomCategory = async catObj=>{
     const updated=[...customCategories.filter(c=>c.name!==catObj.name&&!c.archived),{name:catObj.name,emoji:catObj.emoji||'•',it:catObj.it||'',parent:catObj.parent||null}];
@@ -369,7 +365,7 @@ function App() {
       <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
-        {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/> }
+        {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch}/>}
         {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} investments={investments} onAuditSync={async(real)=>{
           const diff=real-liquid;
@@ -386,7 +382,7 @@ function App() {
         {!loading&&tab==='statement'&&<StatementScreen txns={txns} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} opening={opening} balances={balances}/>}
         {!loading&&tab==='site_ledger'&&<SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} opening={opening}/>}
         {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts}/>}
-        {!loading&&tab==='settings'&&<SettingsScreen opening={opening} onSave={saveOpening} allAccountsH={allAccountsH} customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts} customCategories={customCategories} onSaveCategories={saveCustomCategories} budgets={budgets} onSaveBudgets={saveBudgets} customSites={customSites} onSaveSites={saveCustomSites} customTeam={customTeam} onSaveTeam={saveCustomTeam} theme={theme} onSaveTheme={saveTheme} customSiteCats={customSiteCats} onSaveSiteCats={saveCustomSiteCategories}/>}
+        {!loading&&tab==='settings'&&<SettingsScreen opening={opening} onSave={saveOpening} allAccountsH={allAccountsH} customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts} customCategories={customCategories} onSaveCategories={saveCustomCategories} budgets={budgets} onSaveBudgets={saveBudgets} customSites={customSites} onSaveSites={saveCustomSites} customTeam={customTeam} onSaveTeam={saveCustomTeam} theme={theme} onSaveTheme={saveTheme}/>}
         {!loading&&tab==='ai_command'&&<AiCommandScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
       </div>
 
@@ -394,7 +390,7 @@ function App() {
       {!quickAdd&&tab!=='add'&&<button onClick={()=>setQuickAdd(true)} style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b) + 20px)',right:20,width:52,height:52,borderRadius:'50%',background:'var(--green)',border:'none',color:'#000',fontSize:28,fontWeight:300,cursor:'pointer',zIndex:150,boxShadow:'0 4px 16px rgba(0,0,0,0.3)',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>}
 
       {/* Quick Add Modal */}
-      {quickAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setQuickAdd(false)}><div style={{background:'var(--bg)',borderRadius:'16px 16px 0 0',border:'1px solid var(--border)',maxHeight:'90vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 16px',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,letterSpacing:'0.08em',color:'var(--text2)'}}>ADD ENTRY</span><button onClick={()=>setQuickAdd(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕ Close</button></div><AddScreen onSave={async txn=>{await addTxn(txn);setQuickAdd(false);}} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/></div></div>}
+      {quickAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setQuickAdd(false)}><div style={{background:'var(--bg)',borderRadius:'16px 16px 0 0',border:'1px solid var(--border)',maxHeight:'90vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 16px',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,letterSpacing:'0.08em',color:'var(--text2)'}}>ADD ENTRY</span><button onClick={()=>setQuickAdd(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕ Close</button></div><AddScreen onSave={async txn=>{await addTxn(txn);setQuickAdd(false);}} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/></div></div>}
 
       {/* Menu */}
       {menuOpen&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-start'}} onClick={e=>e.target===e.currentTarget&&setMenuOpen(false)}><div style={{background:'var(--bg)',borderRadius:'0 0 16px 16px',border:'1px solid var(--border)',padding:'16px',maxHeight:'80vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text2)',letterSpacing:'0.08em'}}>MENU</span><button onClick={()=>setMenuOpen(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div>
@@ -502,18 +498,14 @@ function CategoryPicker({allCategories,value,onChange,onAddNew}){
     </div>
   );
 }
-/* ── AddSaveBtn — module-level to avoid focus-reset anti-pattern ── */
-function AddSaveBtn({canSave,saving,amt,onSave}){
-  return <button onClick={onSave} disabled={!canSave||saving} style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',border:'none',borderRadius:10,color:canSave&&!saving?'#000':'var(--text3)',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>{saving?'Saving...':canSave?`Save  ₹${fmt(parseFloat(amt)||0)}`:'Fill required fields'}</button>;
-}
 /* ── AddScreen ── */
-function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,onAddCategory,customSites,customTeam,customSiteCats,prefill,onClearPrefill}){
+function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,onAddCategory,customSites,customTeam,prefill,onClearPrefill}){
   const today=new Date().toISOString().slice(0,10);
   const [domain,setDomain]=useState('Personal');
   const [amt,setAmt]=useState('');const [desc,setDesc]=useState('');const [date,setDate]=useState(today);const [saving,setSaving]=useState(false);
   const [type,setType]=useState('Expense');const [cat,setCat]=useState('');const [from,setFrom]=useState('Cash');const [to,setTo]=useState('');const [tower,setTower]=useState('');
   const [siteType,setSiteType]=useState('Expense');const [siteName,setSiteName]=useState((customSites&&customSites[0])||'');
-  const [siteCat,setSiteCat]=useState((customSiteCats&&customSiteCats.filter(c=>!c.archived)[0]?.name)||'Misc.');const [transferDir,setTransferDir]=useState('Given');const [transferUser,setTransferUser]=useState(customTeam?.[0]||'');
+  const [siteCat,setSiteCat]=useState('Labour');const [transferDir,setTransferDir]=useState('Given');const [transferUser,setTransferUser]=useState(customTeam?.[0]||'');
 
   useEffect(()=>{
     if(!prefill)return;
@@ -524,7 +516,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     if(typeof onClearPrefill==='function')onClearPrefill();
   },[prefill]);
 
-  const SITE_CATS_ACTIVE=(customSiteCats||[]).filter(c=>!c.archived).map(c=>c.name);
+  const SITE_CATS=['Labour','Material','Kharchi','Fuel','Transport','Misc'];
   const catInfo=allCategories.find(c=>c.id===cat);
   const needCat=type==='Expense';
   const needFrom=['Expense','UA Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(type);
@@ -555,6 +547,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const cs=active=>({border:active?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:20,padding:'6px 14px',fontFamily:'var(--mono)',fontSize:11,color:active?'var(--green)':'var(--text2)',background:active?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'});
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const TYPES_P=[{key:'Expense',label:'Expense'},{key:'Income',label:'Income'},{key:'Bank-CC',label:'Bank→CC'},{key:'Bank-Bank',label:'Bank→Bank'},{key:'Bank-Cash',label:'Bank→Cash'},{key:'Cash-Bank',label:'Cash→Bank'},{key:'CC-Bank',label:'CC→Bank'},{key:'UA Expense',label:'UA Expense'},{key:'UA Received',label:'UA Recv'}];
+  const SaveBtn=()=><button onClick={handleSave} disabled={!canSave||saving} style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',border:'none',borderRadius:10,color:canSave&&!saving?'#000':'var(--text3)',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>{saving?'Saving...':canSave?`Save  ₹${fmt(parseFloat(amt)||0)}`:'Fill required fields'}</button>;
 
   if(domain==='Site'){
     const selS={...iS,cursor:'pointer'};
@@ -562,14 +555,14 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
       <div style={{display:'flex',gap:6}}><span style={cs(false)} onClick={()=>setDomain('Personal')}>Personal</span><span style={cs(true)}>Site</span></div>
       <div><p className="sec-label" style={{padding:'0 0 6px'}}>Site</p>{(customSites&&customSites.length>0)?<div style={{display:'flex',flexWrap:'wrap',gap:6}}>{customSites.map(s=><span key={s} style={cs(siteName===s)} onClick={()=>setSiteName(s)}>{s}</span>)}</div>:<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No sites — add in Setup</span>}</div>
       <div><p className="sec-label" style={{padding:'0 0 6px'}}>Type</p><div style={{display:'flex',gap:6}}><span style={cs(siteType==='Expense')} onClick={()=>setSiteType('Expense')}>Expense</span><span style={cs(siteType==='Site Transfer')} onClick={()=>setSiteType('Site Transfer')}>Site Transfer</span></div></div>
-      {siteType==='Expense'&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>Category</p>{SITE_CATS_ACTIVE.length>0?<select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selS}>{SITE_CATS_ACTIVE.map(c=><option key={c}>{c}</option>)}</select>:<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No site categories — add in Setup → Site Categories</span>}</div>}
+      {siteType==='Expense'&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>Category</p><select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selS}>{SITE_CATS.map(c=><option key={c}>{c}</option>)}</select></div>}
       {siteType==='Site Transfer'&&<><div><p className="sec-label" style={{padding:'0 0 6px'}}>Direction</p><div style={{display:'flex',gap:6}}><span style={cs(transferDir==='Given')} onClick={()=>setTransferDir('Given')}>Given →</span><span style={cs(transferDir==='Received')} onClick={()=>setTransferDir('Received')}>← Received</span></div></div><div><p className="sec-label" style={{padding:'0 0 6px'}}>Person</p>{(customTeam&&customTeam.length>0)?<select value={transferUser} onChange={e=>setTransferUser(e.target.value)} style={selS}>{customTeam.map(m=><option key={m}>{m}</option>)}</select>:<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No team — add in Setup</span>}</div></>}
       {siteType==='Expense'&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>Paid From</p><select value={from} onChange={e=>setFrom(e.target.value)} style={selS}>{['Site Cash',...allAccounts].map(a=><option key={a}>{a}</option>)}</select></div>}
-      <input type="number" step="0.01" inputMode="decimal" placeholder="Amount (₹)" value={amt} onChange={e=>setAmt(e.target.value)} style={{...iS,fontSize:20,padding:'12px 14px',fontWeight:600}}/>
+      <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={amt} onChange={e=>setAmt(e.target.value)} style={{...iS,fontSize:20,padding:'12px 14px',fontWeight:600}}/>
       <input type="text" placeholder="Description (optional)" value={desc} onChange={e=>setDesc(e.target.value)} style={iS}/>
       <input type="date" value={date} max={today} onChange={e=>setDate(e.target.value)} style={{...iS,color:date!==today?'var(--amber)':'var(--text)',borderColor:date!==today?'var(--amber)':'var(--border2)'}}/>
       {date!==today&&<span style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)'}}>⚠ Backdated entry</span>}
-      <AddSaveBtn canSave={canSave} saving={saving} amt={amt} onSave={handleSave}/>
+      <SaveBtn/>
     </div>);
   }
 
@@ -585,7 +578,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     {needTo&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>{type==='Income'||type==='UA Received'?'TO ACCOUNT':'TO'}</p><div style={{display:'flex',flexWrap:'wrap',gap:6}}>{toList().map(a=><span key={a} style={cs(to===a)} onClick={()=>setTo(a)}>{a}</span>)}</div></div>}
     {(type==='UA Expense'||type==='UA Received')&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>TOWER / SITE</p><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['D5','E2','C3','Common'].map(t=><span key={t} style={cs(tower===t)} onClick={()=>setTower(tower===t?'':t)}>{t}</span>)}</div></div>}
     {catInfo&&catInfo.it&&<span className="badge badge-in">IT: {catInfo.it} Eligible</span>}
-    <AddSaveBtn canSave={canSave} saving={saving} amt={amt} onSave={handleSave}/>
+    <SaveBtn/>
   </div>);
 }
 /* ── TxnsScreen ── */
@@ -655,10 +648,6 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
     </div>
   );
 }
-/* ── Shared Dashboard sub-components — module-level to prevent focus bugs ── */
-function DashCard({children,style}){return <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',marginBottom:8,...(style||{})}}>{children}</div>;}
-function DashHdr({t,v,col}){return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)'}}><span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.08em',color:'var(--text3)',textTransform:'uppercase'}}>{t}</span>{v&&<span style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:600,color:col||'var(--text)'}}>{v}</span>}</div>;}
-function DashRow({a,b,red,grn,amb,dim,onClick}){return <div onClick={onClick} style={{display:'flex',justifyContent:'space-between',padding:'7px 12px',borderBottom:'1px solid var(--border)',fontSize:12,alignItems:'center',cursor:onClick?'pointer':'default'}}><span style={{color:dim?'var(--text3)':'var(--text2)'}}>{a}</span><div style={{display:'flex',gap:8,alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontWeight:600,color:red?'var(--red)':grn?'var(--green)':amb?'var(--amber)':'var(--text)'}}>{b}</span>{onClick&&<span style={{fontSize:10,color:'var(--text3)'}}>›</span>}</div></div>;}
 /* ── DashScreen — Waterfall Hero + Audit Sync + Collapsed Cards + Clickable Chart ── */
 function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,recurring,checklist,setGlobalSearch,setTab,investments,onAuditSync}){
   budgets=budgets||{};
@@ -669,7 +658,6 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const drillTo=term=>{setGlobalSearch(term);setTab('txns');};
   const now=new Date();const month=now.getMonth();const year=now.getFullYear();
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const [reservedOpen,setReservedOpen]=useState(false);
   const active=txns.filter(t=>t.status!=='voided');
   const thisMonth=active.filter(t=>{const d=new Date(t.created_at);return d.getMonth()===month&&d.getFullYear()===year;});
   const income=thisMonth.filter(t=>t.type==='Income').reduce((s,t)=>s+(+t.amount),0);
@@ -719,14 +707,37 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const it80D=fy.filter(t=>t.it_section==='80D').reduce((s,t)=>s+(+t.amount),0);
   const gap80C=Math.max(0,150000-it80C);const taxSave=Math.round(gap80C*0.3);
   const alerts=[];
-  /* CC dues removed from alerts — visible in dedicated CC Dues card below */
+  /* CC dues removed from alerts — visible in dedicated CC Outstanding card below */
   if(uaOut>0)alerts.push({r:'amber',t:'UA outstanding — '+fmtAmt(uaOut)});
   topCats.forEach(([c,v])=>{if(budgets[c]&&v>budgets[c])alerts.push({r:'amber',t:c+' over budget'});});
   if(gap80C>0&&month>=1&&month<=2)alerts.push({r:'blue',t:'80C gap ₹'+Math.round(gap80C/1000)+'k — before 31 Mar'});
+  /* R4: Envelope due-soon alerts (≤60 days, gap > 0) */
+  const nowMs=Date.now();
+  (recurring||[]).filter(r=>r.is_provision&&r.active!==false&&r.due_date&&parseFloat(r.target_amount)>0).forEach(r=>{
+    const daysLeft=Math.round((new Date(r.due_date)-nowMs)/(1000*60*60*24));
+    if(daysLeft<=60&&daysLeft>0){
+      /* compute gap from txns */
+      const rTxns=active.filter(t=>t.type==='Bank→Bank'&&t.particulars);
+      const dep_=rTxns.filter(t=>t.particulars.includes(r.name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]')&&!t.particulars.includes('[GOAL_PAID]')&&!t.particulars.includes('[SURPLUS_RELEASE]')).reduce((s,t)=>s+(+t.amount),0);
+      const wdr_=rTxns.filter(t=>t.particulars.includes('[WITHDRAW] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
+      const ret_=rTxns.filter(t=>t.particulars.includes('[RETURN] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
+      const paid_=rTxns.filter(t=>t.particulars.includes('[GOAL_PAID] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
+      const surplus_=rTxns.filter(t=>t.particulars.includes('[SURPLUS_RELEASE] '+r.name)).reduce((s,t)=>s+(+t.amount),0);
+      const bal=dep_+ret_-wdr_-paid_-surplus_;
+      const tgt=parseFloat(r.target_amount)||0;
+      const rem=Math.max(0,tgt-paid_-surplus_);
+      const gap=Math.max(0,rem-bal);
+      if(gap>0)alerts.push({r:'red',t:`📦 ${r.name} — due in ${daysLeft}d, gap ${fmtAmt(gap)}`});
+    }
+  });
 
   const bankTotal=allBanks.filter(a=>a!=='Site Cash').reduce((s,a)=>s+(balances[a]||0),0);
   const netCash=(balances['Cash']||0)+(balances['Site Cash']||0);
   const pCash=balances['Cash']||0;const sCash=balances['Site Cash']||0;
+
+  const Card=({children,style})=><div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',marginBottom:8,...(style||{})}}>{children}</div>;
+  const Hdr=({t,v,col})=><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)'}}><span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.08em',color:'var(--text3)',textTransform:'uppercase'}}>{t}</span>{v&&<span style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:600,color:col||'var(--text)'}}>{v}</span>}</div>;
+  const Row=({a,b,red,grn,amb,dim,onClick})=><div onClick={onClick} style={{display:'flex',justifyContent:'space-between',padding:'7px 12px',borderBottom:'1px solid var(--border)',fontSize:12,alignItems:'center',cursor:onClick?'pointer':'default'}}><span style={{color:dim?'var(--text3)':'var(--text2)'}}>{a}</span><div style={{display:'flex',gap:8,alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontWeight:600,color:red?'var(--red)':grn?'var(--green)':amb?'var(--amber)':'var(--text)'}}>{b}</span>{onClick&&<span style={{fontSize:10,color:'var(--text3)'}}>›</span>}</div></div>;
 
   return(
     <div className="fade-in" style={{padding:'8px 10px'}}>
@@ -746,30 +757,13 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
           </div>
           <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:'var(--text)'}}>{fmtAmt(liquid)}</div>
         </div>
-        {/* Row 2: Reserved Capital — clickable to expand (Fix 3) */}
-        <div>
-          <div onClick={()=>setReservedOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:reservedOpen?'1px solid var(--border)':'2px solid var(--border2)',background:'var(--red-bg)',cursor:'pointer'}}>
-            <div>
-              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:2}}>− Reserved Capital <span style={{fontSize:9,color:'var(--red)',opacity:0.7,marginLeft:4}}>{reservedOpen?'▲':'▼'}</span></div>
-              <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>CC Outstanding: {fmtAmt(totalCC)} | Provisions: {fmtAmt(monthlyProv)}</div>
-            </div>
-            <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--red)'}}>−{fmtAmt(reservedCapital)}</div>
+        {/* Row 2: Reserved Capital */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'2px solid var(--border2)',background:'var(--red-bg)'}}>
+          <div>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:2}}>− Reserved Capital</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>CC Dues: {fmtAmt(totalCC)} | Provisions: {fmtAmt(monthlyProv)}</div>
           </div>
-          {reservedOpen&&(
-            <div style={{background:'var(--red-bg)',borderBottom:'2px solid var(--border2)'}}>
-              {/* CC Outstanding breakdown */}
-              {(allCCAll||allCC).map(a=>{const due=Math.max(0,-(balances[a]||0));if(due===0)return null;return(<div key={a} onClick={()=>drillTo(a)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 20px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
-                <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>💳 {a} <span style={{fontSize:9,color:'var(--text3)'}}>outstanding</span></span>
-                <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--amber)'}}>{fmtAmt(due)}</span>
-              </div>);})}
-              {/* Active provision monthly contributions */}
-              {recurring.filter(r=>r.active!==false&&r.is_provision&&r.frequency==='monthly').map(r=>(<div key={r.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 20px',borderBottom:'1px solid var(--border)'}}>
-                <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>📦 {r.name} <span style={{fontSize:9,color:'var(--text3)'}}>provision/mo</span></span>
-                <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--blue)'}}>{fmtAmt(parseFloat(r.amount)||0)}</span>
-              </div>))}
-              {totalCC===0&&monthlyProv===0&&<div style={{padding:'8px 20px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No reserved capital.</div>}
-            </div>
-          )}
+          <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--red)'}}>−{fmtAmt(reservedCapital)}</div>
         </div>
         {/* Row 3: Safe to Spend — PROMINENT */}
         <div style={{padding:'14px 16px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)',borderBottom:'1px solid var(--border)'}}>
@@ -796,27 +790,27 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
       {alerts.length>0&&<div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:6}}>{alerts.map((a,i)=><div key={i} style={{background:a.r==='red'?'var(--red-bg)':a.r==='blue'?'var(--blue-bg)':'var(--amber-bg)',border:'1px solid '+(a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)'),borderRadius:6,padding:'6px 10px',fontSize:11,color:a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)',fontFamily:'var(--mono)'}}>{a.r==='red'?'⚠ ':a.r==='blue'?'◈ ':'● '}{a.t}</div>)}</div>}
 
       {/* Collapsed Bank Balances */}
-      <DashCard>
+      <Card>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',cursor:'pointer',borderBottom:bankOpen?'1px solid var(--border)':'none'}} onClick={()=>setBankOpen(o=>!o)}>
           <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>🏦 Bank Balances</span>
           <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--green)'}}>{fmtAmt(bankTotal)}</span><span style={{fontSize:10,color:'var(--text3)',display:'inline-block',transform:bankOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span></div>
         </div>
-        {bankOpen&&allBanks.filter(a=>a!=='Site Cash').map(a=>{const b=balances[a]||0;return<DashRow key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>drillTo(a)}/>;}) }
-      </DashCard>
+        {bankOpen&&allBanks.filter(a=>a!=='Site Cash').map(a=>{const b=balances[a]||0;return<Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>drillTo(a)}/>;}) }
+      </Card>
 
-      {/* Collapsed CC Outstanding (Fix 4: renamed from CC Dues) */}
-      <DashCard>
+      {/* Collapsed CC Dues */}
+      <Card>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',cursor:'pointer',borderBottom:ccOpen?'1px solid var(--border)':'none'}} onClick={()=>setCcOpen(o=>!o)}>
-          <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>💳 CC Outstanding</span>
+          <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>💳 CC Dues</span>
           <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:totalCC>0?'var(--amber)':'var(--text3)'}}>{fmtAmt(totalCC)}</span><span style={{fontSize:10,color:'var(--text3)',display:'inline-block',transform:ccOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span></div>
         </div>
-        {ccOpen&&(allCCAll||allCC).map(a=>{const due=Math.max(0,-(balances[a]||0));return<DashRow key={a} a={a} b={fmtAmt(due)} amb={due>0} dim={due===0} onClick={()=>drillTo(a)}/>;}) }
-      </DashCard>
+        {ccOpen&&(allCCAll||allCC).map(a=>{const due=Math.max(0,-(balances[a]||0));return<Row key={a} a={a} b={fmtAmt(due)} amb={due>0} dim={due===0} onClick={()=>drillTo(a)}/>;}) }
+      </Card>
 
       {/* Interactive Pie Chart — click slice = filter txns */}
       {topCats.length>0&&(
-        <DashCard>
-          <DashHdr t={MONTHS[month]+' spend'} v={fmtAmt(expense)} col="var(--red)"/>
+        <Card>
+          <Hdr t={MONTHS[month]+' spend'} v={fmtAmt(expense)} col="var(--red)"/>
           <div style={{padding:'12px 16px 8px',display:'flex',gap:12,alignItems:'center'}}>
             <div style={{flex:'0 0 150px',position:'relative'}}>
               <canvas ref={chartRef} style={{maxHeight:'150px'}}></canvas>
@@ -838,10 +832,10 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
               <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>tap slice or row to filter log</div>
             </div>
           </div>
-        </DashCard>
+        </Card>
       )}
 
-      {uaOut>0&&<DashCard><DashHdr t="UA Outstanding" v={fmtAmt(uaOut)} col="var(--amber)"/><DashRow a="Personal at site" b={fmtAmt(uaExp)} amb/><DashRow a="Recovered" b={'−'+fmtAmt(uaRecv)} grn/></DashCard>}
+      {uaOut>0&&<Card><Hdr t="UA Outstanding" v={fmtAmt(uaOut)} col="var(--amber)"/><Row a="Personal at site" b={fmtAmt(uaExp)} amb/><Row a="Recovered" b={'−'+fmtAmt(uaRecv)} grn/></Card>}
 
     </div>
   );
@@ -1041,10 +1035,11 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
     {recurring.filter(r=>!r.is_provision).length>0&&<><p className="sec-label" style={{marginTop:16}}>All recurring bills</p>{recurring.filter(r=>!r.is_provision).map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 14px',borderBottom:'1px solid var(--border)',fontSize:12}}><div style={{flex:1,minWidth:0}}><div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{FREQS.find(f=>f.k===r.frequency)?.l||r.frequency} · {r.account}</div></div><div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{r.amount?fmtAmt(r.amount):'var'}</span><button onClick={()=>onDelete(r.id)} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',padding:'3px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div></div>)}</>}
   </div>);
 }
-/* ── ProvisionLedger — CFO Envelope System ── */
+/* ── ProvisionLedger — 5-Button Corporate Vault Architecture ── */
 function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showToast}){
   const [sel,setSel]=useState(null);
-  const [qAction,setQAction]=useState(null); /* {id,type:'add'|'withdraw'} */
+  /* qAction: {id, type: 'add'|'borrow'|'return'|'pay_goal'|'surplus_release'} */
+  const [qAction,setQAction]=useState(null);
   const [qAmt,setQAmt]=useState('');const [qNote,setQNote]=useState('');const [saving,setSaving]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
   const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});
@@ -1052,88 +1047,284 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
   const [editProvId,setEditProvId]=useState(null);
   const [editProvForm,setEditProvForm]=useState({name:'',target_amount:'',due_date:'',monthly_contribution:''});
   const [editProvSaving,setEditProvSaving]=useState(false);
+  const [completedOpen,setCompletedOpen]=useState(false);
 
-  const provisions=recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
+  /* R1: Advanced getLedger with 5-tag parsing */
   const activeTxns=txns.filter(t=>t.status!=='voided');
-
   const getLedger=prov=>{
-    const deps=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes(prov.name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]'));
-    const wdrs=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[WITHDRAW] '+prov.name));
-    const rets=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[RETURN] '+prov.name));
-    const dep_=deps.reduce((s,t)=>s+(+t.amount),0);const wdr_=wdrs.reduce((s,t)=>s+(+t.amount),0);const ret_=rets.reduce((s,t)=>s+(+t.amount),0);
-    const bal=dep_-wdr_+ret_;const tgt=parseFloat(prov.target_amount)||0;const pct=tgt>0?Math.min(Math.round(bal/tgt*100),100):0;
-    return{deps,wdrs,rets,dep_,wdr_,ret_,bal,tgt,pct};
+    const name=prov.name;
+    /* deps: has name but NO special tag — plain adds */
+    const deps=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes(name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]')&&!t.particulars.includes('[GOAL_PAID]')&&!t.particulars.includes('[SURPLUS_RELEASE]'));
+    const wdrs=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[WITHDRAW] '+name));
+    const rets=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[RETURN] '+name));
+    const paid_txns=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[GOAL_PAID] '+name));
+    const surplus_txns=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[SURPLUS_RELEASE] '+name));
+    const dep_=deps.reduce((s,t)=>s+(+t.amount),0);
+    const wdr_=wdrs.reduce((s,t)=>s+(+t.amount),0);
+    const ret_=rets.reduce((s,t)=>s+(+t.amount),0);
+    const paid_=paid_txns.reduce((s,t)=>s+(+t.amount),0);
+    const surplus_=surplus_txns.reduce((s,t)=>s+(+t.amount),0);
+    const bal=dep_+ret_-wdr_-paid_-surplus_;
+    const tgt=parseFloat(prov.target_amount)||0;
+    const rem_target=Math.max(0,tgt-paid_-surplus_);
+    const gap=Math.max(0,rem_target-bal);
+    const pct=tgt>0?Math.min(Math.round((paid_+surplus_+bal)/tgt*100),100):0;
+    const allTxns=[...deps,...wdrs,...rets,...paid_txns,...surplus_txns];
+    return{deps,wdrs,rets,paid_txns,surplus_txns,dep_,wdr_,ret_,paid_,surplus_,bal,tgt,rem_target,gap,pct,allTxns};
   };
 
+  /* R2: 5-Button handleQuick with correct routing */
   const handleQuick=async(prov,type,amt,note)=>{
-    if(!amt||parseFloat(amt)<=0)return;setSaving(true);
-    const isAdd=type==='add';
-    const from_=isAdd?(prov.account||allBanks.find(b=>b!=='Cash')||'KB'):prov.provision_account;
-    const to_=isAdd?prov.provision_account:(prov.account||allBanks.find(b=>b!=='Cash')||'KB');
-    if(from_&&to_&&from_===to_){alert('⚠ Self-transfer not allowed. Source and destination accounts are the same.');setSaving(false);return;}
-    const label=isAdd?prov.name:'[WITHDRAW] '+prov.name;
+    if(!amt||parseFloat(amt)<=0)return;
+    setSaving(true);
+    const srcBank=prov.account||allBanks.find(b=>b!=='Cash')||'KB';
+    const envBank=prov.provision_account||srcBank;
+    let from_,to_,label,toastMsg;
+    if(type==='add'){
+      from_=srcBank;to_=envBank;label=prov.name;toastMsg='✓ Funds added to envelope';
+    } else if(type==='borrow'){
+      from_=envBank;to_=srcBank;label='[WITHDRAW] '+prov.name;toastMsg='↩ Borrow logged';
+    } else if(type==='return'){
+      from_=srcBank;to_=envBank;label='[RETURN] '+prov.name;toastMsg='↪ Return logged';
+    } else if(type==='pay_goal'){
+      from_=envBank;to_=srcBank;label='[GOAL_PAID] '+prov.name;toastMsg='✓ Goal payment recorded — target reduced';
+    } else if(type==='surplus_release'){
+      from_=envBank;to_=srcBank;label='[SURPLUS_RELEASE] '+prov.name;toastMsg='⏏ Surplus released — goal completed';
+    }
+    if(from_&&to_&&from_===to_){alert('⚠ Self-transfer not allowed.');setSaving(false);return;}
     await onAddTxn({type:'Bank→Bank',amount:parseFloat(amt),category:'Provision',from_account:from_,to_account:to_,particulars:label+(note?' — '+note:''),status:'complete',source:'provision',created_at:new Date().toISOString()});
     setQAction(null);setQAmt('');setQNote('');setSaving(false);
-    showToast(isAdd?'✓ Funds added to envelope':'↩ Withdrawal logged');
+    showToast(toastMsg);
+  };
+
+  /* R3: Pause / Resume */
+  const handlePause=async(prov)=>{
+    const paused=parseFloat(prov.amount)===0;
+    if(!paused){
+      if(!window.confirm('This will set monthly contribution to ₹0. Proceed?'))return;
+      const notes=(prov.notes||'')+' [PAUSED_AMT:'+prov.amount+']';
+      await db.from('recurring').update({amount:0,notes}).eq('id',prov.id);
+      showToast('⏸ EMI paused');
+    } else {
+      /* try to recover old amount from notes */
+      const m=(prov.notes||'').match(/\[PAUSED_AMT:([\d.]+)\]/);
+      const oldAmt=m?parseFloat(m[1]):0;
+      const resumeAmt=oldAmt||parseFloat(window.prompt('Enter monthly contribution to resume (₹):','0')||'0');
+      if(!resumeAmt||resumeAmt<=0){showToast('⚠ Invalid amount');return;}
+      const notes=(prov.notes||'').replace(/\[PAUSED_AMT:[\d.]+\]/g,'').trim();
+      await db.from('recurring').update({amount:resumeAmt,notes}).eq('id',prov.id);
+      showToast('▶ EMI resumed — ₹'+fmt(resumeAmt)+'/mo');
+    }
+    setTimeout(()=>window.location.reload(),600);
+  };
+
+  /* R2: Edit save */
+  const handleSaveEditProv=async(provId)=>{
+    if(!editProvForm.name.trim())return;
+    setEditProvSaving(true);
+    const{error}=await db.from('recurring').update({name:editProvForm.name.trim(),target_amount:parseFloat(editProvForm.target_amount)||0,due_date:editProvForm.due_date||null,amount:parseFloat(editProvForm.monthly_contribution)||0}).eq('id',provId);
+    if(!error)showToast('✓ Envelope updated');else showToast('⚠ '+(error.message||'Error'));
+    setEditProvId(null);setEditProvSaving(false);
+    setTimeout(()=>window.location.reload(),600);
   };
 
   const handleAddProv=async()=>{
     if(!form.name.trim()||!form.from_account||!form.to_account)return;
-    if(form.from_account===form.to_account){alert('⚠ Self-transfer not allowed. Source account and envelope account must be different.');return;}
-    if(!form.due_date){alert('⚠ Due date is mandatory. Please set a target date for this envelope.');return;}
+    if(form.from_account===form.to_account){alert('⚠ Self-transfer not allowed.');return;}
+    if(!form.due_date){alert('⚠ Due date is mandatory.');return;}
     setFormSaving(true);
     const provPayload={name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,due_date:form.due_date||null,is_provision:true,active:true};
     await onAddRecurring(provPayload);
     setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});setFormSaving(false);setAddOpen(false);
   };
 
-  const handleEditProv=(prov)=>{
-    setEditProvId(prov.id);
-    setEditProvForm({name:prov.name||'',target_amount:String(prov.target_amount||''),due_date:prov.due_date||'',monthly_contribution:String(prov.amount||'')});
-    setSel(null);
-  };
+  const newTgt=parseFloat(form.target_amount)||0;const newSaved=parseFloat(form.already_saved)||0;const newGap=Math.max(0,newTgt-newSaved);
+  const newDueDate=form.due_date?new Date(form.due_date):null;
+  const newMonthsLeft=newDueDate?Math.max(1,Math.round((newDueDate-new Date())/(1000*60*60*24*30))):0;
+  const newSugMonth=newMonthsLeft>0?Math.ceil(newGap/newMonthsLeft):0;
 
-  const handleSaveEditProv=async(provId)=>{
-    if(!editProvForm.name.trim())return;
-    setEditProvSaving(true);
-    const{error}=await db.from('recurring').update({name:editProvForm.name.trim(),target_amount:parseFloat(editProvForm.target_amount)||0,due_date:editProvForm.due_date||null,amount:parseFloat(editProvForm.monthly_contribution)||0}).eq('id',provId);
-    if(!error){showToast('✓ Envelope updated');}else{showToast('⚠ Update failed: '+(error.message||'Unknown error'));}
-    setEditProvId(null);
-    setEditProvSaving(false);
-    /* Trigger parent data refresh by adding a no-op txn then immediately reloading */
-    setTimeout(()=>window.location.reload(),800);
-  };
-
-  const tgt=parseFloat(form.target_amount)||0;const saved=parseFloat(form.already_saved)||0;const gap=Math.max(0,tgt-saved);
-  const dueDate=form.due_date?new Date(form.due_date):null;
-  const monthsLeft=dueDate?Math.max(1,Math.round((dueDate-new Date())/(1000*60*60*24*30))):0;
-  const sugMonth=monthsLeft>0?Math.ceil(gap/monthsLeft):0;
+  const provisions=recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
+  /* R3: split active vs completed */
+  const activeProvisions=[];const completedProvisions=[];
+  provisions.forEach(prov=>{
+    const{tgt,rem_target}=getLedger(prov);
+    if(tgt>0&&rem_target===0){completedProvisions.push(prov);}else{activeProvisions.push(prov);}
+  });
 
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const cS=a=>({display:'inline-block',border:a?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:16,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,color:a?'var(--green)':'var(--text2)',background:a?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',margin:'0 4px 4px 0'});
 
+  /* R4: Smart edit calc box */
+  const EditCalcBox=({prov})=>{
+    const{bal,rem_target,gap}=getLedger(prov);
+    const eDue=editProvForm.due_date?new Date(editProvForm.due_date):null;
+    const eMo=eDue?Math.max(1,Math.round((eDue-new Date())/(1000*60*60*24*30))):0;
+    const eTgt=parseFloat(editProvForm.target_amount)||0;
+    const eGap=Math.max(0,eTgt-bal);
+    const eSug=eMo>0?Math.ceil(eGap/eMo):0;
+    if(!eTgt)return null;
+    return(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 16px',marginBottom:8}}>
+      <span>Bal in vault: <strong style={{color:'var(--green)'}}>{fmtAmt(bal)}</strong></span>
+      <span>Rem. target: <strong style={{color:'var(--red)'}}>{fmtAmt(eTgt)}</strong></span>
+      <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(eGap)}</strong></span>
+      {eSug>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(eSug)}/mo</strong></span>}
+      {eMo>0&&<span>Months left: <strong>{eMo}</strong></span>}
+    </div>);
+  };
+
+  /* Envelope card renderer — shared for active & completed */
+  const renderCard=(prov,isCompleted)=>{
+    const{deps,wdrs,rets,paid_txns,surplus_txns,dep_,wdr_,ret_,paid_,surplus_,bal,tgt,rem_target,gap,pct,allTxns}=getLedger(prov);
+    const isOpen=sel===prov.id;const monthly=parseFloat(prov.amount)||0;const isPaused=monthly===0;
+    const qType=qAction?.id===prov.id?qAction.type:null;
+    const btnActive=(t)=>qType===t;
+    const btnStyle=(col,active)=>({flex:1,background:active?col:'transparent',border:'1px solid '+col,borderRadius:6,color:active?'#fff':col,fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'6px 2px',cursor:'pointer',transition:'all 0.15s',minWidth:0});
+    const setQ=(t)=>{if(qType===t){setQAction(null);}else{setQAction({id:prov.id,type:t});setQAmt('');setQNote('');}};
+
+    /* Safety rail messages */
+    const safetyMsg={
+      pay_goal:'⚠ IRREVERSIBLE: This permanently reduces your remaining target. Use ONLY when paying the actual vendor/goal.',
+      surplus_release:'⚠ This moves remaining vault funds back to your bank and reduces the target to ₹0, effectively completing this goal.'
+    };
+
+    /* confirm button colour/text per type */
+    const confirmStyle={
+      add:{bg:'var(--green)',border:'var(--green)',col:'#000',label:'Confirm — Add'},
+      borrow:{bg:'var(--red-bg)',border:'var(--red)',col:'var(--red)',label:'Confirm — Borrow'},
+      return:{bg:'var(--blue-bg)',border:'var(--blue)',col:'var(--blue)',label:'Confirm — Return'},
+      pay_goal:{bg:'#0d9488',border:'#0d9488',col:'#fff',label:'Confirm — Pay Goal'},
+      surplus_release:{bg:'var(--amber-bg)',border:'var(--amber)',col:'var(--amber)',label:'Confirm — Release Surplus'},
+    };
+    const cs=qType&&confirmStyle[qType];
+
+    return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px',opacity:isCompleted?0.85:1}}>
+      {/* Header */}
+      <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{if(editProvId!==prov.id)setSel(isOpen?null:prov.id);}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:600,color:'var(--text)',display:'flex',alignItems:'center',gap:6}}>
+              {prov.name}
+              {isPaused&&!isCompleted&&<span style={{fontFamily:'var(--mono)',fontSize:8,background:'var(--amber-bg)',color:'var(--amber)',border:'1px solid var(--amber)',borderRadius:10,padding:'1px 6px'}}>PAUSED</span>}
+              {isCompleted&&<span style={{fontFamily:'var(--mono)',fontSize:8,background:'var(--green-bg)',color:'var(--green)',border:'1px solid var(--green)',borderRadius:10,padding:'1px 6px'}}>✓ COMPLETE</span>}
+            </div>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
+              {!isCompleted&&monthly>0?fmtAmt(monthly)+'/mo · ':''}
+              {prov.account&&prov.provision_account?prov.account+'→'+prov.provision_account:''}
+              {prov.due_date&&<span style={{marginLeft:4}}>· due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</span>}
+            </div>
+          </div>
+          <div style={{display:'flex',alignItems:'flex-start',gap:6,flexShrink:0}}>
+            {!isCompleted&&<>
+              <button onClick={e=>{e.stopPropagation();handlePause(prov);}} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',fontFamily:'var(--mono)',fontSize:9,padding:'3px 7px',cursor:'pointer'}}>{isPaused?'▶ Resume':'⏸ Pause'}</button>
+              <button onClick={e=>{e.stopPropagation();setEditProvId(editProvId===prov.id?null:prov.id);setEditProvForm({name:prov.name||'',target_amount:String(prov.target_amount||''),due_date:prov.due_date||'',monthly_contribution:String(prov.amount||'')});setSel(null);}} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',fontFamily:'var(--mono)',fontSize:9,padding:'3px 7px',cursor:'pointer'}}>⚙ Edit</button>
+            </>}
+            <div style={{textAlign:'right'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:bal>0?'var(--green)':'var(--text3)'}}>{fmtAmt(bal)}</div>
+              {tgt>0&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pct}% of {fmtAmt(tgt)}</div>}
+            </div>
+          </div>
+        </div>
+        {/* Progress bar */}
+        {tgt>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
+        {/* Gap alert */}
+        {!isCompleted&&gap>0&&rem_target>0&&<div style={{marginTop:5,fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)'}}>Gap: {fmtAmt(gap)} remaining</div>}
+        {/* Missing target warning */}
+        {!isCompleted&&(!tgt||!prov.due_date)&&<div style={{marginTop:6,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)'}}>⚠ Target/Schedule Missing</div>}
+      </div>
+
+      {/* R2: Inline Edit Form */}
+      {editProvId===prov.id&&!isCompleted&&(
+        <div style={{margin:'0 14px 12px',background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:8,padding:'12px'}}>
+          <p style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',fontWeight:600,letterSpacing:'0.06em'}}>EDIT ENVELOPE</p>
+          <EditCalcBox prov={prov}/>
+          <div style={{display:'flex',flexDirection:'column',gap:8}}>
+            <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>NAME</div><input style={iS} value={editProvForm.name} onChange={e=>setEditProvForm(f=>({...f,name:e.target.value}))}/></div>
+            <div style={{display:'flex',gap:8}}>
+              <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET (₹)</div><input style={iS} type="number" step="0.01" value={editProvForm.target_amount} onChange={e=>setEditProvForm(f=>({...f,target_amount:e.target.value}))}/></div>
+              <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY (₹)</div><input style={iS} type="number" step="0.01" value={editProvForm.monthly_contribution} onChange={e=>setEditProvForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
+            </div>
+            <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DATE</div><input style={iS} type="date" value={editProvForm.due_date} onChange={e=>setEditProvForm(f=>({...f,due_date:e.target.value}))}/></div>
+            <div style={{display:'flex',gap:8}}>
+              <button onClick={()=>handleSaveEditProv(prov.id)} disabled={editProvSaving||!editProvForm.name.trim()} style={{flex:1,background:editProvSaving||!editProvForm.name.trim()?'var(--bg3)':'var(--blue)',border:'none',borderRadius:6,color:editProvSaving?'var(--text3)':'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:'pointer'}}>{editProvSaving?'Saving...':'Save Changes'}</button>
+              <button onClick={()=>setEditProvId(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'9px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* R2: 5-Button Vault */}
+      {!isCompleted&&(<div style={{display:'flex',gap:4,padding:'0 14px 10px'}}>
+        <button onClick={e=>{e.stopPropagation();setQ('add');}} style={btnStyle('var(--green)',btnActive('add'))}>+ Add</button>
+        <button onClick={e=>{e.stopPropagation();setQ('borrow');}} style={btnStyle('var(--red)',btnActive('borrow'))}>− Borrow</button>
+        <button onClick={e=>{e.stopPropagation();setQ('return');}} style={btnStyle('var(--blue)',btnActive('return'))}>↪ Return</button>
+        <button onClick={e=>{e.stopPropagation();setQ('pay_goal');}} style={btnStyle('#0d9488',btnActive('pay_goal'))}>✓ Pay</button>
+        <button onClick={e=>{e.stopPropagation();setQ('surplus_release');}} style={btnStyle('var(--amber)',btnActive('surplus_release'))}>⏏ Release</button>
+      </div>)}
+
+      {/* R2: Quick Action Form with Safety Rails */}
+      {qType&&qAction?.id===prov.id&&(<div style={{padding:'0 14px 12px',borderTop:'1px solid var(--border)'}}>
+        {safetyMsg[qType]&&<div style={{background:qType==='pay_goal'?'var(--red-bg)':'var(--amber-bg)',border:'1px solid '+(qType==='pay_goal'?'var(--red)':'var(--amber)'),borderRadius:7,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:10,fontWeight:700,color:qType==='pay_goal'?'var(--red)':'var(--amber)',marginBottom:8,lineHeight:1.5}}>{safetyMsg[qType]}</div>}
+        <div style={{display:'flex',gap:6,marginBottom:6}}>
+          <input type="number" step="0.01" autoFocus placeholder="Amount (₹)" value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:2}}/>
+          <input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:3}}/>
+        </div>
+        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:6}}>
+          {qType==='add'&&<>Debit: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>}
+          {qType==='borrow'&&<>Debit: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}
+          {qType==='return'&&<>Return: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>}
+          {qType==='pay_goal'&&<>Pay out: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}
+          {qType==='surplus_release'&&<>Release: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}
+        </div>
+        {cs&&<button onClick={()=>handleQuick(prov,qType,qAmt,qNote)} disabled={saving||!qAmt} style={{width:'100%',background:saving||!qAmt?'var(--bg2)':cs.bg,border:'1px solid '+(saving||!qAmt?'var(--border)':cs.border),borderRadius:6,color:saving||!qAmt?'var(--text3)':cs.col,fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:!qAmt?'default':'pointer'}}>{saving?'Logging...':(cs.label+' '+(qAmt?fmtAmt(parseFloat(qAmt)):''))}</button>}
+      </div>)}
+
+      {/* Expanded Ledger */}
+      {isOpen&&(<div style={{borderTop:'1px solid var(--border)'}}>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',borderBottom:'1px solid var(--border)'}}>
+          {[['Added',fmtAmt(dep_),'var(--green)'],['Borrowed',fmtAmt(wdr_),wdr_>0?'var(--red)':'var(--text3)'],['Returned',fmtAmt(ret_),ret_>0?'var(--blue)':'var(--text3)'],['Paid Out',fmtAmt(paid_),paid_>0?'#0d9488':'var(--text3)'],['Released',fmtAmt(surplus_),surplus_>0?'var(--amber)':'var(--text3)']].map(([l,v,c])=>(
+            <div key={l} style={{padding:'6px 4px',textAlign:'center',borderRight:'1px solid var(--border)'}}>
+              <div style={{fontSize:8,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:2}}>{l.toUpperCase()}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:c}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        {[...allTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{
+          const p=t.particulars||'';
+          const isW=p.includes('[WITHDRAW]'),isR=p.includes('[RETURN]'),isPG=p.includes('[GOAL_PAID]'),isSR=p.includes('[SURPLUS_RELEASE]');
+          const [icon,col,label]=isW?['↩','var(--red)','Borrowed']:isR?['↪','var(--blue)','Returned']:isPG?['✓','#0d9488','Goal Paid']:isSR?['⏏','var(--amber)','Surplus Released']:['↑','var(--green)','Added'];
+          const sign=isW||isPG||isSR?'−':'+';
+          return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}>
+            <div><div style={{color:col,fontFamily:'var(--mono)'}}>{icon} {label}</div><div style={{color:'var(--text3)',marginTop:1,fontSize:10}}>{fmtDate(t.created_at)}{p.split('—')[1]?<span style={{marginLeft:4,fontStyle:'italic'}}>· {p.split('—')[1].trim()}</span>:null}</div></div>
+            <span style={{fontFamily:'var(--mono)',fontWeight:600,color:col}}>{sign}{fmtAmt(t.amount)}</span>
+          </div>);
+        })}
+        {allTxns.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No transactions yet. Use the buttons above to start.</div>}
+      </div>)}
+    </div>);
+  };
+
   return(<div className="fade-in" style={{paddingBottom:8}}>
     <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-      <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Wealth Envelopes</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>Locked savings goals</div></div>
+      <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Wealth Envelopes</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>Corporate Vault · {activeProvisions.length} active{completedProvisions.length>0?` · ${completedProvisions.length} completed`:''}</div></div>
       <button onClick={()=>setAddOpen(o=>!o)} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>+ New</button>
     </div>
 
-    {/* Smart Add Envelope Form */}
+    {/* New Envelope Form */}
     {addOpen&&(<div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
       <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 12px',fontWeight:600,letterSpacing:'0.06em'}}>NEW WEALTH ENVELOPE</p>
       <div style={{display:'flex',flexDirection:'column',gap:8}}>
-        <input style={iS} placeholder="Envelope name (e.g. LIC Premium Oct)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
+        <input style={iS} placeholder="Envelope name (e.g. LIC Premium 2026)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
         <div style={{display:'flex',gap:8}}>
           <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET AMOUNT</div><input style={iS} type="number" step="0.01" placeholder="₹ Total needed" value={form.target_amount} onChange={e=>setForm(f=>({...f,target_amount:e.target.value}))}/></div>
           <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>ALREADY SAVED</div><input style={iS} type="number" step="0.01" placeholder="₹ In bank now" value={form.already_saved} onChange={e=>setForm(f=>({...f,already_saved:e.target.value}))}/></div>
         </div>
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>PROVISIONED TILL DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
-        {tgt>0&&(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'flex',gap:16,flexWrap:'wrap'}}>
-          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(gap)}</strong></span>
-          {dueDate&&<span>Months left: <strong>{monthsLeft}</strong></span>}
-          {sugMonth>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(sugMonth)}/mo</strong></span>}
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
+        {newTgt>0&&(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'flex',gap:16,flexWrap:'wrap'}}>
+          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(newGap)}</strong></span>
+          {newDueDate&&<span>Months left: <strong>{newMonthsLeft}</strong></span>}
+          {newSugMonth>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(newSugMonth)}/mo</strong></span>}
         </div>)}
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY CONTRIBUTION</div><input style={iS} type="number" step="0.01" placeholder={sugMonth>0?`Suggested: ₹${fmt(sugMonth)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY CONTRIBUTION</div><input style={iS} type="number" step="0.01" placeholder={newSugMonth>0?`Suggested: ₹${fmt(newSugMonth)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
         <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>DEBIT FROM (source bank)</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.filter(b=>b!=='Cash').map(a=><span key={a} style={cS(form.from_account===a)} onClick={()=>setForm(f=>({...f,from_account:a}))}>{a}</span>)}</div></div>
         <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>ENVELOPE ACCOUNT (save into)</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.filter(b=>b!=='Cash').map(a=><span key={a} style={cS(form.to_account===a)} onClick={()=>setForm(f=>({...f,to_account:a}))}>{a}</span>)}</div></div>
         <div style={{display:'flex',gap:8}}>
@@ -1143,62 +1334,19 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
       </div>
     </div>)}
 
-    {provisions.length===0&&!addOpen&&<div className="empty">No envelopes yet.<br/>Tap "+ New" to create your first savings goal.</div>}
+    {activeProvisions.length===0&&!addOpen&&<div className="empty">No active envelopes.<br/>Tap "+ New" to create your first savings goal.</div>}
+    {activeProvisions.map(prov=>renderCard(prov,false))}
 
-    {provisions.map(prov=>{
-      const{deps,wdrs,rets,dep_,wdr_,ret_,bal,tgt,pct}=getLedger(prov);
-      const isOpen=sel===prov.id;const monthly=parseFloat(prov.amount)||0;
-      const isQAdd=qAction?.id===prov.id&&qAction?.type==='add';const isQWdr=qAction?.id===prov.id&&qAction?.type==='withdraw';
-      return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px'}}>
-        {/* Header */}
-        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{if(editProvId!==prov.id)setSel(isOpen?null:prov.id);}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{prov.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{monthly>0?fmtAmt(monthly)+'/mo':''}{prov.account&&prov.provision_account?' · '+prov.account+'→'+prov.provision_account:''}{prov.due_date&&<span style={{marginLeft:6}}>· due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</span>}</div></div>
-            <div style={{display:'flex',alignItems:'flex-start',gap:8}}>
-              <button onClick={e=>{e.stopPropagation();handleEditProv(prov);}} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',fontFamily:'var(--mono)',fontSize:10,padding:'3px 8px',cursor:'pointer',flexShrink:0}}>⚙ Edit</button>
-              <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:bal>0?'var(--green)':'var(--text3)'}}>{fmtAmt(bal)}</div>{tgt>0&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pct}% of {fmtAmt(tgt)}</div>}</div>
-            </div>
-          </div>
-          {tgt>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
-          {(!tgt||!prov.due_date)&&<div style={{marginTop:6,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)',letterSpacing:'0.04em'}}>⚠ Target/Schedule Missing</div>}
+    {/* R3: Completed Goals Accordion */}
+    {completedProvisions.length>0&&(
+      <div style={{margin:'8px 10px 0',border:'1px solid var(--green)',borderRadius:10,overflow:'hidden'}}>
+        <div onClick={()=>setCompletedOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',background:'var(--green-bg)',cursor:'pointer'}}>
+          <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--green)',letterSpacing:'0.06em'}}>✓ COMPLETED GOALS ({completedProvisions.length})</span>
+          <span style={{fontSize:10,color:'var(--green)',transform:completedOpen?'rotate(180deg)':'none',display:'inline-block',transition:'transform 0.2s'}}>▼</span>
         </div>
-        {/* Inline Edit Form (Fix 6) */}
-        {editProvId===prov.id&&(
-          <div style={{margin:'0 14px 12px',background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:8,padding:'12px'}}>
-            <p style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',fontWeight:600,letterSpacing:'0.06em'}}>EDIT ENVELOPE</p>
-            <div style={{display:'flex',flexDirection:'column',gap:8}}>
-              <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>NAME</div><input style={iS} value={editProvForm.name} onChange={e=>setEditProvForm(f=>({...f,name:e.target.value}))}/></div>
-              <div style={{display:'flex',gap:8}}>
-                <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET (₹)</div><input style={iS} type="number" step="0.01" value={editProvForm.target_amount} onChange={e=>setEditProvForm(f=>({...f,target_amount:e.target.value}))}/></div>
-                <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY (₹)</div><input style={iS} type="number" step="0.01" value={editProvForm.monthly_contribution} onChange={e=>setEditProvForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
-              </div>
-              <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DATE</div><input style={iS} type="date" value={editProvForm.due_date} onChange={e=>setEditProvForm(f=>({...f,due_date:e.target.value}))}/></div>
-              <div style={{display:'flex',gap:8}}>
-                <button onClick={()=>handleSaveEditProv(prov.id)} disabled={editProvSaving||!editProvForm.name.trim()} style={{flex:1,background:editProvSaving||!editProvForm.name.trim()?'var(--bg3)':'var(--blue)',border:'none',borderRadius:6,color:editProvSaving?'var(--text3)':'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:'pointer'}}>{editProvSaving?'Saving...':'Save Changes'}</button>
-                <button onClick={()=>setEditProvId(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'9px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>Cancel</button>
-              </div>
-            </div>
-          </div>
-        )}
-        {/* Action Buttons */}
-        <div style={{display:'flex',gap:6,padding:'0 14px 10px'}}>
-          <button onClick={e=>{e.stopPropagation();setQAction(isQAdd?null:{id:prov.id,type:'add'});setQAmt('');setQNote('');}} style={{flex:1,background:isQAdd?'var(--green)':'var(--green-bg)',border:'1px solid var(--green)',borderRadius:6,color:isQAdd?'#000':'var(--green)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'7px 0',cursor:'pointer'}}>{isQAdd?'▲ Cancel':'+ Add Funds'}</button>
-          <button onClick={e=>{e.stopPropagation();setQAction(isQWdr?null:{id:prov.id,type:'withdraw'});setQAmt('');setQNote('');}} style={{flex:1,background:isQWdr?'var(--red)':'var(--red-bg)',border:'1px solid var(--red)',borderRadius:6,color:isQWdr?'#fff':'var(--red)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'7px 0',cursor:'pointer'}}>{isQWdr?'▼ Cancel':'− Withdraw'}</button>
-        </div>
-        {/* Quick Action Form */}
-        {(isQAdd||isQWdr)&&(<div style={{padding:'0 14px 12px',borderTop:'1px solid var(--border)'}}>
-          <div style={{display:'flex',gap:6,marginBottom:6}}><input type="number" step="0.01" autoFocus placeholder={isQAdd?"Amount to add":"Amount to withdraw"} value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:2}}/><input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:3}}/></div>
-          <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:6}}>{isQAdd?<>Debit: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>:<>Debit: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}</div>
-          <button onClick={()=>handleQuick(prov,isQAdd?'add':'withdraw',qAmt,qNote)} disabled={saving||!qAmt} style={{width:'100%',background:saving||!qAmt?'var(--bg2)':isQAdd?'var(--green)':'var(--red-bg)',border:'1px solid '+(saving||!qAmt?'var(--border)':isQAdd?'var(--green)':'var(--red)'),borderRadius:6,color:saving||!qAmt?'var(--text3)':isQAdd?'#000':'var(--red)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:'pointer'}}>{saving?'Logging...':'Confirm — '+(isQAdd?'Add':'Withdraw')+' '+(qAmt?fmtAmt(parseFloat(qAmt)):'')}</button>
-        </div>)}
-        {/* Expanded Ledger */}
-        {isOpen&&(<div style={{borderTop:'1px solid var(--border)'}}>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',borderBottom:'1px solid var(--border)'}}>{[['Added Funds',fmtAmt(dep_),'var(--green)'],['Funds Used',fmtAmt(wdr_),wdr_>0?'var(--red)':'var(--text3)'],['Returned',fmtAmt(ret_),ret_>0?'var(--blue)':'var(--text3)']].map(([l,v,c])=><div key={l} style={{padding:'7px',textAlign:'center',borderRight:'1px solid var(--border)'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>{l.toUpperCase()}</div><div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:c}}>{v}</div></div>)}</div>
-          {[...deps,...wdrs,...rets].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{const isW=t.particulars?.includes('[WITHDRAW]');const isR=t.particulars?.includes('[RETURN]');return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'8px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}><div><div style={{color:isW?'var(--red)':isR?'var(--blue)':'var(--green)',fontFamily:'var(--mono)'}}>{isW?'↩ Funds Used':isR?'↪ Returned':'↑ Added Funds'}</div><div style={{color:'var(--text3)',marginTop:2,fontSize:10}}>{fmtDate(t.created_at)}</div></div><span style={{fontFamily:'var(--mono)',fontWeight:600,color:isW?'var(--red)':isR?'var(--blue)':'var(--green)'}}>{isW?'−':'+'}{fmtAmt(t.amount)}</span></div>);})}
-          {deps.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No transactions yet. Use "+ Add Funds" to start.</div>}
-        </div>)}
-      </div>);
-    })}
+        {completedOpen&&completedProvisions.map(prov=>renderCard(prov,true))}
+      </div>
+    )}
   </div>);
 }
 /* ── StatementScreen ── */
@@ -1287,22 +1435,14 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
     <div style={{margin:'0 0 24px'}}>{recent.map(t=><div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}><div style={{flex:1,minWidth:0}}><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{t.site_name||'—'} · {t.category}{t.site_user&&<span style={{color:'var(--blue)',marginLeft:6}}>→ {t.site_user}</span>}</div><div style={{fontSize:13,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:2}}>{fmtDate(t.created_at)}</div></div><div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:600,color:t.type==='Bank→Bank'?'var(--blue)':'var(--red)',marginLeft:12,flexShrink:0}}>{t.type==='Bank→Bank'?'↔':'−'}₹{fmt(parseFloat(t.amount)||0)}</div></div>)}</div>
   </div>);
 }
-/* ── SettingsAcc — module-level accordion to prevent input focus loss (Fix 1) ── */
-function SettingsAcc({id,title,emoji,open,onToggle,children}){
-  return(<div style={{marginBottom:4}}>
-    <div className="acc-hdr" onClick={()=>onToggle(id)}><span className="acc-title">{emoji} {title}</span><span style={{fontSize:10,color:'var(--text3)',transform:open?'rotate(180deg)':'none',display:'inline-block',transition:'transform 0.2s'}}>▼</span></div>
-    {open&&<div className="acc-body">{children}</div>}
-  </div>);
-}
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
-function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme,customSiteCats,onSaveSiteCats}){
+function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme}){
   /* Normalize opening — support both legacy number and new {amount, opening_date} */
   const normalizeOB=ob=>{const r={};Object.entries(ob||{}).forEach(([acc,val])=>{r[acc]=typeof val==='object'&&val!==null?{amount:val.amount||0,opening_date:val.opening_date||''}:{amount:val||0,opening_date:''};});return r;};
   const [ob,setOb]=useState(()=>normalizeOB(opening));const [savedBal,setSavedBal]=useState(false);const [bg,setBg]=useState({...budgets});
   const [newAccName,setNewAccName]=useState('');const [newAccType,setNewAccType]=useState('bank');
   const [newCatName,setNewCatName]=useState('');const [newCatEmoji,setNewCatEmoji]=useState('');const [newCatIT,setNewCatIT]=useState('');
   const [newSite,setNewSite]=useState('');const [newMember,setNewMember]=useState('');
-  const [newSiteCatName,setNewSiteCatName]=useState('');
   const [open,setOpen]=useState({}); /* accordion state per section */
   const toggle=k=>setOpen(o=>({...o,[k]:!o[k]}));
 
@@ -1324,20 +1464,19 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
   const removeMember=async n=>await onSaveTeam((customTeam||[]).filter(m=>m!==n));
   const handleSaveBudgets=async()=>await onSaveBudgets(bg);
 
-  /* Site Categories */
-  const addSiteCat=async()=>{const n=newSiteCatName.trim();if(!n)return;const exists=(customSiteCats||[]).find(c=>c.name.toLowerCase()===n.toLowerCase());if(exists){alert('Category already exists');return;}await onSaveSiteCats([...(customSiteCats||[]),{name:n,archived:false}]);setNewSiteCatName('');};
-  const archiveSiteCat=async n=>await onSaveSiteCats((customSiteCats||[]).map(c=>c.name===n?{...c,archived:true}:c));
-  const restoreSiteCat=async n=>await onSaveSiteCats((customSiteCats||[]).map(c=>c.name===n?{...c,archived:false}:c));
-
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const btnS=col=>({background:'none',border:`1px solid ${col}`,borderRadius:6,color:col,padding:'5px 10px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'});
+  const Acc=({id,title,emoji,children})=>(<div style={{marginBottom:4}}>
+    <div className="acc-hdr" onClick={()=>toggle(id)}><span className="acc-title">{emoji} {title}</span><span style={{fontSize:10,color:'var(--text3)',transform:open[id]?'rotate(180deg)':'none',display:'inline-block',transition:'transform 0.2s'}}>▼</span></div>
+    {open[id]&&<div className="acc-body">{children}</div>}
+  </div>);
   const budgetCats=[...new Set([...['Household','Fuel','Food','Lifestyle','Maintenance','Travelling','Social','Donation','Child Education','Mobile Recharge'],...Object.keys(budgets)])];
   const THEMES=[{id:'autumn',label:'Deep Autumn',bg:'#faf6f0',accent:'#5a8a1a'},{id:'midnight',label:'Exec Midnight',bg:'#0a0d12',accent:'#00d4aa'},{id:'nordic',label:'Nordic Light',bg:'#f7f9fc',accent:'#38a169'},{id:'terminal',label:'Terminal Quant',bg:'#070a07',accent:'#00ff77'}];
 
   return(<div className="fade-in" style={{paddingBottom:40}}>
 
     {/* Theme Picker */}
-    <SettingsAcc id="theme" title="Theme" emoji="🎨" open={open['theme']} onToggle={toggle}>
+    <Acc id="theme" title="Theme" emoji="🎨">
       <div style={{padding:'14px 16px'}}>
         <p style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginBottom:12}}>Select your colour theme. Changes apply instantly.</p>
         <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
@@ -1351,10 +1490,10 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
           ))}
         </div>
       </div>
-    </SettingsAcc>
+    </Acc>
 
     {/* Manage Accounts */}
-    <SettingsAcc id="accounts" title="Manage Accounts" emoji="🏦" open={open['accounts']} onToggle={toggle}>
+    <Acc id="accounts" title="Manage Accounts" emoji="🏦">
       <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
         <input style={iS} placeholder="Account name e.g. ICICI CC" value={newAccName} onChange={e=>setNewAccName(e.target.value.toUpperCase())}/>
         <div style={{display:'flex',gap:8}}><div className={'chip'+(newAccType==='bank'?' sel':'')} style={{flex:1,textAlign:'center'}} onClick={()=>setNewAccType('bank')}>Bank / Cash</div><div className={'chip'+(newAccType==='cc'?' sel':'')} style={{flex:1,textAlign:'center'}} onClick={()=>setNewAccType('cc')}>Credit Card</div></div>
@@ -1367,45 +1506,23 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
       {customAccounts.filter(a=>a.archived).length>0&&<div style={{padding:'0 16px 12px'}}><p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginBottom:4,marginTop:8}}>ARCHIVED (excluded from dropdowns, preserved in history)</p>
         {customAccounts.filter(a=>a.archived).map(a=><div key={a.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)',opacity:0.6}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text3)'}}>{a.name}</span><button onClick={()=>restoreAccount(a.name)} style={btnS('var(--blue)')}>Restore</button></div>)}
       </div>}
-    </SettingsAcc>
+    </Acc>
 
-    {/* Manage Personal Categories */}
-    <SettingsAcc id="categories" title="Manage Personal Categories" emoji="🏷" open={open['categories']} onToggle={toggle}>
-      <p style={{padding:'8px 16px 4px',fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',fontWeight:600}}>Personal only — not shown in Site entries.</p>
-      <div style={{padding:'0 16px 12px',display:'flex',flexDirection:'column',gap:8}}>
+    {/* Manage Categories */}
+    <Acc id="categories" title="Manage Categories" emoji="🏷">
+      <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
         <input style={iS} placeholder="Category name" value={newCatName} onChange={e=>setNewCatName(e.target.value)}/>
         <div style={{display:'flex',gap:8}}><input style={{...iS,width:80,flexShrink:0}} placeholder="Emoji" value={newCatEmoji} onChange={e=>setNewCatEmoji(e.target.value)} maxLength={2}/><select value={newCatIT} onChange={e=>setNewCatIT(e.target.value)} style={{...iS,flex:1}}><option value="">No IT section</option><option value="80C">80C</option><option value="80D">80D</option><option value="80G">80G</option><option value="80CCD">80CCD(1B)</option><option value="24b">24(b)</option></select></div>
-        <button onClick={addCategory} style={{background:'var(--blue)',border:'none',borderRadius:8,color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer'}}>+ Add Personal Category</button>
+        <button onClick={addCategory} style={{background:'var(--blue)',border:'none',borderRadius:8,color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer'}}>+ Add Category</button>
       </div>
       <div style={{padding:'0 16px 4px'}}>
         {customCategories.filter(c=>!c.archived).map(c=><div key={c.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}><div><span style={{marginRight:6}}>{c.emoji}</span><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text)'}}>{c.name}</span>{c.it&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--green)',marginLeft:8}}>{c.it}</span>}</div><button onClick={()=>archiveCategory(c.name)} style={btnS('var(--amber)')}>Archive</button></div>)}
-        {customCategories.filter(c=>!c.archived).length===0&&<p style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',padding:'8px 0'}}>No custom personal categories yet.</p>}
         {customCategories.filter(c=>c.archived).length>0&&<><p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:8,marginBottom:4}}>ARCHIVED</p>{customCategories.filter(c=>c.archived).map(c=><div key={c.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)',opacity:0.6}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text3)'}}>{c.emoji} {c.name}</span><button onClick={()=>restoreCategory(c.name)} style={btnS('var(--blue)')}>Restore</button></div>)}</>}
       </div>
-    </SettingsAcc>
-
-    {/* Manage Site Categories (Fix 2 — strictly isolated from Personal) */}
-    <SettingsAcc id="site_cats" title="Manage Site Categories" emoji="🏗" open={open['site_cats']} onToggle={toggle}>
-      <p style={{padding:'8px 16px 4px',fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)',fontWeight:600}}>Site domain only — never shown in Personal entries.</p>
-      <div style={{padding:'0 16px 12px',display:'flex',flexDirection:'column',gap:8}}>
-        <div style={{display:'flex',gap:8}}>
-          <input style={{...iS,flex:1}} placeholder="New site category name" value={newSiteCatName} onChange={e=>setNewSiteCatName(e.target.value)}/>
-          <button onClick={addSiteCat} style={{background:'var(--amber)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',cursor:'pointer',flexShrink:0}}>+ Add</button>
-        </div>
-      </div>
-      <div style={{padding:'0 16px 4px'}}>
-        <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginBottom:4}}>ACTIVE</p>
-        {(customSiteCats||[]).filter(c=>!c.archived).map(c=><div key={c.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text)'}}>{c.name}</span><button onClick={()=>archiveSiteCat(c.name)} style={btnS('var(--amber)')}>Archive</button></div>)}
-        {(customSiteCats||[]).filter(c=>!c.archived).length===0&&<p style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',padding:'8px 0'}}>No active site categories.</p>}
-        {(customSiteCats||[]).filter(c=>c.archived).length>0&&<>
-          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:8,marginBottom:4}}>ARCHIVED</p>
-          {(customSiteCats||[]).filter(c=>c.archived).map(c=><div key={c.name} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)',opacity:0.6}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text3)'}}>{c.name}</span><button onClick={()=>restoreSiteCat(c.name)} style={btnS('var(--blue)')}>Restore</button></div>)}
-        </>}
-      </div>
-    </SettingsAcc>
+    </Acc>
 
     {/* Sites & Team */}
-    <SettingsAcc id="sites" title="Sites & Team" emoji="📍" open={open['sites']} onToggle={toggle}>
+    <Acc id="sites" title="Sites & Team" emoji="🏗">
       <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
         <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginBottom:2}}>SITES</p>
         <div style={{display:'flex',gap:8}}><input style={{...iS,flex:1}} placeholder="Site name e.g. D5" value={newSite} onChange={e=>setNewSite(e.target.value.toUpperCase())}/><button onClick={addSite} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',cursor:'pointer'}}>+ Add</button></div>
@@ -1414,24 +1531,24 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
         <div style={{display:'flex',gap:8}}><input style={{...iS,flex:1}} placeholder="Member name" value={newMember} onChange={e=>setNewMember(e.target.value)}/><button onClick={addMember} style={{background:'var(--blue)',border:'none',borderRadius:8,color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',cursor:'pointer'}}>+ Add</button></div>
         {(customTeam||[]).map(m=><div key={m} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text)'}}>{m}</span><button onClick={()=>removeMember(m)} style={btnS('var(--red)')}>Remove</button></div>)}
       </div>
-    </SettingsAcc>
+    </Acc>
 
     {/* Monthly Budgets */}
-    <SettingsAcc id="budgets" title="Monthly Budgets" emoji="📊" open={open['budgets']} onToggle={toggle}>
+    <Acc id="budgets" title="Monthly Budgets" emoji="📊">
       <p style={{padding:'8px 16px 4px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>Set limit per category. Dashboard shows red when exceeded.</p>
-      {budgetCats.map(c=><div key={c} className="settings-row"><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text)'}}>{c}</span><input type="number" step="0.01" style={{width:120,textAlign:'right'}} value={bg[c]||''} placeholder="no limit" onChange={e=>setBg(p=>({...p,[c]:parseFloat(e.target.value)||0}))}/></div>)}
+      {budgetCats.map(c=><div key={c} className="settings-row"><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text)'}}>{c}</span><input type="number" style={{width:120,textAlign:'right'}} value={bg[c]||''} placeholder="no limit" onChange={e=>setBg(p=>({...p,[c]:parseFloat(e.target.value)||0}))}/></div>)}
       <div style={{padding:'10px 16px 14px'}}><button onClick={handleSaveBudgets} style={{background:'var(--blue)',border:'none',color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,borderRadius:8,padding:12,width:'100%',cursor:'pointer'}}>Save Budgets</button></div>
-    </SettingsAcc>
+    </Acc>
 
     {/* Opening Balances */}
-    <SettingsAcc id="balances" title="Opening Balances" emoji="₹" open={open['balances']} onToggle={toggle}>
+    <Acc id="balances" title="Opening Balances" emoji="₹">
       <p style={{padding:'8px 16px 4px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>Set the balance each account had on its opening date. Only transactions on/after that date are counted. CC: enter negative for dues (e.g. −9342).</p>
       {[...allAccountsH,'Site Cash',...(customTeam||[])].map(a=>{
         const val=ob[a]||{amount:0,opening_date:''};
         return(<div key={a} style={{borderBottom:'1px solid var(--border)',padding:'10px 16px'}}>
           <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginBottom:6,fontWeight:600}}>{a}</div>
           <div style={{display:'flex',gap:8}}>
-            <input type="number" step="0.01" style={{flex:'0 0 130px',textAlign:'right'}} value={val.amount||''} placeholder="0"
+            <input type="number" style={{flex:'0 0 130px',textAlign:'right'}} value={val.amount||''} placeholder="0"
               onChange={e=>setOb(p=>({...p,[a]:{...(p[a]||{}),amount:parseFloat(e.target.value)||0}}))}/>
             <input type="date" style={{flex:1}} value={val.opening_date||''}
               onChange={e=>setOb(p=>({...p,[a]:{...(p[a]||{}),opening_date:e.target.value}}))}/>
@@ -1440,7 +1557,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
         </div>);
       })}
       <div style={{padding:'14px 16px'}}><button onClick={handleSaveBal} style={{background:savedBal?'var(--green-bg)':'var(--green)',border:savedBal?'1px solid var(--green)':'none',color:savedBal?'var(--green)':'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,borderRadius:10,padding:14,width:'100%',cursor:'pointer',transition:'all 0.2s'}}>{savedBal?'✓ Saved':'Save Opening Balances'}</button></div>
-    </SettingsAcc>
+    </Acc>
 
     <p className="sec-label">About</p>
     <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v2.0 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai</div>
