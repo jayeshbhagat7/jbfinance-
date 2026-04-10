@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.6.2</title>
+<title>JB Finance v1.6.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>(function(){var t=localStorage.getItem('jbf_theme')||'autumn';document.documentElement.setAttribute('data-theme',t);})();</script>
@@ -209,7 +209,7 @@ function LoginScreen(){
         {/* Logo area */}
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.6.2</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.6.3</div>
         </div>
         {/* Card */}
         <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:14,padding:24}}>
@@ -275,7 +275,12 @@ function App() {
   const loadData = useCallback(async ()=>{
     setLoading(true);
     try {
-      const {data} = await db.from('transactions').select('*').order('created_at',{ascending:false}).limit(500);
+      /* v1.6.3: explicit column list ensures new columns (party_name, tower, user_id) are always fetched
+         even if DB schema was recently altered and Supabase cache hasn't refreshed */
+      const {data,error:txnErr} = await db.from('transactions')
+        .select('id,created_at,type,amount,category,from_account,to_account,particulars,tower,status,source,domain,site_name,site_user,party_name,user_id,it_section,correction_of')
+        .order('created_at',{ascending:false}).limit(500);
+      if(txnErr){console.error('transactions fetch error:',txnErr.message);showToast('⚠ DB: '+txnErr.message);}
       setTxns(data||[]);
       try{const{data:inv}=await db.from('investments').select('*').order('created_at',{ascending:false});setInvestments(inv||[]);}catch(e){setInvestments([]);}
       try{const{data:ud}=await db.from('udhari').select('*').order('created_at',{ascending:false});setUdhari(ud||[]);}catch(e){setUdhari([]);}
@@ -284,15 +289,15 @@ function App() {
       const{data:s}=await db.from('settings').select('*');
       if(s){
         const g=(k)=>s.find(r=>r.key===k);
-        if(g('opening_balances')) setOpening(JSON.parse(g('opening_balances').value));
-        if(g('custom_accounts'))  setCustomAccounts(JSON.parse(g('custom_accounts').value));
-        if(g('custom_categories'))setCustomCategories(JSON.parse(g('custom_categories').value));
-        if(g('budgets'))          setBudgets(JSON.parse(g('budgets').value));
-        if(g('custom_sites'))     setCustomSites(JSON.parse(g('custom_sites').value));
-        if(g('custom_team'))      setCustomTeam(JSON.parse(g('custom_team').value));
+        if(g('opening_balances')) try{setOpening(JSON.parse(g('opening_balances').value));}catch(e){}
+        if(g('custom_accounts'))  try{setCustomAccounts(JSON.parse(g('custom_accounts').value));}catch(e){}
+        if(g('custom_categories'))try{setCustomCategories(JSON.parse(g('custom_categories').value));}catch(e){}
+        if(g('budgets'))          try{setBudgets(JSON.parse(g('budgets').value));}catch(e){}
+        if(g('custom_sites'))     try{setCustomSites(JSON.parse(g('custom_sites').value));}catch(e){}
+        if(g('custom_team'))      try{setCustomTeam(JSON.parse(g('custom_team').value));}catch(e){}
         if(g('theme'))            { setTheme(g('theme').value); document.documentElement.setAttribute('data-theme',g('theme').value); localStorage.setItem('jbf_theme',g('theme').value); }
       }
-    } catch(e){console.error(e);}
+    } catch(e){console.error('loadData error:',e);showToast('⚠ Load failed: '+e.message);}
     setLoading(false);
   },[]);
 
@@ -324,9 +329,18 @@ function App() {
 
   /* ── DB HELPERS ── */
   const addTxn = async txn => {
-    const{error}=await db.from('transactions').insert([{...txn,user_id:session?.user?.id||null}]);
+    /* v1.6.3: always include user_id + party_name + tower explicitly */
+    const payload={...txn,user_id:session?.user?.id||null};
+    /* Ensure party_name & tower are never undefined (causes Supabase column-not-found if col missing) */
+    if(!('party_name' in payload))payload.party_name=null;
+    if(!('tower' in payload))payload.tower=null;
+    const{error}=await db.from('transactions').insert([payload]);
     if(!error){showToast('✓ '+fmtAmt(txn.amount)+' logged');loadData();}
-    else showToast('⚠ '+( error.message||'Error'));
+    else{
+      console.error('addTxn error:',error);
+      /* Show exact DB error so user/dev knows which column is missing */
+      showToast('⚠ '+( error.message||'DB Error — check console'));
+    }
   };
   const deleteTxn = async id => {
     const{error}=await db.from('transactions').update({status:'voided'}).eq('id',id);
@@ -1712,7 +1726,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.6.2 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.6.3 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password</div>
   </div>);
 }
 /* ── RENDER ── */
