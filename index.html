@@ -562,7 +562,11 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const [type,setType]=useState('Expense');const [cat,setCat]=useState('');const [from,setFrom]=useState('Cash');const [to,setTo]=useState('');const [tower,setTower]=useState('');
   const [siteType,setSiteType]=useState('Expense');const [siteName,setSiteName]=useState((customSites&&customSites[0])||'');
   const [siteCat,setSiteCat]=useState('Labour');const [transferDir,setTransferDir]=useState('Given');const [transferUser,setTransferUser]=useState(customTeam?.[0]||'');
-  const [depositTo,setDepositTo]=useState('Site Cash'); /* v1.6: for Site Received */
+  const [depositTo,setDepositTo]=useState('Site Cash');
+  /* v1.7: team member for Expense (Given To) and Received (From Member) */
+  const SITE_MEMBERS_DEFAULT=['PH','Milton','PP','Sohail','Anjar','Sikhu'];
+  const allSiteMembers=[...new Set([...SITE_MEMBERS_DEFAULT,...(customTeam||[])])];
+  const [siteMember,setSiteMember]=useState(allSiteMembers[0]||'');
 
   useEffect(()=>{
     if(!prefill)return;
@@ -594,24 +598,39 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     if(domain==='Personal'){
       txn={domain:'Personal',type:type.replace('Bank-CC','Bank→CC').replace('Bank-Bank','Bank→Bank').replace('Bank-Cash','Bank→Cash').replace('Cash-Bank','Cash→Bank').replace('CC-Bank','CC→Bank'),amount:parseFloat(amt),category:cat||type,from_account:needFrom?from:null,to_account:needTo?to:null,particulars:desc||null,tower:tower||null,it_section:catInfo?.it||null,status:'complete',source:'app',created_at};
     } else {
-      /* v1.6: Site domain with Expense / Received / Site Transfer */
+      /* v1.7: Site domain — Expense / Received / Transfer with member tracking */
       const isSiteTransfer=siteType==='Site Transfer';
       const isSiteReceived=siteType==='Received';
-      const autoUser=(!isSiteTransfer&&!isSiteReceived&&from!=='Site Cash')?'JAYESH':null;
-      let siteFrom,siteTo,txnType,txnCat;
+      let siteFrom,siteTo,txnType,txnCat,partyName,autoParticulars;
+
       if(isSiteTransfer){
         siteFrom=transferDir==='Given'?'Site Cash':transferUser;
         siteTo=transferDir==='Given'?transferUser:'Site Cash';
         txnType='Bank→Bank';txnCat=siteCat;
+        partyName=transferUser;
+        autoParticulars=transferDir==='Given'?`Given to ${transferUser}`:`Received from ${transferUser}`;
       } else if(isSiteReceived){
-        /* Site received: income into depositTo account */
-        siteFrom=null;siteTo=depositTo;
+        /* Member gave us money → Site Cash (or bank) goes UP */
+        siteFrom=siteMember;       /* who gave the money */
+        siteTo=depositTo;          /* credited into Site Cash / Bank */
         txnType='Income';txnCat='Site Income';
+        partyName=siteMember;
+        autoParticulars=`Received from ${siteMember}`;
       } else {
-        siteFrom=from;siteTo=null;
+        /* Expense — we paid a member (or from site cash to expense) */
+        siteFrom='Site Cash';      /* always debit Site Cash for site expenses */
+        siteTo=null;
         txnType='Expense';txnCat=siteCat;
+        partyName=siteMember;
+        autoParticulars=`Given to ${siteMember}`;
       }
-      txn={domain:'Site',type:txnType,amount:parseFloat(amt),category:txnCat,from_account:siteFrom,to_account:siteTo,particulars:desc||null,site_name:siteName,site_user:isSiteTransfer?transferUser:autoUser,status:'complete',source:'app',created_at};
+      txn={domain:'Site',type:txnType,amount:parseFloat(amt),category:txnCat,
+           from_account:siteFrom,to_account:siteTo,
+           particulars:desc||autoParticulars,
+           site_name:siteName,
+           site_user:partyName,   /* legacy column — keep for backward compat */
+           party_name:partyName,  /* new column for member ledger */
+           status:'complete',source:'app',created_at};
     }
     await onSave(txn);setAmt('');setDesc('');setCat('');setTower('');setTransferUser(customTeam?.[0]||'');setSaving(false);
   };
@@ -623,20 +642,76 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
 
   if(domain==='Site'){
     const selS={...iS,cursor:'pointer'};
-    /* v1.6: deposit options = Site Cash + all active banks */
     const depositOptions=['Site Cash',...allBanks.filter(a=>a!=='Cash')];
     return(<div className="fade-in" style={{padding:'12px 16px',paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)',display:'flex',flexDirection:'column',gap:12}}>
-      <div style={{display:'flex',gap:6}}><span style={cs(false)} onClick={()=>setDomain('Personal')}>Personal</span><span style={cs(true)}>Site</span></div>
-      <div><p className="sec-label" style={{padding:'0 0 6px'}}>Site</p>{(customSites&&customSites.length>0)?<div style={{display:'flex',flexWrap:'wrap',gap:6}}>{customSites.map(s=><span key={s} style={cs(siteName===s)} onClick={()=>setSiteName(s)}>{s}</span>)}</div>:<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No sites — add in Setup</span>}</div>
-      {/* v1.6: 3 types for Site */}
-      <div><p className="sec-label" style={{padding:'0 0 6px'}}>Type</p><div style={{display:'flex',gap:6,flexWrap:'wrap'}}><span style={cs(siteType==='Expense')} onClick={()=>setSiteType('Expense')}>Expense</span><span style={cs(siteType==='Received')} onClick={()=>setSiteType('Received')}>Received ↓</span><span style={cs(siteType==='Site Transfer')} onClick={()=>setSiteType('Site Transfer')}>Transfer</span></div></div>
-      {siteType==='Expense'&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>Category</p><select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selS}>{SITE_CATS.map(c=><option key={c}>{c}</option>)}</select></div>}
-      {/* v1.6: Received — Deposit To dropdown */}
-      {siteType==='Received'&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>Deposit To</p><select value={depositTo} onChange={e=>setDepositTo(e.target.value)} style={selS}>{depositOptions.map(a=><option key={a}>{a}</option>)}</select><p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>Site funds received → credited to selected account</p></div>}
-      {siteType==='Site Transfer'&&<><div><p className="sec-label" style={{padding:'0 0 6px'}}>Direction</p><div style={{display:'flex',gap:6}}><span style={cs(transferDir==='Given')} onClick={()=>setTransferDir('Given')}>Given →</span><span style={cs(transferDir==='Received')} onClick={()=>setTransferDir('Received')}>← Received</span></div></div><div><p className="sec-label" style={{padding:'0 0 6px'}}>Person</p>{(customTeam&&customTeam.length>0)?<select value={transferUser} onChange={e=>setTransferUser(e.target.value)} style={selS}>{customTeam.map(m=><option key={m}>{m}</option>)}</select>:<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No team — add in Setup</span>}</div></>}
-      {siteType==='Expense'&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>Paid From</p><select value={from} onChange={e=>setFrom(e.target.value)} style={selS}>{['Site Cash',...allAccounts].map(a=><option key={a}>{a}</option>)}</select></div>}
+      <div style={{display:'flex',gap:6}}>
+        <span style={cs(false)} onClick={()=>setDomain('Personal')}>Personal</span>
+        <span style={cs(true)}>Site</span>
+      </div>
+
+      {/* Site selector */}
+      <div><p className="sec-label" style={{padding:'0 0 6px'}}>Site</p>
+        {(customSites&&customSites.length>0)
+          ?<div style={{display:'flex',flexWrap:'wrap',gap:6}}>{customSites.map(s=><span key={s} style={cs(siteName===s)} onClick={()=>setSiteName(s)}>{s}</span>)}</div>
+          :<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No sites — add in Setup</span>}
+      </div>
+
+      {/* Type selector */}
+      <div><p className="sec-label" style={{padding:'0 0 6px'}}>Type</p>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          <span style={cs(siteType==='Expense')} onClick={()=>setSiteType('Expense')}>💸 Expense (Given)</span>
+          <span style={cs(siteType==='Received')} onClick={()=>setSiteType('Received')}>💰 Received</span>
+          <span style={cs(siteType==='Site Transfer')} onClick={()=>setSiteType('Site Transfer')}>↔ Transfer</span>
+        </div>
+      </div>
+
+      {/* EXPENSE: Category + To Member */}
+      {siteType==='Expense'&&(<>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Category</p>
+          <select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selS}>
+            {SITE_CATS.map(c=><option key={c}>{c}</option>)}
+          </select>
+        </div>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>To Member <span style={{color:'var(--text3)',fontWeight:400}}>(who receives this payment)</span></p>
+          <select value={siteMember} onChange={e=>setSiteMember(e.target.value)} style={{...selS,borderColor:'var(--amber)',color:'var(--amber)'}}>
+            {allSiteMembers.map(m=><option key={m}>{m}</option>)}
+          </select>
+          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💸 Site Cash → {siteMember} · Particulars: "Given to {siteMember}"</p>
+        </div>
+      </>)}
+
+      {/* RECEIVED: From Member + Deposit To */}
+      {siteType==='Received'&&(<>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>From Member <span style={{color:'var(--text3)',fontWeight:400}}>(who gave the money)</span></p>
+          <select value={siteMember} onChange={e=>setSiteMember(e.target.value)} style={{...selS,borderColor:'var(--green)',color:'var(--green)'}}>
+            {allSiteMembers.map(m=><option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Deposit To</p>
+          <select value={depositTo} onChange={e=>setDepositTo(e.target.value)} style={selS}>
+            {depositOptions.map(a=><option key={a}>{a}</option>)}
+          </select>
+          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💰 {siteMember} → {depositTo} · Particulars: "Received from {siteMember}"</p>
+        </div>
+      </>)}
+
+      {/* TRANSFER: Direction + Person */}
+      {siteType==='Site Transfer'&&(<>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Direction</p>
+          <div style={{display:'flex',gap:6}}>
+            <span style={cs(transferDir==='Given')} onClick={()=>setTransferDir('Given')}>Given →</span>
+            <span style={cs(transferDir==='Received')} onClick={()=>setTransferDir('Received')}>← Received</span>
+          </div>
+        </div>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Person</p>
+          {allSiteMembers.length>0
+            ?<select value={transferUser} onChange={e=>setTransferUser(e.target.value)} style={selS}>{allSiteMembers.map(m=><option key={m}>{m}</option>)}</select>
+            :<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No team — add in Setup</span>}
+        </div>
+      </>)}
+
       <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={amt} onChange={e=>setAmt(e.target.value)} style={{...iS,fontSize:20,padding:'12px 14px',fontWeight:600}}/>
-      <input type="text" placeholder="Description (optional)" value={desc} onChange={e=>setDesc(e.target.value)} style={iS}/>
+      <input type="text" placeholder={siteType==='Expense'?`Given to ${siteMember} (optional override)`:siteType==='Received'?`Received from ${siteMember} (optional override)`:'Description (optional)'} value={desc} onChange={e=>setDesc(e.target.value)} style={iS}/>
       <input type="date" value={date} max={today} onChange={e=>setDate(e.target.value)} style={{...iS,color:date!==today?'var(--amber)':'var(--text)',borderColor:date!==today?'var(--amber)':'var(--border2)'}}/>
       {date!==today&&<span style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)'}}>⚠ Backdated entry</span>}
       <SaveBtn/>
@@ -1304,26 +1379,197 @@ function CCBillScreen({txns,customAccounts}){
   </div>);
 }
 
-/* ── SiteLedgerScreen ── */
+/* ── SiteLedgerScreen — v1.7: Member Net Balance + Drill-down ── */
 function SiteLedgerScreen({txns,customSites,customTeam,opening}){
-  const sites=customSites||[];const team=customTeam||[];
+  const SITE_MEMBERS_DEFAULT=['PH','Milton','PP','Sohail','Anjar','Sikhu'];
+  const allMembers=[...new Set([...SITE_MEMBERS_DEFAULT,...(customTeam||[])])];
+  const sites=customSites||[];
+  const [selMember,setSelMember]=useState(null); /* null = overview */
+
   const siteTxns=txns.filter(t=>t.domain==='Site'&&t.status!=='voided');
-  const siteSpend=sites.map(s=>({site:s,total:siteTxns.filter(t=>t.site_name===s&&t.type==='Expense').reduce((s_,t)=>s_+(parseFloat(t.amount)||0),0)}));
-  const teamTally=team.map(m=>{const ob=(opening&&opening[m])||0;const recv=siteTxns.filter(t=>t.type==='Bank→Bank'&&t.site_user===m).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);const paid=siteTxns.filter(t=>t.type==='Expense'&&t.site_user===m).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);return{member:m,ob,recv,paid,bal:ob+recv-paid};});
-  const recent=[...siteTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,50);
-  const cS={background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px',minWidth:100,flex:1};
-  const thS={padding:'8px 10px',fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em',textAlign:'left',borderBottom:'1px solid var(--border2)',background:'var(--bg3)'};
-  const tdS=col=>({padding:'9px 10px',fontFamily:'var(--mono)',fontSize:12,borderBottom:'1px solid var(--border)',color:col==='green'?'var(--green)':col==='red'?'var(--red)':'var(--text)'});
-  return(<div className="fade-in">
-    <p className="sec-label">Site-wise Total Spend</p>
-    {sites.length===0&&<div className="empty">No sites configured.</div>}
-    {sites.length>0&&<div style={{display:'flex',flexWrap:'wrap',gap:8,padding:'0 16px 8px'}}>{siteSpend.map(({site,total})=><div key={site} style={cS}><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:6}}>{site}</div><div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:total>0?'var(--red)':'var(--text3)'}}>{fmtAmt(total)}</div><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>{siteTxns.filter(t=>t.site_name===site).length} entries</div></div>)}</div>}
-    <p className="sec-label" style={{marginTop:8}}>Team Cash Tally</p>
-    {team.length===0&&<div className="empty">No team members configured.</div>}
-    {team.length>0&&<div style={{margin:'0 16px 8px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}><table style={{width:'100%',borderCollapse:'collapse'}}><thead><tr><th style={thS}>Member</th><th style={{...thS,textAlign:'right'}}>Received</th><th style={{...thS,textAlign:'right'}}>Paid</th><th style={{...thS,textAlign:'right'}}>Balance</th></tr></thead><tbody>{teamTally.map(({member,recv,paid,bal})=><tr key={member}><td style={tdS()}>{member}</td><td style={{...tdS('green'),textAlign:'right'}}>{recv>0?fmtAmt(recv):'—'}</td><td style={{...tdS('red'),textAlign:'right'}}>{paid>0?fmtAmt(paid):'—'}</td><td style={{...tdS(bal>=0?'green':'red'),textAlign:'right',fontWeight:600}}>{bal>=0?'+':'-'}{fmtAmt(Math.abs(bal))}</td></tr>)}</tbody></table></div>}
+
+  /* ── Member ledger logic ──
+     party_name (new) OR site_user (legacy) both work
+     "Given to X"  = Expense type,  from_account='Site Cash', party identifies recipient
+     "Received from X" = Income type, to_account= depositTarget, party identifies source
+  */
+  const getMemberTxns=m=>siteTxns.filter(t=>(t.party_name===m||t.site_user===m));
+
+  const getMemberBalance=m=>{
+    const mtxns=getMemberTxns(m);
+    /* Given to member = Expense (Site Cash OUT to member) */
+    const given   =mtxns.filter(t=>t.type==='Expense'||t.type==='Bank→Bank').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    /* Received from member = Income (member gave money → Site Cash IN) */
+    const received=mtxns.filter(t=>t.type==='Income').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    return{given,received,net:given-received,count:mtxns.length};
+  };
+
+  /* Site-wise spend */
+  const siteSpend=sites.map(s=>({
+    site:s,
+    total:siteTxns.filter(t=>t.site_name===s&&t.type==='Expense').reduce((s_,t)=>s_+(parseFloat(t.amount)||0),0),
+    count:siteTxns.filter(t=>t.site_name===s).length
+  }));
+
+  /* Recent entries — show with clear Given/Received label */
+  const labelTxn=t=>{
+    const p=t.party_name||t.site_user;
+    if(t.type==='Income')return p?`Received from ${p}`:'Site Received';
+    if(t.type==='Expense')return p?`Given to ${p}`:(t.particulars||t.category);
+    if(t.type==='Bank→Bank'){
+      if(t.from_account==='Site Cash'&&t.to_account)return`Given to ${t.to_account}`;
+      if(t.to_account==='Site Cash'&&t.from_account)return`Received from ${t.from_account}`;
+    }
+    return t.particulars||t.category||t.type;
+  };
+
+  /* ── DETAIL VIEW for a single member ── */
+  if(selMember){
+    const mtxns=[...getMemberTxns(selMember)].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+    const {given,received,net}=getMemberBalance(selMember);
+    return(<div className="fade-in">
+      {/* Header */}
+      <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
+        <div onClick={()=>setSelMember(null)} style={{cursor:'pointer',color:'var(--blue)',fontFamily:'var(--mono)',fontSize:12,padding:'4px 8px',border:'1px solid var(--blue)',borderRadius:6}}>← Back</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15,fontWeight:700,color:'var(--text)'}}>{selMember}</div>
+          <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1}}>Site Ledger · {mtxns.length} entries</div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,padding:'12px 16px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
+        {[
+          ['Given Out',given,'var(--red)','💸'],
+          ['Received',received,'var(--green)','💰'],
+          ['Net Balance',Math.abs(net),net>0?'var(--amber)':'var(--green)','⚖'],
+        ].map(([l,v,c,e])=>(
+          <div key={l} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
+            <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{e} {l}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:c}}>{fmtAmt(v)}</div>
+          </div>
+        ))}
+      </div>
+      {net!==0&&<div style={{padding:'8px 16px',background:net>0?'var(--amber-bg)':'var(--green-bg)',borderBottom:'1px solid var(--border)'}}>
+        <span style={{fontFamily:'var(--mono)',fontSize:11,color:net>0?'var(--amber)':'var(--green)',fontWeight:600}}>
+          {net>0?`⚠ Net: Given ${fmtAmt(net)} more than received. ${selMember} needs to account for this.`:`✓ Net: Received ${fmtAmt(Math.abs(net))} more than given. Surplus with ${selMember}.`}
+        </span>
+      </div>}
+
+      {/* Transaction rows */}
+      {mtxns.length===0&&<div className="empty">No transactions for {selMember} yet.</div>}
+      {mtxns.map(t=>{
+        const isIn=t.type==='Income';
+        const label=labelTxn(t);
+        return(<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'11px 16px',borderBottom:'1px solid var(--border)'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,color:'var(--text)',fontWeight:500,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{label}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:2}}>{fmtDate(t.created_at)} · {t.site_name||'—'} · {t.category}</div>
+          </div>
+          <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:isIn?'var(--green)':'var(--red)'}}>{isIn?'+':'−'}{fmtAmt(parseFloat(t.amount)||0)}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:1}}>{isIn?'↑ In':'↓ Out'}</div>
+          </div>
+        </div>);
+      })}
+    </div>);
+  }
+
+  /* ── OVERVIEW ── */
+  const recent=[...siteTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).slice(0,40);
+  const totalSiteExpense=siteTxns.filter(t=>t.type==='Expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const totalSiteReceived=siteTxns.filter(t=>t.type==='Income').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+
+  return(<div className="fade-in" style={{paddingBottom:32}}>
+
+    {/* Site Cash summary */}
+    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,padding:'12px 16px',background:'var(--bg2)',borderBottom:'1px solid var(--border)'}}>
+      <div style={{background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:8,padding:'10px 12px'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--red)',textTransform:'uppercase',marginBottom:4}}>Total Site Expense</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:800,color:'var(--red)'}}>{fmtAmt(totalSiteExpense)}</div>
+      </div>
+      <div style={{background:'var(--green-bg)',border:'1px solid var(--green)',borderRadius:8,padding:'10px 12px'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--green)',textTransform:'uppercase',marginBottom:4}}>Total Received</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:800,color:'var(--green)'}}>{fmtAmt(totalSiteReceived)}</div>
+      </div>
+    </div>
+
+    {/* Site-wise spend */}
+    {sites.length>0&&(<>
+      <p className="sec-label">Site-wise Spend</p>
+      <div style={{display:'flex',flexWrap:'wrap',gap:8,padding:'0 16px 8px'}}>
+        {siteSpend.map(({site,total,count})=>(
+          <div key={site} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px',minWidth:100,flex:1}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:6}}>{site}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:total>0?'var(--red)':'var(--text3)'}}>{fmtAmt(total)}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:4}}>{count} entries</div>
+          </div>
+        ))}
+      </div>
+    </>)}
+
+    {/* Member Ledger — Net Balance Cards */}
+    <p className="sec-label">Member Ledger <span style={{fontWeight:400,color:'var(--text3)'}}>· tap to drill down</span></p>
+    <div style={{padding:'0 16px 8px',display:'flex',flexDirection:'column',gap:8}}>
+      {allMembers.map(m=>{
+        const {given,received,net,count}=getMemberBalance(m);
+        const hasActivity=count>0;
+        return(
+          <div key={m} onClick={()=>setSelMember(m)} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px',cursor:'pointer',opacity:hasActivity?1:0.55}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:hasActivity?10:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <div style={{width:32,height:32,borderRadius:8,background:net>0?'var(--amber-bg)':net<0?'var(--green-bg)':'var(--bg3)',border:'1px solid '+(net>0?'var(--amber)':net<0?'var(--green)':'var(--border)'),display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:net>0?'var(--amber)':net<0?'var(--green)':'var(--text3)'}}>
+                  {m.slice(0,2).toUpperCase()}
+                </div>
+                <div>
+                  <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{m}</div>
+                  <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:1}}>{count} transactions</div>
+                </div>
+              </div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:net>0?'var(--amber)':net<0?'var(--green)':'var(--text3)'}}>{net===0?'—':net>0?`+${fmtAmt(net)}`:`−${fmtAmt(Math.abs(net))}`}</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:1}}>{net>0?'we gave more':'they gave more'}</div>
+              </div>
+            </div>
+            {hasActivity&&(
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,borderTop:'1px solid var(--border)',paddingTop:8}}>
+                <div style={{display:'flex',justify:'space-between',alignItems:'center',gap:6}}>
+                  <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase'}}>💸 Given</span>
+                  <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--red)'}}>{fmtAmt(given)}</span>
+                </div>
+                <div style={{display:'flex',justifyContent:'flex-end',alignItems:'center',gap:6}}>
+                  <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase'}}>💰 Received</span>
+                  <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--green)'}}>{fmtAmt(received)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+
+    {/* Recent entries */}
     <p className="sec-label" style={{marginTop:8}}>Recent Site Entries</p>
-    {recent.length===0&&<div className="empty">No site transactions yet.</div>}
-    <div style={{margin:'0 0 24px'}}>{recent.map(t=><div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}><div style={{flex:1,minWidth:0}}><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>{t.site_name||'—'} · {t.category}{t.site_user&&<span style={{color:'var(--blue)',marginLeft:6}}>→ {t.site_user}</span>}</div><div style={{fontSize:13,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:2}}>{fmtDate(t.created_at)}</div></div><div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:600,color:t.type==='Bank→Bank'?'var(--blue)':'var(--red)',marginLeft:12,flexShrink:0}}>{t.type==='Bank→Bank'?'↔':'−'}₹{fmt(parseFloat(t.amount)||0)}</div></div>)}</div>
+    {recent.length===0&&<div className="empty">No site transactions yet.<br/>Add entries via the + button → Site tab.</div>}
+    <div style={{margin:'0 0 24px'}}>
+      {recent.map(t=>{
+        const isIn=t.type==='Income';
+        const label=labelTxn(t);
+        return(<div key={t.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:2}}>
+              {t.site_name||'—'} · {t.category}
+              {(t.party_name||t.site_user)&&<span style={{color:isIn?'var(--green)':'var(--amber)',marginLeft:6}}>· {t.party_name||t.site_user}</span>}
+            </div>
+            <div style={{fontSize:13,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',fontWeight:500}}>{label}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:2}}>{fmtDate(t.created_at)}</div>
+          </div>
+          <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:isIn?'var(--green)':'var(--red)',marginLeft:12,flexShrink:0}}>
+            {isIn?'+':'−'}{fmtAmt(parseFloat(t.amount)||0)}
+          </div>
+        </div>);
+      })}
+    </div>
   </div>);
 }
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
