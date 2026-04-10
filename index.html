@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.6</title>
+<title>JB Finance v1.6.2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>(function(){var t=localStorage.getItem('jbf_theme')||'autumn';document.documentElement.setAttribute('data-theme',t);})();</script>
@@ -209,7 +209,7 @@ function LoginScreen(){
         {/* Logo area */}
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.6</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.6.2</div>
         </div>
         {/* Card */}
         <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:14,padding:24}}>
@@ -586,8 +586,16 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const fromList=()=>{if(type==='Bank-CC'||type==='Bank-Bank'||type==='Bank-Cash')return allBanks.filter(a=>a!=='Cash');if(type==='CC-Bank')return allCC;if(type==='Cash-Bank')return['Cash'];return allAccounts;};
   const toList=()=>{if(type==='Bank-CC')return allCC;if(type==='Bank-Bank'||type==='Cash-Bank'||type==='CC-Bank')return allBanks.filter(a=>a!=='Cash');if(type==='Bank-Cash')return['Cash'];return allBanks;};
   const canSaveP=parseFloat(amt)>0&&(type==='Expense'?(cat&&from):type==='UA Expense'?from:type==='Income'?to:type==='UA Received'?to:(from&&to));
-  const canSaveS=parseFloat(amt)>0&&siteName;
+  const canSaveS=parseFloat(amt)>0&&siteName&&(siteType==='Site Transfer'?transferUser:siteMember);
   const canSave=domain==='Personal'?canSaveP:canSaveS;
+
+  /* Auto-fill description based on member + type */
+  useEffect(()=>{
+    if(domain!=='Site')return;
+    if(siteType==='Expense')setDesc(`Given to ${siteMember}`);
+    else if(siteType==='Received')setDesc(`Received from ${siteMember}`);
+    else if(siteType==='Site Transfer')setDesc(transferDir==='Given'?`Given to ${transferUser}`:`Received from ${transferUser}`);
+  },[domain,siteType,siteMember,transferUser,transferDir]);
 
   const selectType=t=>{setType(t);setCat('');if(t==='Bank-Cash'){setFrom(firstBank);setTo('Cash');}else if(t==='Cash-Bank'){setFrom('Cash');setTo(firstBank);}else if(t==='Bank-CC'){setFrom(firstBank);setTo(allCC[0]||'');}else if(t==='Bank-Bank'){setFrom(firstBank);setTo('');}else if(t==='CC-Bank'){setFrom(allCC[0]||'');setTo(firstBank);}else{setTo('');setFrom('Cash');}};
 
@@ -1404,6 +1412,12 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
     return{given,received,net:given-received,count:mtxns.length};
   };
 
+  /* ── Active members: union of (a) parties in actual txns + (b) customTeam ──
+     Shows only members who have real activity OR are explicitly set up in team.
+     NEVER shows SEED_MEMBERS_DEFAULT with 0 activity (that caused the empty list bug). */
+  const partiesInTxns=[...new Set(siteTxns.map(t=>t.party_name||t.site_user).filter(Boolean))];
+  const activeMembers=[...new Set([...partiesInTxns,...(customTeam||[])])];
+
   /* Site-wise spend */
   const siteSpend=sites.map(s=>({
     site:s,
@@ -1511,7 +1525,8 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
     {/* Member Ledger — Net Balance Cards */}
     <p className="sec-label">Member Ledger <span style={{fontWeight:400,color:'var(--text3)'}}>· tap to drill down</span></p>
     <div style={{padding:'0 16px 8px',display:'flex',flexDirection:'column',gap:8}}>
-      {allMembers.map(m=>{
+      {activeMembers.length===0&&<div className="empty" style={{textAlign:'left',padding:'16px 0',fontSize:11}}>No site member transactions yet.<br/>Add an entry via + → Site → Expense/Received.</div>}
+      {activeMembers.map(m=>{
         const {given,received,net,count}=getMemberBalance(m);
         const hasActivity=count>0;
         return(
@@ -1697,7 +1712,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.6 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.6.2 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password</div>
   </div>);
 }
 /* ── RENDER ── */
