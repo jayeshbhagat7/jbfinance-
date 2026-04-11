@@ -981,21 +981,79 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   return(
     <div className="fade-in" style={{padding:'8px 10px'}}>
 
-      {/* ── v1.6 HERO: 2-column top cards (Safe to Spend + Net Worth) ── */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:6}}>
-        {/* Safe to Spend — standard card */}
-        <div style={{background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)',border:'1.5px solid '+(safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)'),borderRadius:10,padding:'10px 12px'}}>
-          <div style={{fontFamily:'var(--mono)',fontSize:8,color:safeCol,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Safe to Spend</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:800,color:safeCol,letterSpacing:'-0.5px',lineHeight:1}}>{safeToSpend<0?'−':''}{fmtAmt(Math.abs(safeToSpend))}</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:9,color:safeCol,marginTop:4,opacity:0.8}}>−CC {fmtAmt(totalCC)}</div>
+      {/* ── WATERFALL HERO: Safe to Spend breakdown ── */}
+      {(()=>{
+        /* Waterfall steps: Liquid → −CC → −Provisions → Safe */
+        const steps=[
+          {label:'Bank Balance',value:liquid,type:'start',color:'var(--blue)'},
+          ...(totalCC>0?[{label:'CC Dues',value:-totalCC,type:'deduct',color:'var(--red)'}]:[]),
+          ...(monthlyProv>0?[{label:'Provisions',value:-monthlyProv,type:'deduct',color:'var(--amber)'}]:[]),
+          {label:'Safe to Spend',value:safeToSpend,type:'result',color:safeCol},
+        ];
+        const maxVal=liquid>0?liquid:1;
+        const [wfOpen,setWfOpen]=useState(false);
+        return(
+        <div style={{background:'var(--bg2)',border:'1.5px solid '+(safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)'),borderRadius:12,marginBottom:6,overflow:'hidden'}}>
+          {/* Top: Safe to Spend + Net Worth row */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0}}>
+            <div style={{padding:'12px 14px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:8,color:safeCol,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Safe to Spend</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:safeCol,letterSpacing:'-1px',lineHeight:1}}>{safeToSpend<0?'−':''}{fmtAmt(Math.abs(safeToSpend))}</div>
+            </div>
+            <div onClick={()=>setTab('investments')} style={{padding:'12px 14px',borderLeft:'1px solid var(--border)',cursor:'pointer'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Net Worth ›</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:700,color:'var(--text)',letterSpacing:'-1px',lineHeight:1}}>{fmtAmt(netWorth)}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>+Inv {fmtAmt(totalInv)}</div>
+            </div>
+          </div>
+          {/* Waterfall toggle button */}
+          <div onClick={()=>setWfOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 14px',borderTop:'1px solid var(--border)',cursor:'pointer',background:'var(--bg3)'}}>
+            <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>📊 Balance Breakdown</span>
+            <span style={{fontSize:9,color:'var(--text3)',transform:wfOpen?'rotate(180deg)':'none',display:'inline-block',transition:'transform 0.2s'}}>▼</span>
+          </div>
+          {/* Waterfall bars */}
+          {wfOpen&&(
+            <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:8}}>
+              {steps.map((s,i)=>{
+                const pct=Math.abs(s.value)/maxVal*100;
+                const isResult=s.type==='result';
+                const isDeduct=s.type==='deduct';
+                return(
+                <div key={i}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                    <div style={{display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{fontFamily:'var(--mono)',fontSize:10,color:isDeduct?'var(--red)':isResult?safeCol:'var(--text2)',fontWeight:isResult?700:400}}>
+                        {isDeduct?'−':isResult?'=':''} {s.label}
+                      </span>
+                    </div>
+                    <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:s.color}}>
+                      {isDeduct?'−':''}{fmtAmt(Math.abs(s.value))}
+                    </span>
+                  </div>
+                  <div style={{background:'var(--bg4)',borderRadius:3,height:6,overflow:'hidden'}}>
+                    <div style={{
+                      height:6,borderRadius:3,
+                      width:Math.min(pct,100)+'%',
+                      background:s.color,
+                      opacity:isDeduct?0.7:1,
+                      transition:'width 0.4s ease'
+                    }}/>
+                  </div>
+                  {i<steps.length-1&&isDeduct&&(
+                    <div style={{borderBottom:'1px dashed var(--border2)',marginTop:8}}/>
+                  )}
+                  {isResult&&(
+                    <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>
+                      {safeToSpend>=0?`✓ ${Math.round(safeToSpend/liquid*100)}% of total liquid available`:'⚠ CC dues exceed bank balance'}
+                    </div>
+                  )}
+                </div>
+              )})}
+            </div>
+          )}
         </div>
-        {/* True Net Worth — standard card */}
-        <div onClick={()=>setTab('investments')} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'10px 12px',cursor:'pointer'}}>
-          <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:4}}>Net Worth ›</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:20,fontWeight:700,color:'var(--text)',letterSpacing:'-0.5px',lineHeight:1}}>{fmtAmt(netWorth)}</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:4}}>Inv {fmtAmt(totalInv)}</div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ── v1.6 NET CASH card — prominent with bold Personal/Site split ── */}
       <div style={{background:'var(--bg2)',border:'1.5px solid var(--border2)',borderRadius:10,padding:'10px 14px',marginBottom:6}}>
