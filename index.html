@@ -246,6 +246,7 @@ function App() {
   const [checklist,setChecklist]             = useState([]);
   const [customSites,setCustomSites]         = useState([]);
   const [customTeam,setCustomTeam]           = useState([]);
+  const [customSiteCats,setCustomSiteCats]   = useState([]);
   const [toast,setToast]                     = useState(null);
   const [menuOpen,setMenuOpen]               = useState(false);
   const [quickAdd,setQuickAdd]               = useState(false);
@@ -295,6 +296,7 @@ function App() {
         if(g('budgets'))          try{setBudgets(JSON.parse(g('budgets').value));}catch(e){}
         if(g('custom_sites'))     try{setCustomSites(JSON.parse(g('custom_sites').value));}catch(e){}
         if(g('custom_team'))      try{setCustomTeam(JSON.parse(g('custom_team').value));}catch(e){}
+        if(g('custom_site_cats')) try{setCustomSiteCats(JSON.parse(g('custom_site_cats').value));}catch(e){}
         if(g('theme'))            { setTheme(g('theme').value); document.documentElement.setAttribute('data-theme',g('theme').value); localStorage.setItem('jbf_theme',g('theme').value); }
       }
     } catch(e){console.error('loadData error:',e);showToast('⚠ Load failed: '+e.message);}
@@ -357,6 +359,7 @@ function App() {
   const saveBudgets = async bg=>{await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)});setBudgets(bg);showToast('✓ Budgets saved');};
   const saveCustomSites = async list=>{await db.from('settings').upsert({key:'custom_sites',value:JSON.stringify(list)});setCustomSites(list);showToast('✓ Sites updated');};
   const saveCustomTeam = async list=>{await db.from('settings').upsert({key:'custom_team',value:JSON.stringify(list)});setCustomTeam(list);showToast('✓ Team updated');};
+  const saveCustomSiteCats = async list=>{await db.from('settings').upsert({key:'custom_site_cats',value:JSON.stringify(list)});setCustomSiteCats(list);showToast('✓ Site categories updated');};
   const saveCustomCategories = async list=>{await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(list)});setCustomCategories(list);showToast('✓ Categories updated');};
   const addCustomCategory = async catObj=>{
     const updated=[...customCategories.filter(c=>c.name!==catObj.name&&!c.archived),{name:catObj.name,emoji:catObj.emoji||'•',it:catObj.it||'',parent:catObj.parent||null}];
@@ -433,7 +436,7 @@ function App() {
       <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
-        {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
+        {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch}/>}
         {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} investments={investments} onAuditSync={async(real)=>{
           const diff=real-liquid;
@@ -450,7 +453,7 @@ function App() {
         {!loading&&tab==='statement'&&<StatementScreen txns={txns} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} opening={opening} balances={balances}/>}
         {!loading&&tab==='site_ledger'&&<SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} opening={opening}/>}
         {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts}/>}
-        {!loading&&tab==='settings'&&<SettingsScreen opening={opening} onSave={saveOpening} allAccountsH={allAccountsH} customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts} customCategories={customCategories} onSaveCategories={saveCustomCategories} budgets={budgets} onSaveBudgets={saveBudgets} customSites={customSites} onSaveSites={saveCustomSites} customTeam={customTeam} onSaveTeam={saveCustomTeam} theme={theme} onSaveTheme={saveTheme}/>}
+        {!loading&&tab==='settings'&&<SettingsScreen opening={opening} onSave={saveOpening} allAccountsH={allAccountsH} customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts} customCategories={customCategories} onSaveCategories={saveCustomCategories} budgets={budgets} onSaveBudgets={saveBudgets} customSites={customSites} onSaveSites={saveCustomSites} customTeam={customTeam} onSaveTeam={saveCustomTeam} theme={theme} onSaveTheme={saveTheme} customSiteCats={customSiteCats} onSaveSiteCats={saveCustomSiteCats}/>}
         {!loading&&tab==='ai_command'&&<AiCommandScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
       </div>
 
@@ -569,7 +572,7 @@ function CategoryPicker({allCategories,value,onChange,onAddNew}){
   );
 }
 /* ── AddScreen ── */
-function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,onAddCategory,customSites,customTeam,prefill,onClearPrefill}){
+function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,onAddCategory,customSites,customTeam,customSiteCats,prefill,onClearPrefill}){
   const today=new Date().toISOString().slice(0,10);
   const [domain,setDomain]=useState('Personal');
   const [amt,setAmt]=useState('');const [desc,setDesc]=useState('');const [date,setDate]=useState(today);const [saving,setSaving]=useState(false);
@@ -591,7 +594,8 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     if(typeof onClearPrefill==='function')onClearPrefill();
   },[prefill]);
 
-  const SITE_CATS=['Labour','Material','Kharchi','Fuel','Transport','Misc'];
+  const DEFAULT_SITE_CATS=['Misc','Transportation','Labour Salary','Kharchi','Medical','Hardware','Maintenance','Food','Udhari','Stationary','Fuel','Travelling'];
+  const SITE_CATS=[...DEFAULT_SITE_CATS,...(customSiteCats||[]).filter(c=>!DEFAULT_SITE_CATS.includes(c))];
   const catInfo=allCategories.find(c=>c.id===cat);
   const needCat=type==='Expense';
   const needFrom=['Expense','UA Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(type);
@@ -1602,13 +1606,14 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
   </div>);
 }
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
-function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme}){
+function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme,customSiteCats,onSaveSiteCats}){
   /* Normalize opening — support both legacy number and new {amount, opening_date} */
   const normalizeOB=ob=>{const r={};Object.entries(ob||{}).forEach(([acc,val])=>{r[acc]=typeof val==='object'&&val!==null?{amount:val.amount||0,opening_date:val.opening_date||''}:{amount:val||0,opening_date:''};});return r;};
   const [ob,setOb]=useState(()=>normalizeOB(opening));const [savedBal,setSavedBal]=useState(false);const [bg,setBg]=useState({...budgets});
   const [newAccName,setNewAccName]=useState('');const [newAccType,setNewAccType]=useState('bank');
   const [newCatName,setNewCatName]=useState('');const [newCatEmoji,setNewCatEmoji]=useState('');const [newCatIT,setNewCatIT]=useState('');
   const [newSite,setNewSite]=useState('');const [newMember,setNewMember]=useState('');
+  const [newSiteCat,setNewSiteCat]=useState('');
   const [open,setOpen]=useState({}); /* accordion state per section */
   const toggle=k=>setOpen(o=>({...o,[k]:!o[k]}));
 
@@ -1629,6 +1634,10 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
   const addMember=async()=>{const n=newMember.trim();if(!n||(customTeam||[]).map(m=>m.toLowerCase()).includes(n.toLowerCase()))return;await onSaveTeam([...(customTeam||[]),n]);setNewMember('');};
   const removeMember=async n=>await onSaveTeam((customTeam||[]).filter(m=>m!==n));
   const handleSaveBudgets=async()=>await onSaveBudgets(bg);
+
+  const DEFAULT_SITE_CATS=['Misc','Transportation','Labour Salary','Kharchi','Medical','Hardware','Maintenance','Food','Udhari','Stationary','Fuel','Travelling'];
+  const addSiteCat=async()=>{const n=newSiteCat.trim();if(!n||DEFAULT_SITE_CATS.map(c=>c.toLowerCase()).includes(n.toLowerCase())||(customSiteCats||[]).map(c=>c.toLowerCase()).includes(n.toLowerCase()))return;await onSaveSiteCats([...(customSiteCats||[]),n]);setNewSiteCat('');};
+  const removeSiteCat=async n=>await onSaveSiteCats((customSiteCats||[]).filter(c=>c!==n));
 
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const btnS=col=>({background:'none',border:`1px solid ${col}`,borderRadius:6,color:col,padding:'5px 10px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'});
@@ -1696,6 +1705,23 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
         <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:8,marginBottom:2}}>TEAM MEMBERS</p>
         <div style={{display:'flex',gap:8}}><input style={{...iS,flex:1}} placeholder="Member name" value={newMember} onChange={e=>setNewMember(e.target.value)}/><button onClick={addMember} style={{background:'var(--blue)',border:'none',borderRadius:8,color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',cursor:'pointer'}}>+ Add</button></div>
         {(customTeam||[]).map(m=><div key={m} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text)'}}>{m}</span><button onClick={()=>removeMember(m)} style={btnS('var(--red)')}>Remove</button></div>)}
+      </div>
+    </Acc>
+
+    {/* Site Categories */}
+    <Acc id="site_cats" title="Site Categories" emoji="🏗">
+      <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
+        <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginBottom:2}}>DEFAULT (cannot remove)</p>
+        <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:8}}>
+          {DEFAULT_SITE_CATS.map(c=><span key={c} style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:20,padding:'4px 10px'}}>{c}</span>)}
+        </div>
+        <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginBottom:2}}>ADD CUSTOM</p>
+        <div style={{display:'flex',gap:8}}>
+          <input style={{...iS,flex:1}} placeholder="e.g. Safety Equipment" value={newSiteCat} onChange={e=>setNewSiteCat(e.target.value)}/>
+          <button onClick={addSiteCat} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',cursor:'pointer'}}>+ Add</button>
+        </div>
+        {(customSiteCats||[]).length===0&&<p style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',padding:'4px 0'}}>No custom categories added yet.</p>}
+        {(customSiteCats||[]).map(c=><div key={c} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:13,color:'var(--text)'}}>{c}</span><button onClick={()=>removeSiteCat(c)} style={btnS('var(--red)')}>Remove</button></div>)}
       </div>
     </Acc>
 
