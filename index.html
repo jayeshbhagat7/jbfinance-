@@ -578,8 +578,9 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const [amt,setAmt]=useState('');const [desc,setDesc]=useState('');const [date,setDate]=useState(today);const [saving,setSaving]=useState(false);
   const [type,setType]=useState('Expense');const [cat,setCat]=useState('');const [from,setFrom]=useState('Cash');const [to,setTo]=useState('');const [tower,setTower]=useState('');
   const [siteType,setSiteType]=useState('Expense');const [siteName,setSiteName]=useState((customSites&&customSites[0])||'');
-  const [siteCat,setSiteCat]=useState('Labour');const [transferDir,setTransferDir]=useState('Given');const [transferUser,setTransferUser]=useState(customTeam?.[0]||'');
+  const [siteCat,setSiteCat]=useState('Misc');const [transferDir,setTransferDir]=useState('Given');const [transferUser,setTransferUser]=useState(customTeam?.[0]||'');
   const [depositTo,setDepositTo]=useState('Site Cash');
+  const [sitePayFrom,setSitePayFrom]=useState('Site Cash');
   /* v1.7: team member for Expense (Given To) and Received (From Member) */
   const SITE_MEMBERS_DEFAULT=['PH','Milton','PP','Sohail','Anjar','Sikhu'];
   const allSiteMembers=[...new Set([...SITE_MEMBERS_DEFAULT,...(customTeam||[])])];
@@ -604,15 +605,18 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const fromList=()=>{if(type==='Bank-CC'||type==='Bank-Bank'||type==='Bank-Cash')return allBanks.filter(a=>a!=='Cash');if(type==='CC-Bank')return allCC;if(type==='Cash-Bank')return['Cash'];return allAccounts;};
   const toList=()=>{if(type==='Bank-CC')return allCC;if(type==='Bank-Bank'||type==='Cash-Bank'||type==='CC-Bank')return allBanks.filter(a=>a!=='Cash');if(type==='Bank-Cash')return['Cash'];return allBanks;};
   const canSaveP=parseFloat(amt)>0&&(type==='Expense'?(cat&&from):type==='UA Expense'?from:type==='Income'?to:type==='UA Received'?to:(from&&to));
-  const canSaveS=parseFloat(amt)>0&&siteName&&(siteType==='Site Transfer'?transferUser:siteMember);
+  const siteNeedFrom=['Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(siteType);
+  const siteNeedTo=['Income','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank','Bank-Cash'].includes(siteType);
+  const canSaveS=parseFloat(amt)>0&&siteName&&(siteType==='Site Transfer'?transferUser:siteType==='Expense'||siteType==='Income'?true:(siteNeedFrom?sitePayFrom:true)&&(siteNeedTo?siteTo:true));
   const canSave=domain==='Personal'?canSaveP:canSaveS;
 
   /* Auto-fill description based on member + type */
   useEffect(()=>{
     if(domain!=='Site')return;
     if(siteType==='Expense')setDesc(`Given to ${siteMember}`);
-    else if(siteType==='Received')setDesc(`Received from ${siteMember}`);
+    else if(siteType==='Income')setDesc(`Received from ${siteMember}`);
     else if(siteType==='Site Transfer')setDesc(transferDir==='Given'?`Given to ${transferUser}`:`Received from ${transferUser}`);
+    else setDesc('');
   },[domain,siteType,siteMember,transferUser,transferDir]);
 
   const selectType=t=>{setType(t);setCat('');if(t==='Bank-Cash'){setFrom(firstBank);setTo('Cash');}else if(t==='Cash-Bank'){setFrom('Cash');setTo(firstBank);}else if(t==='Bank-CC'){setFrom(firstBank);setTo(allCC[0]||'');}else if(t==='Bank-Bank'){setFrom(firstBank);setTo('');}else if(t==='CC-Bank'){setFrom(allCC[0]||'');setTo(firstBank);}else{setTo('');setFrom('Cash');}};
@@ -624,38 +628,38 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     if(domain==='Personal'){
       txn={domain:'Personal',type:type.replace('Bank-CC','Bank→CC').replace('Bank-Bank','Bank→Bank').replace('Bank-Cash','Bank→Cash').replace('Cash-Bank','Cash→Bank').replace('CC-Bank','CC→Bank'),amount:parseFloat(amt),category:cat||type,from_account:needFrom?from:null,to_account:needTo?to:null,particulars:desc||null,tower:tower||null,it_section:catInfo?.it||null,status:'complete',source:'app',created_at};
     } else {
-      /* v1.7: Site domain — Expense / Received / Transfer with member tracking */
-      const isSiteTransfer=siteType==='Site Transfer';
-      const isSiteReceived=siteType==='Received';
-      let siteFrom,siteTo,txnType,txnCat,partyName,autoParticulars;
+      /* v1.8: Site domain — full type support like Personal, proper account debit */
+      let sF,sT,txnType,txnCat,partyName,autoParticulars;
+      const cleanType=t=>t.replace('Bank-CC','Bank→CC').replace('Bank-Bank','Bank→Bank').replace('Bank-Cash','Bank→Cash').replace('Cash-Bank','Cash→Bank').replace('CC-Bank','CC→Bank');
 
-      if(isSiteTransfer){
-        siteFrom=transferDir==='Given'?'Site Cash':transferUser;
-        siteTo=transferDir==='Given'?transferUser:'Site Cash';
-        txnType='Bank→Bank';txnCat=siteCat;
-        partyName=transferUser;
+      if(siteType==='Site Transfer'){
+        sF=transferDir==='Given'?'Site Cash':transferUser;
+        sT=transferDir==='Given'?transferUser:'Site Cash';
+        txnType='Bank→Bank';txnCat=siteCat;partyName=transferUser;
         autoParticulars=transferDir==='Given'?`Given to ${transferUser}`:`Received from ${transferUser}`;
-      } else if(isSiteReceived){
-        /* Member gave us money → Site Cash (or bank) goes UP */
-        siteFrom=siteMember;       /* who gave the money */
-        siteTo=depositTo;          /* credited into Site Cash / Bank */
-        txnType='Income';txnCat='Site Income';
-        partyName=siteMember;
+      } else if(siteType==='Expense'){
+        sF=sitePayFrom;sT=null;
+        txnType='Expense';txnCat=siteCat;partyName=siteMember;
+        autoParticulars=`Given to ${siteMember}`;
+      } else if(siteType==='Income'){
+        sF=null;sT=depositTo;
+        txnType='Income';txnCat=siteCat;partyName=siteMember;
         autoParticulars=`Received from ${siteMember}`;
       } else {
-        /* Expense — we paid a member (or from site cash to expense) */
-        siteFrom='Site Cash';      /* always debit Site Cash for site expenses */
-        siteTo=null;
-        txnType='Expense';txnCat=siteCat;
-        partyName=siteMember;
-        autoParticulars=`Given to ${siteMember}`;
+        /* Transfer types: Bank→CC, Bank→Bank, Bank→Cash, Cash→Bank, CC→Bank */
+        txnType=cleanType(siteType);
+        if(['Bank-CC','Bank-Bank','Bank-Cash'].includes(siteType)){sF=sitePayFrom;sT=siteTo;}
+        else if(siteType==='Cash-Bank'){sF='Cash';sT=siteTo;}
+        else if(siteType==='CC-Bank'){sF=sitePayFrom;sT=siteTo;}
+        else{sF=sitePayFrom;sT=siteTo;}
+        txnCat=siteCat;partyName=null;autoParticulars='Site transfer';
       }
       txn={domain:'Site',type:txnType,amount:parseFloat(amt),category:txnCat,
-           from_account:siteFrom,to_account:siteTo,
+           from_account:sF||null,to_account:sT||null,
            particulars:desc||autoParticulars,
            site_name:siteName,
-           site_user:partyName,   /* legacy column — keep for backward compat */
-           party_name:partyName,  /* new column for member ledger */
+           site_user:partyName,
+           party_name:partyName,
            status:'complete',source:'app',created_at};
     }
     await onSave(txn);setAmt('');setDesc('');setCat('');setTower('');setTransferUser(customTeam?.[0]||'');setSaving(false);
@@ -668,7 +672,43 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
 
   if(domain==='Site'){
     const selS={...iS,cursor:'pointer'};
-    const depositOptions=['Site Cash',...allBanks.filter(a=>a!=='Cash')];
+    const allSiteAccounts=['Site Cash',...allBanks.filter(a=>a!=='Cash'),...allCC];
+    const SITE_TYPES=[
+      {key:'Expense',label:'💸 Expense'},
+      {key:'Income',label:'💰 Income'},
+      {key:'Bank-Bank',label:'Bank→Bank'},
+      {key:'Bank-CC',label:'Bank→CC'},
+      {key:'Bank-Cash',label:'Bank→Cash'},
+      {key:'Cash-Bank',label:'Cash→Bank'},
+      {key:'CC-Bank',label:'CC→Bank'},
+      {key:'Site Transfer',label:'↔ Transfer'},
+    ];
+    const selectSiteType=t=>{
+      setSiteType(t);
+      if(t==='Expense'){setSitePayFrom('Site Cash');}
+      else if(t==='Income'){setDepositTo('Site Cash');}
+      else if(t==='Bank-CC'){setSitePayFrom(allBanks.filter(a=>a!=='Cash')[0]||'');setSiteTo(allCC[0]||'');}
+      else if(t==='Bank-Bank'){setSitePayFrom(allBanks.filter(a=>a!=='Cash')[0]||'');setSiteTo('');}
+      else if(t==='Bank-Cash'){setSitePayFrom(allBanks.filter(a=>a!=='Cash')[0]||'');setSiteTo('Cash');}
+      else if(t==='Cash-Bank'){setSitePayFrom('Cash');setSiteTo(allBanks.filter(a=>a!=='Cash')[0]||'');}
+      else if(t==='CC-Bank'){setSitePayFrom(allCC[0]||'');setSiteTo(allBanks.filter(a=>a!=='Cash')[0]||'');}
+    };
+    /* from/to account lists per type */
+    const siteFromList=()=>{
+      if(['Bank-CC','Bank-Bank','Bank-Cash'].includes(siteType))return allBanks.filter(a=>a!=='Cash');
+      if(siteType==='Cash-Bank')return['Cash'];
+      if(siteType==='CC-Bank')return allCC;
+      return allSiteAccounts; /* Expense */
+    };
+    const siteToList=()=>{
+      if(siteType==='Bank-CC')return allCC;
+      if(['Bank-Bank','Cash-Bank','CC-Bank'].includes(siteType))return allBanks.filter(a=>a!=='Cash');
+      if(siteType==='Bank-Cash')return['Cash'];
+      return['Site Cash',...allBanks.filter(a=>a!=='Cash')]; /* Income deposit */
+    };
+    /* preview line */
+    const previewFrom=siteType==='Expense'?sitePayFrom:siteType==='Income'?null:sitePayFrom;
+    const previewTo=siteType==='Expense'?null:siteType==='Income'?depositTo:siteTo;
     return(<div className="fade-in" style={{padding:'12px 16px',paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)',display:'flex',flexDirection:'column',gap:12}}>
       <div style={{display:'flex',gap:6}}>
         <span style={cs(false)} onClick={()=>setDomain('Personal')}>Personal</span>
@@ -685,43 +725,65 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
       {/* Type selector */}
       <div><p className="sec-label" style={{padding:'0 0 6px'}}>Type</p>
         <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-          <span style={cs(siteType==='Expense')} onClick={()=>setSiteType('Expense')}>💸 Expense (Given)</span>
-          <span style={cs(siteType==='Received')} onClick={()=>setSiteType('Received')}>💰 Received</span>
-          <span style={cs(siteType==='Site Transfer')} onClick={()=>setSiteType('Site Transfer')}>↔ Transfer</span>
+          {SITE_TYPES.map(t=><span key={t.key} style={cs(siteType===t.key)} onClick={()=>selectSiteType(t.key)}>{t.label}</span>)}
         </div>
       </div>
 
-      {/* EXPENSE: Category + To Member */}
-      {siteType==='Expense'&&(<>
+      {/* Category (for Expense / Income) */}
+      {(siteType==='Expense'||siteType==='Income')&&(
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>Category</p>
           <select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selS}>
             {SITE_CATS.map(c=><option key={c}>{c}</option>)}
           </select>
         </div>
-        <div><p className="sec-label" style={{padding:'0 0 6px'}}>To Member <span style={{color:'var(--text3)',fontWeight:400}}>(who receives this payment)</span></p>
+      )}
+
+      {/* EXPENSE: Paid From + To Member */}
+      {siteType==='Expense'&&(<>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Paid From</p>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {siteFromList().map(a=><span key={a} style={cs(sitePayFrom===a)} onClick={()=>setSitePayFrom(a)}>{a}</span>)}
+          </div>
+        </div>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>To Member</p>
           <select value={siteMember} onChange={e=>setSiteMember(e.target.value)} style={{...selS,borderColor:'var(--amber)',color:'var(--amber)'}}>
             {allSiteMembers.map(m=><option key={m}>{m}</option>)}
           </select>
-          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💸 Site Cash → {siteMember} · Particulars: "Given to {siteMember}"</p>
+          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💸 {sitePayFrom} → {siteMember}</p>
         </div>
       </>)}
 
-      {/* RECEIVED: From Member + Deposit To */}
-      {siteType==='Received'&&(<>
-        <div><p className="sec-label" style={{padding:'0 0 6px'}}>From Member <span style={{color:'var(--text3)',fontWeight:400}}>(who gave the money)</span></p>
+      {/* INCOME: From Member + Deposit To */}
+      {siteType==='Income'&&(<>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>From Member</p>
           <select value={siteMember} onChange={e=>setSiteMember(e.target.value)} style={{...selS,borderColor:'var(--green)',color:'var(--green)'}}>
             {allSiteMembers.map(m=><option key={m}>{m}</option>)}
           </select>
         </div>
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>Deposit To</p>
-          <select value={depositTo} onChange={e=>setDepositTo(e.target.value)} style={selS}>
-            {depositOptions.map(a=><option key={a}>{a}</option>)}
-          </select>
-          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💰 {siteMember} → {depositTo} · Particulars: "Received from {siteMember}"</p>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {siteToList().map(a=><span key={a} style={cs(depositTo===a)} onClick={()=>setDepositTo(a)}>{a}</span>)}
+          </div>
+          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💰 {siteMember} → {depositTo}</p>
         </div>
       </>)}
 
-      {/* TRANSFER: Direction + Person */}
+      {/* TRANSFER TYPES: Bank→CC, Bank→Bank, etc */}
+      {!['Expense','Income','Site Transfer'].includes(siteType)&&(<>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>From Account</p>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {siteFromList().map(a=><span key={a} style={cs(sitePayFrom===a)} onClick={()=>setSitePayFrom(a)}>{a}</span>)}
+          </div>
+        </div>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>To Account</p>
+          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
+            {siteToList().map(a=><span key={a} style={cs(siteTo===a)} onClick={()=>setSiteTo(a)}>{a}</span>)}
+          </div>
+        </div>
+        <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>🏗 Site: {siteName} · {sitePayFrom} → {siteTo}</p>
+      </>)}
+
+      {/* SITE TRANSFER: Direction + Person */}
       {siteType==='Site Transfer'&&(<>
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>Direction</p>
           <div style={{display:'flex',gap:6}}>
@@ -737,7 +799,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
       </>)}
 
       <input type="number" inputMode="decimal" placeholder="Amount (₹)" value={amt} onChange={e=>setAmt(e.target.value)} style={{...iS,fontSize:20,padding:'12px 14px',fontWeight:600}}/>
-      <input type="text" placeholder={siteType==='Expense'?`Given to ${siteMember} (optional override)`:siteType==='Received'?`Received from ${siteMember} (optional override)`:'Description (optional)'} value={desc} onChange={e=>setDesc(e.target.value)} style={iS}/>
+      <input type="text" placeholder="Description (optional)" value={desc} onChange={e=>setDesc(e.target.value)} style={iS}/>
       <input type="date" value={date} max={today} onChange={e=>setDate(e.target.value)} style={{...iS,color:date!==today?'var(--amber)':'var(--text)',borderColor:date!==today?'var(--amber)':'var(--border2)'}}/>
       {date!==today&&<span style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)'}}>⚠ Backdated entry</span>}
       <SaveBtn/>
