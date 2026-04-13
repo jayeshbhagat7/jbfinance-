@@ -7,7 +7,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.8.0</title>
+<title>JB Finance v1.9.0</title>
+<link rel="manifest" href="/jbfinance-/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>(function(){var t=localStorage.getItem('jbf_theme')||'autumn';document.documentElement.setAttribute('data-theme',t);})();</script>
@@ -136,6 +137,30 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 .swatch.active{border-color:var(--green);transform:scale(1.1);}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+/* ── v1.9 Service Worker Registration ── */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/jbfinance-/sw.js', {scope: '/jbfinance-/'})
+      .then(reg => {
+        console.log('[JBF] SW registered, scope:', reg.scope);
+        /* Check for updates every 60 min */
+        setInterval(() => reg.update(), 60 * 60 * 1000);
+        /* Notify user when new version is ready */
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+              /* Show update toast via custom event — App listens for this */
+              window.dispatchEvent(new CustomEvent('jbf-sw-update'));
+            }
+          });
+        });
+      })
+      .catch(err => console.warn('[JBF] SW registration failed:', err));
+  });
+}
+</script>
 </head>
 <body>
 <div id="root"></div>
@@ -394,7 +419,10 @@ function App() {
   useEffect(()=>{
     db.auth.getSession().then(({data:{session}})=>{setSession(session);setAuthLoading(false);});
     const{data:{subscription}}=db.auth.onAuthStateChange((_,session)=>{setSession(session);});
-    return()=>subscription.unsubscribe();
+    /* v1.9: Listen for SW update event */
+    const onSwUpdate=()=>showToast('🔄 Update ready — reopen app to apply');
+    window.addEventListener('jbf-sw-update',onSwUpdate);
+    return()=>{subscription.unsubscribe();window.removeEventListener('jbf-sw-update',onSwUpdate);};
   },[]);
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
