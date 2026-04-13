@@ -1637,54 +1637,96 @@ function CCBillScreen({txns,customAccounts}){
   const ccAccounts=[...SEED_CC,...(customAccounts||[]).filter(a=>a.type==='cc').map(a=>a.name)];
   const today=new Date();const todayStr=today.toISOString().slice(0,10);
 
-  /* ── Per-CC statement date stored in localStorage ── */
+  /* ── Per-CC statement day stored in localStorage ── */
   const getStmtDay=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');return parseInt(v[cc]||'1');}catch{return 1;}};
   const saveStmtDay=(cc,day)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');v[cc]=day;localStorage.setItem('jbf_cc_stmt_days',JSON.stringify(v));}catch{}};
 
+  /* ── Reconciliation history stored per CC ──
+     Key: jbf_cc_reconciled  Value: { [ccName]: { billStart, billEnd, bankAmt, reconciledAt, diff } }
+  */
+  const getReconData=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[cc]||null;}catch{return null;}};
+  const saveReconData=(cc,data)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');v[cc]=data;localStorage.setItem('jbf_cc_reconciled',JSON.stringify(v));}catch{}};
+
   const [selCC,setSelCC]=useState(ccAccounts[0]||'');
-  const [ccTab,setCCTab]=useState('unbilled'); /* 'unbilled' | 'bills' */
+  const [ccTab,setCCTab]=useState('unbilled');
   const [stmtDayStr,setStmtDayStr]=useState(()=>String(getStmtDay(ccAccounts[0]||'')));
   const [stmtAmt,setStmtAmt]=useState('');
-  /* manual bill period override */
+  const [reconSaved,setReconSaved]=useState(false);
   const stmtDay=Math.max(1,Math.min(28,parseInt(stmtDayStr)||1));
 
-  /* When CC changes, reload stmt day */
-  const handleSelCC=cc=>{setSelCC(cc);setStmtDayStr(String(getStmtDay(cc)));setStmtAmt('');};
+  /* When CC changes, reload stmt day and clear form */
+  const handleSelCC=cc=>{setSelCC(cc);setStmtDayStr(String(getStmtDay(cc)));setStmtAmt('');setReconSaved(false);};
   const handleStmtDaySave=()=>{saveStmtDay(selCC,stmtDay);};
 
-  /* ── Compute billing periods ──
-     last statement was on stmtDay of current or previous month depending on today */
+  /* ── Compute billing periods from statement day ── */
   const getLastStmtDate=()=>{
     const d=new Date(today.getFullYear(),today.getMonth(),stmtDay);
-    if(d>today){/* stmt day hasn't hit yet this month → last stmt was previous month */
-      return new Date(today.getFullYear(),today.getMonth()-1,stmtDay);
-    }
+    if(d>today) return new Date(today.getFullYear(),today.getMonth()-1,stmtDay);
     return d;
   };
   const lastStmt=getLastStmtDate();
   const lastStmtStr=lastStmt.toISOString().slice(0,10);
-  /* Next statement date */
   const nextStmt=new Date(lastStmt.getFullYear(),lastStmt.getMonth()+1,stmtDay);
-  const nextStmtStr=nextStmt.toISOString().slice(0,10);
-  /* Statement has generated = today >= stmtDay of this month (i.e. lastStmt = this month) */
   const stmtGenerated=lastStmt.getMonth()===today.getMonth()&&lastStmt.getFullYear()===today.getFullYear();
-  /* Previous bill period = month before lastStmt */
   const prevBillStart=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,stmtDay);
   const prevBillStartStr=prevBillStart.toISOString().slice(0,10);
 
+  /* ── Determine bill period: use last saved reconciliation end date if available ──
+     Next bill starts from the day AFTER the last reconciled bill end date */
+  const lastRecon=getReconData(selCC);
+  const defaultBillStart=lastRecon?lastRecon.billEnd:prevBillStartStr;
+  const defaultBillEnd=lastRecon
+    ? (()=>{
+        /* Next bill end = one statement cycle after last reconciled end */
+        const lastEnd=new Date(lastRecon.billEnd);
+        const next=new Date(lastEnd.getFullYear(),lastEnd.getMonth()+1,stmtDay);
+        return next.toISOString().slice(0,10);
+      })()
+    : lastStmtStr;
+
+  const [billStart,setBillStart]=useState(defaultBillStart);
+  const [billEnd,setBillEnd]=useState(defaultBillEnd);
+
+  /* Re-init periods when CC changes */
+  React.useEffect(()=>{
+    const r=getReconData(selCC);
+    if(r){
+      setBillStart(r.billEnd);
+      const lastEnd=new Date(r.billEnd);
+      const next=new Date(lastEnd.getFullYear(),lastEnd.getMonth()+1,stmtDay);
+      setBillEnd(next.toISOString().slice(0,10));
+    } else {
+      setBillStart(prevBillStartStr);
+      setBillEnd(lastStmtStr);
+    }
+    setReconSaved(false);
+  },[selCC]);
+
   /* ── Filter helpers ── */
   const ccSpends=txns.filter(t=>t.status!=='voided'&&t.from_account===selCC&&(t.type==='Expense'||t.type==='UA Expense'));
-  /* UNBILLED: txns after last statement date → these are in current open cycle */
-  const unbilled=ccSpends.filter(t=>t.created_at.slice(0,10)>lastStmtStr);
+
+  /* UNBILLED: txns AFTER last reconciled bill end date (or last stmt date if never reconciled) */
+  const unbilledFrom=lastRecon?lastRecon.billEnd:lastStmtStr;
+  const unbilled=ccSpends.filter(t=>t.created_at.slice(0,10)>unbilledFrom);
   const unbilledTotal=unbilled.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-  /* CURRENT BILL: only visible if statement has generated (today >= stmtDay) */
-  const [billStart,setBillStart]=useState(prevBillStartStr);const [billEnd,setBillEnd]=useState(lastStmtStr);
+
+  /* BILLED: txns in selected bill period */
   const billed=ccSpends.filter(t=>{const d=t.created_at.slice(0,10);return d>billStart&&d<=billEnd;});
   const billedTotal=billed.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
   const sa=parseFloat(stmtAmt)||0;const diff=sa-billedTotal;const hasStmt=stmtAmt!==''&&sa>0;
 
+  /* ── Save Reconciliation ── */
+  const handleSaveRecon=()=>{
+    if(!hasStmt) return;
+    const data={billStart,billEnd,bankAmt:sa,appAmt:billedTotal,diff,reconciledAt:new Date().toISOString(),txnCount:billed.length};
+    saveReconData(selCC,data);
+    setReconSaved(true);
+    /* After saving, unbilled tab will now auto-update from new billEnd */
+  };
+
   const iS={background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const tabSel=active=>({flex:1,padding:'9px 0',fontFamily:'var(--mono)',fontSize:11,fontWeight:active?700:400,letterSpacing:'0.06em',textTransform:'uppercase',border:'none',borderBottom:active?'2px solid var(--green)':'2px solid transparent',background:'none',color:active?'var(--green)':'var(--text3)',cursor:'pointer'});
+  const ord=n=>n===1?'st':n===2?'nd':n===3?'rd':'th';
 
   return(<div className="fade-in">
     {/* CC Selector */}
@@ -1708,6 +1750,18 @@ function CCBillScreen({txns,customAccounts}){
       </div>
     </div>
 
+    {/* Last reconciliation info banner */}
+    {lastRecon&&<div style={{margin:'8px 16px 0',background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <div>
+        <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Last Reconciled Bill</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginTop:2}}>{fmtDate(lastRecon.billStart)} → {fmtDate(lastRecon.billEnd)}</div>
+      </div>
+      <div style={{textAlign:'right'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase'}}>Bank Amt</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--text)'}}>{fmtAmt(lastRecon.bankAmt)}</div>
+      </div>
+    </div>}
+
     {/* Tab bar */}
     <div style={{display:'flex',borderBottom:'1px solid var(--border)',marginTop:12,padding:'0 16px'}}>
       <button style={tabSel(ccTab==='unbilled')} onClick={()=>setCCTab('unbilled')}>Unbilled{unbilledTotal>0?` · ${fmtAmt(unbilledTotal)}`:''}</button>
@@ -1719,7 +1773,10 @@ function CCBillScreen({txns,customAccounts}){
       <div style={{margin:'12px 16px 0',background:'var(--bg2)',border:'1px solid var(--amber)',borderRadius:10,padding:'14px'}}>
         <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Current Cycle · Unbilled Spends</div>
         <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:800,color:'var(--amber)',marginBottom:4}}>{fmtAmt(unbilledTotal)}</div>
-        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>Since {fmtDate(lastStmt)} · {unbilled.length} txns · Statement on {fmtDate(nextStmt)}</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>
+          Since {fmtDate(unbilledFrom)} · {unbilled.length} txns · Statement on {fmtDate(nextStmt)}
+          {lastRecon&&<span style={{color:'var(--green)',marginLeft:6}}>· From last reconciled date</span>}
+        </div>
       </div>
       {unbilled.length>0
         ?<><p className="sec-label" style={{marginTop:8}}>Unbilled Transactions</p>
@@ -1729,23 +1786,25 @@ function CCBillScreen({txns,customAccounts}){
               <div className="txn-right"><div className="txn-amt" style={{color:'var(--amber)'}}>−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div>
             </div>
           ))}</div></>
-        :<div className="empty">No unbilled charges since {fmtDate(lastStmt)}.<br/>This cycle is clear! 🎉</div>}
+        :<div className="empty">No unbilled charges since {fmtDate(unbilledFrom)}.<br/>This cycle is clear! 🎉</div>}
     </div>)}
 
     {/* ── BILLS TAB ── */}
     {ccTab==='bills'&&(<div>
       {!stmtGenerated&&<div style={{margin:'12px 16px',background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--amber)'}}>
-        ⏳ Statement not yet generated for this cycle. It generates on the <strong>{stmtDay}{stmtDay===1?'st':stmtDay===2?'nd':stmtDay===3?'rd':'th'}</strong> of each month.
-        Bill period shown below is the previous cycle which can be reconciled.
+        ⏳ Statement not yet generated for this cycle. Generates on the <strong>{stmtDay}{ord(stmtDay)}</strong> of each month.
+        Bill period below is {lastRecon?'auto-calculated from last reconciled date':'the previous cycle'}.
       </div>}
       <p className="sec-label" style={{marginTop:8}}>Bill Period</p>
       <div style={{padding:'0 16px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-        <input type="date" value={billStart} onChange={e=>setBillStart(e.target.value)} style={{...iS,flex:1,minWidth:130}}/>
+        <input type="date" value={billStart} onChange={e=>{setBillStart(e.target.value);setReconSaved(false);}} style={{...iS,flex:1,minWidth:130}}/>
         <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span>
-        <input type="date" value={billEnd} onChange={e=>setBillEnd(e.target.value)} style={{...iS,flex:1,minWidth:130}}/>
+        <input type="date" value={billEnd} onChange={e=>{setBillEnd(e.target.value);setReconSaved(false);}} style={{...iS,flex:1,minWidth:130}}/>
       </div>
       <p className="sec-label" style={{marginTop:8}}>Bank Statement Amount (₹)</p>
-      <div style={{padding:'0 16px'}}><input type="number" inputMode="decimal" placeholder="Enter total bill amount" value={stmtAmt} onChange={e=>setStmtAmt(e.target.value)} style={{...iS,fontSize:16,fontWeight:600}}/></div>
+      <div style={{padding:'0 16px'}}><input type="number" inputMode="decimal" placeholder="Enter total bill amount" value={stmtAmt} onChange={e=>{setStmtAmt(e.target.value);setReconSaved(false);}} style={{...iS,fontSize:16,fontWeight:600}}/></div>
+
+      {/* Reconciliation summary */}
       <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{billed.length} txn{billed.length!==1?'s':''}</span></div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>{fmtAmt(billedTotal)}</span></div>
@@ -1753,6 +1812,18 @@ function CCBillScreen({txns,customAccounts}){
         {hasStmt&&<div style={{padding:'14px',background:diff===0?'var(--green-bg)':diff>0?'var(--red-bg)':'var(--green-bg)',borderTop:'2px solid '+(diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)')}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{diff===0?'✓ Perfectly Matched!':diff>0?'Unaccounted Bank Charges':'Cashbacks / Refunds'}</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)'}}>{diff===0?fmtAmt(0):diff>0?'+'+fmtAmt(diff):'−'+fmtAmt(Math.abs(diff))}</div></div>}
         {!hasStmt&&<div style={{padding:'14px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>Enter bank statement amount above to see reconciliation.</div>}
       </div>
+
+      {/* Save Reconciliation button */}
+      {hasStmt&&<div style={{padding:'12px 16px 0'}}>
+        {reconSaved
+          ?<div style={{background:'var(--green-bg)',border:'1px solid var(--green)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--green)',textAlign:'center',fontWeight:600}}>
+            ✓ Reconciliation Saved · Next bill period auto-loaded
+          </div>
+          :<button onClick={handleSaveRecon} style={{width:'100%',background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:700,border:'none',borderRadius:10,padding:'13px',cursor:'pointer',letterSpacing:'0.05em'}}>
+            ✓ Save Reconciliation &amp; Set Next Bill Period
+          </button>}
+      </div>}
+
       {billed.length>0&&<><p className="sec-label" style={{marginTop:16}}>Billed Transactions</p><div style={{marginBottom:24}}>{[...billed].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t=><div key={t.id} className="txn-row"><div className="txn-left"><div className="txn-cat">{t.category}</div><div className="txn-desc">{t.particulars||t.category}</div><div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div><div className="txn-right"><div className="txn-amt out">−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div></div>)}</div></>}
       {billed.length===0&&<div className="empty">No tracked transactions for {selCC} in this period.</div>}
     </div>)}
