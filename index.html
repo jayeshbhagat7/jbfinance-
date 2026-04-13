@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.6.3</title>
+<title>JB Finance v1.7.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>(function(){var t=localStorage.getItem('jbf_theme')||'autumn';document.documentElement.setAttribute('data-theme',t);})();</script>
@@ -209,7 +209,7 @@ function LoginScreen(){
         {/* Logo area */}
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.6.3</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.7.0</div>
         </div>
         {/* Card */}
         <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:14,padding:24}}>
@@ -276,13 +276,18 @@ function App() {
   const loadData = useCallback(async ()=>{
     setLoading(true);
     try {
-      /* v1.6.3: explicit column list ensures new columns (party_name, tower, user_id) are always fetched
-         even if DB schema was recently altered and Supabase cache hasn't refreshed */
-      const {data,error:txnErr} = await db.from('transactions')
-        .select('id,created_at,type,amount,category,from_account,to_account,particulars,tower,status,source,domain,site_name,site_user,party_name,user_id,it_section,correction_of')
-        .order('created_at',{ascending:false}).limit(500);
-      if(txnErr){console.error('transactions fetch error:',txnErr.message);showToast('⚠ DB: '+txnErr.message);}
-      setTxns(data||[]);
+      /* v1.7: cursor-based pagination — fetches ALL transactions in 500-row pages
+         so data is never silently truncated when txn count exceeds 500            */
+      const COLS='id,created_at,type,amount,category,from_account,to_account,particulars,tower,status,source,domain,site_name,site_user,party_name,user_id,it_section,correction_of';
+      let allTxns=[],from=0,PAGE=500,done=false;
+      while(!done){
+        const{data:page,error:txnErr}=await db.from('transactions')
+          .select(COLS).order('created_at',{ascending:false}).range(from,from+PAGE-1);
+        if(txnErr){console.error('transactions fetch error:',txnErr.message);showToast('⚠ DB: '+txnErr.message);break;}
+        if(!page||page.length===0){done=true;}
+        else{allTxns=[...allTxns,...page];from+=PAGE;if(page.length<PAGE)done=true;}
+      }
+      setTxns(allTxns);
       try{const{data:inv}=await db.from('investments').select('*').order('created_at',{ascending:false});setInvestments(inv||[]);}catch(e){setInvestments([]);}
       try{const{data:ud}=await db.from('udhari').select('*').order('created_at',{ascending:false});setUdhari(ud||[]);}catch(e){setUdhari([]);}
       try{const{data:rec}=await db.from('recurring').select('*').order('due_day',{ascending:true});setRecurring(rec||[]);}catch(e){setRecurring([]);}
@@ -1191,25 +1196,143 @@ function InvestmentsScreen({investments,setInvestments,showToast}){
   </div>);
 }
 
-/* ── AiCommandScreen ── */
+/* ── AiCommandScreen v1.7 ──────────────────────────────────────
+   Fix: Added "anthropic-dangerous-direct-browser-access: true" header
+   which is REQUIRED for direct browser API calls (resolves CORS 403).
+   Also added claude-haiku model, working test button, chat interface.
+──────────────────────────────────────────────────────────────── */
 function AiCommandScreen({investments,setInvestments,showToast}){
+  /* ── API key storage ── */
+  const [apiKey,setApiKey]=useState(()=>localStorage.getItem('jbf_ai_key')||'');
+  const [keyVisible,setKeyVisible]=useState(false);const [testStatus,setTestStatus]=useState('');const [testing,setTesting]=useState(false);
+  /* ── Chat ── */
+  const [messages,setMessages]=useState([]);const [input,setInput]=useState('');const [loading,setLoading]=useState(false);
+  /* ── JSON picks (existing feature) ── */
   const [jsonStr,setJsonStr]=useState('');const [picks,setPicks]=useState([]);const [acc,setAcc]=useState(null);const [qty,setQty]=useState('');const [saving,setSaving]=useState(false);
+  /* ── Tab ── */
+  const [aiTab,setAiTab]=useState('chat'); /* 'chat' | 'quant' */
+
+  const saveKey=k=>{localStorage.setItem('jbf_ai_key',k);setApiKey(k);};
+
+  /* ── Core API call with all required headers ──
+     Key fix: "anthropic-dangerous-direct-browser-access": "true"
+     This header is required for ALL direct browser API calls to bypass CORS preflight.
+     Without it: 403 Forbidden or CORS error.
+  ── */
+  const callAPI=async(msgs,sysPrompt)=>{
+    const key=(apiKey||'').trim();
+    if(!key)throw new Error('API key not set');
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':key,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:1024,
+        ...(sysPrompt?{system:sysPrompt}:{}),
+        messages:msgs
+      })
+    });
+    if(!res.ok){const e=await res.json().catch(()=>({error:{message:res.statusText}}));throw new Error(e?.error?.message||'API Error '+res.status);}
+    return res.json();
+  };
+
+  /* ── Test connection ── */
+  const testConn=async()=>{
+    setTesting(true);setTestStatus('⏳ Testing...');
+    try{
+      const d=await callAPI([{role:'user',content:'Reply with just: OK'}]);
+      const txt=d.content?.find(b=>b.type==='text')?.text||'';
+      setTestStatus('✓ Connected! Model replied: "'+txt.trim().slice(0,30)+'"');
+    }catch(e){setTestStatus('❌ '+e.message);}
+    setTesting(false);
+  };
+
+  /* ── Chat send ── */
+  const sendMsg=async()=>{
+    if(!input.trim()||loading)return;
+    const userMsg={role:'user',content:input.trim()};
+    const newMsgs=[...messages,userMsg];
+    setMessages(newMsgs);setInput('');setLoading(true);
+    try{
+      const d=await callAPI(newMsgs,'You are JB Finance AI — a personal finance assistant for Jayesh Bhagat. Be concise, practical, use Indian financial context (₹, Indian tax laws 80C/80D, SIP, mutual funds). Reply in 2-4 sentences max unless user asks for detail.');
+      const reply=d.content?.find(b=>b.type==='text')?.text||'(no response)';
+      setMessages([...newMsgs,{role:'assistant',content:reply}]);
+    }catch(e){setMessages([...newMsgs,{role:'assistant',content:'⚠ Error: '+e.message}]);}
+    setLoading(false);
+  };
+
+  /* ── JSON Quant picks ── */
   const process=()=>{try{const p=JSON.parse(jsonStr);if(Array.isArray(p))setPicks(p);else showToast('⚠ Invalid JSON');}catch(e){showToast('⚠ Parse error');}};
   const confirm_=async pick=>{if(!qty||parseFloat(qty)<=0)return;setSaving(true);const p={asset_name:pick.asset_name,asset_type:'Equity',buy_date:new Date().toISOString().slice(0,10),qty:parseFloat(qty),buy_price:parseFloat(pick['entry_price_₹']),current_price:parseFloat(pick['entry_price_₹'])};const{data,error}=await db.from('investments').insert([p]).select();if(data&&!error){setInvestments([data[0],...investments]);setPicks(picks.filter(p=>p.asset_name!==pick.asset_name));showToast('✓ '+pick.asset_name+' added!');}else showToast('⚠ Error');setSaving(false);setAcc(null);setQty('');};
-  return(<div className="fade-in" style={{paddingBottom:'24px'}}>
-    <div style={{padding:'16px'}}><p className="sec-label" style={{padding:'0 0 8px'}}>Quant Engine Input</p><textarea placeholder="Paste JSON output from Python script here..." value={jsonStr} onChange={e=>setJsonStr(e.target.value)} style={{width:'100%',height:'120px'}}/><button onClick={process} style={{background:'var(--text)',color:'var(--bg)',border:'none',borderRadius:8,padding:'12px',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,width:'100%',marginTop:8,cursor:'pointer'}}>Process AI Picks</button></div>
-    <div style={{padding:'0 16px'}}>
-      {picks.length>0&&<p className="sec-label" style={{padding:'8px 0'}}>AI Recommendations</p>}
-      {picks.map((pick,i)=>(
-        <div key={i} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px',marginBottom:12}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--blue)'}}>{pick.asset_name}</span><span style={{fontFamily:'var(--mono)',fontSize:10,background:'var(--blue-bg)',color:'var(--blue)',padding:'4px 8px',borderRadius:20}}>2% TARGET</span></div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:12}}><div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>ENTRY PRICE</div><div style={{fontFamily:'var(--mono)',fontSize:15,fontWeight:600}}>₹{pick['entry_price_₹']}</div></div><div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>TARGET PRICE</div><div style={{fontFamily:'var(--mono)',fontSize:15,fontWeight:600,color:'var(--green)'}}>₹{pick['target_price_₹']}</div></div></div>
-          <div style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'10px',marginTop:12,fontSize:11,lineHeight:1.5,color:'var(--text)'}}><strong>Thesis:</strong> {pick.thesis}<hr style={{border:'none',borderTop:'1px dashed var(--border2)',margin:'8px 0'}}/><strong style={{color:'var(--red)'}}>Exit:</strong> {pick.exit_condition}</div>
-          {acc===pick.asset_name?<div style={{display:'flex',gap:8,marginTop:12}}><input type="number" step="any" autoFocus placeholder="Qty Bought" value={qty} onChange={e=>setQty(e.target.value)} style={{background:'var(--bg)',border:'1px solid var(--blue)',borderRadius:6,padding:'8px 12px',fontFamily:'var(--mono)',fontSize:12,outline:'none',flex:1,color:'var(--text)'}}/><button onClick={()=>confirm_(pick)} disabled={saving} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'0 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>{saving?'...':'Confirm'}</button><button onClick={()=>setAcc(null)} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'0 12px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer',color:'var(--text)'}}>✕</button></div>
-          :<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={()=>setAcc(pick.asset_name)} style={{flex:1,background:'var(--green)',color:'#000',border:'none',borderRadius:6,padding:'10px',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer'}}>Accept & Log</button><button onClick={()=>setPicks(picks.filter(p=>p.asset_name!==pick.asset_name))} style={{flex:1,background:'none',border:'1px solid var(--border2)',color:'var(--text2)',borderRadius:6,padding:'10px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>Reject</button></div>}
-        </div>
-      ))}
+
+  const tabS=a=>({flex:1,padding:'9px 0',fontFamily:'var(--mono)',fontSize:11,fontWeight:a?700:400,letterSpacing:'0.06em',textTransform:'uppercase',border:'none',borderBottom:a?'2px solid var(--green)':'2px solid transparent',background:'none',color:a?'var(--green)':'var(--text3)',cursor:'pointer'});
+  const iS={background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
+
+  return(<div className="fade-in" style={{paddingBottom:'80px'}}>
+
+    {/* API Key section */}
+    <div style={{margin:'12px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px'}}>
+      <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Anthropic API Key</div>
+      <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+        <input type={keyVisible?'text':'password'} placeholder="sk-ant-api03-..." value={apiKey} onChange={e=>saveKey(e.target.value)} style={{...iS,flex:1,fontFamily:'var(--mono)',fontSize:12}}/>
+        <button onClick={()=>setKeyVisible(v=>!v)} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text3)',padding:'8px 10px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>{keyVisible?'Hide':'Show'}</button>
+      </div>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}>
+        <button onClick={testConn} disabled={testing||!apiKey.trim()} style={{background:testing?'var(--bg3)':'var(--blue)',border:'none',borderRadius:6,color:testing?'var(--text3)':'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'8px 14px',cursor:'pointer',flexShrink:0}}>{testing?'Testing...':'Test Connection'}</button>
+        {testStatus&&<span style={{fontFamily:'var(--mono)',fontSize:11,color:testStatus.startsWith('✓')?'var(--green)':'var(--red)',flex:1,lineHeight:1.4}}>{testStatus}</span>}
+      </div>
     </div>
+
+    {/* Tabs */}
+    <div style={{display:'flex',borderBottom:'1px solid var(--border)',padding:'0 16px'}}>
+      <button style={tabS(aiTab==='chat')} onClick={()=>setAiTab('chat')}>💬 Finance Chat</button>
+      <button style={tabS(aiTab==='quant')} onClick={()=>setAiTab('quant')}>📊 Quant Engine</button>
+    </div>
+
+    {/* ── CHAT TAB ── */}
+    {aiTab==='chat'&&(<div style={{display:'flex',flexDirection:'column'}}>
+      {!apiKey.trim()&&<div style={{margin:'12px 16px',background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,color:'var(--amber)'}}>⚠ Enter your Anthropic API key above to use the AI chat.</div>}
+      {/* Messages */}
+      <div style={{padding:'8px 0',minHeight:200}}>
+        {messages.length===0&&<div style={{padding:'24px 16px',textAlign:'center',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>Ask anything about your finances.<br/>e.g. "How can I save more on 80C this year?" or<br/>"What is a liquid mutual fund?"</div>}
+        {messages.map((m,i)=>(
+          <div key={i} style={{margin:'8px 16px',display:'flex',justifyContent:m.role==='user'?'flex-end':'flex-start'}}>
+            <div style={{maxWidth:'80%',background:m.role==='user'?'var(--green)':'var(--bg2)',border:'1px solid '+(m.role==='user'?'var(--green)':'var(--border)'),borderRadius:m.role==='user'?'12px 12px 2px 12px':'12px 12px 12px 2px',padding:'10px 12px',color:m.role==='user'?'#000':'var(--text)',fontSize:13,lineHeight:1.5}}>
+              {m.content}
+            </div>
+          </div>
+        ))}
+        {loading&&<div style={{margin:'8px 16px'}}><div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:'12px 12px 12px 2px',padding:'10px 12px',display:'inline-block',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>Thinking…</div></div>}
+      </div>
+      {/* Input */}
+      <div style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b))',left:'max(0px, 50% - 300px)',right:'max(0px, 50% - 300px)',background:'var(--bg)',borderTop:'1px solid var(--border)',padding:'10px 16px',display:'flex',gap:8,zIndex:90}}>
+        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&!e.shiftKey&&sendMsg()} placeholder="Ask your finance AI..." style={{...iS,flex:1}} disabled={!apiKey.trim()||loading}/>
+        <button onClick={sendMsg} disabled={!input.trim()||!apiKey.trim()||loading} style={{background:!input.trim()||!apiKey.trim()||loading?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:!input.trim()||!apiKey.trim()||loading?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'0 16px',cursor:'pointer',flexShrink:0}}>Send</button>
+      </div>
+      {messages.length>0&&<div style={{margin:'8px 16px'}}><button onClick={()=>setMessages([])} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text3)',fontFamily:'var(--mono)',fontSize:11,padding:'5px 12px',cursor:'pointer'}}>Clear chat</button></div>}
+    </div>)}
+
+    {/* ── QUANT TAB ── */}
+    {aiTab==='quant'&&(<div>
+      <div style={{padding:'16px'}}><p className="sec-label" style={{padding:'0 0 8px'}}>Quant Engine Input</p><textarea placeholder="Paste JSON output from Python script here..." value={jsonStr} onChange={e=>setJsonStr(e.target.value)} style={{width:'100%',height:'120px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',resize:'vertical'}}/><button onClick={process} style={{background:'var(--text)',color:'var(--bg)',border:'none',borderRadius:8,padding:'12px',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,width:'100%',marginTop:8,cursor:'pointer'}}>Process Picks</button></div>
+      <div style={{padding:'0 16px'}}>
+        {picks.length>0&&<p className="sec-label" style={{padding:'8px 0'}}>AI Recommendations</p>}
+        {picks.map((pick,i)=>(
+          <div key={i} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px',marginBottom:12}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:700,color:'var(--blue)'}}>{pick.asset_name}</span><span style={{fontFamily:'var(--mono)',fontSize:10,background:'var(--blue-bg)',color:'var(--blue)',padding:'4px 8px',borderRadius:20}}>2% TARGET</span></div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginTop:12}}><div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>ENTRY PRICE</div><div style={{fontFamily:'var(--mono)',fontSize:15,fontWeight:600}}>₹{pick['entry_price_₹']}</div></div><div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>TARGET PRICE</div><div style={{fontFamily:'var(--mono)',fontSize:15,fontWeight:600,color:'var(--green)'}}>₹{pick['target_price_₹']}</div></div></div>
+            <div style={{background:'var(--bg)',border:'1px solid var(--border)',borderRadius:6,padding:'10px',marginTop:12,fontSize:11,lineHeight:1.5,color:'var(--text)'}}><strong>Thesis:</strong> {pick.thesis}<hr style={{border:'none',borderTop:'1px dashed var(--border2)',margin:'8px 0'}}/><strong style={{color:'var(--red)'}}>Exit:</strong> {pick.exit_condition}</div>
+            {acc===pick.asset_name?<div style={{display:'flex',gap:8,marginTop:12}}><input type="number" step="any" autoFocus placeholder="Qty Bought" value={qty} onChange={e=>setQty(e.target.value)} style={{background:'var(--bg)',border:'1px solid var(--blue)',borderRadius:6,padding:'8px 12px',fontFamily:'var(--mono)',fontSize:12,outline:'none',flex:1,color:'var(--text)'}}/><button onClick={()=>confirm_(pick)} disabled={saving} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'0 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>{saving?'...':'Confirm'}</button><button onClick={()=>setAcc(null)} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,padding:'0 12px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer',color:'var(--text)'}}>✕</button></div>
+            :<div style={{display:'flex',gap:8,marginTop:12}}><button onClick={()=>setAcc(pick.asset_name)} style={{flex:1,background:'var(--green)',color:'#000',border:'none',borderRadius:6,padding:'10px',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer'}}>Accept & Log</button><button onClick={()=>setPicks(picks.filter(p=>p.asset_name!==pick.asset_name))} style={{flex:1,background:'none',border:'1px solid var(--border2)',color:'var(--text2)',borderRadius:6,padding:'10px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>Reject</button></div>}
+          </div>
+        ))}
+      </div>
+    </div>)}
   </div>);
 }
 /* ── UdhariScreen — real ledger update + CA audit ── */
@@ -1501,27 +1624,137 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances}){
   </div>);
 }
 
-/* ── CCBillScreen ── */
+/* ── CCBillScreen v1.7 ─────────────────────────────────────────
+   Logic:
+   · User sets a Statement Date (day of month, e.g. 15).
+   · "Current bill" = txns AFTER last statement date → shown as UNBILLED.
+   · CC expense shows in Unbilled until statement date passes.
+   · On/after statement date → current cycle becomes a reconcilable bill.
+   · Tab: Unbilled | Bills
+──────────────────────────────────────────────────────────────── */
 function CCBillScreen({txns,customAccounts}){
   const ccAccounts=[...SEED_CC,...(customAccounts||[]).filter(a=>a.type==='cc').map(a=>a.name)];
-  const now=new Date();const firstOfMonth=new Date(now.getFullYear(),now.getMonth(),1).toISOString().slice(0,10);const lastOfMonth=new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().slice(0,10);
-  const [selCC,setSelCC]=useState(ccAccounts[0]||'');const [start,setStart]=useState(firstOfMonth);const [end,setEnd]=useState(lastOfMonth);const [stmtAmt,setStmtAmt]=useState('');
-  const tracked=txns.filter(t=>{if(t.status==='voided')return false;if(t.from_account!==selCC)return false;if(t.type!=='Expense'&&t.type!=='UA Expense')return false;const d=new Date(t.created_at);if(start&&d<new Date(start))return false;if(end&&d>new Date(end+'T23:59:59'))return false;return true;});
-  const trackedTotal=tracked.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);const sa=parseFloat(stmtAmt)||0;const diff=sa-trackedTotal;const hasStmt=stmtAmt!==''&&sa>0;
+  const today=new Date();const todayStr=today.toISOString().slice(0,10);
+
+  /* ── Per-CC statement date stored in localStorage ── */
+  const getStmtDay=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');return parseInt(v[cc]||'1');}catch{return 1;}};
+  const saveStmtDay=(cc,day)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');v[cc]=day;localStorage.setItem('jbf_cc_stmt_days',JSON.stringify(v));}catch{}};
+
+  const [selCC,setSelCC]=useState(ccAccounts[0]||'');
+  const [ccTab,setCCTab]=useState('unbilled'); /* 'unbilled' | 'bills' */
+  const [stmtDayStr,setStmtDayStr]=useState(()=>String(getStmtDay(ccAccounts[0]||'')));
+  const [stmtAmt,setStmtAmt]=useState('');
+  /* manual bill period override */
+  const stmtDay=Math.max(1,Math.min(28,parseInt(stmtDayStr)||1));
+
+  /* When CC changes, reload stmt day */
+  const handleSelCC=cc=>{setSelCC(cc);setStmtDayStr(String(getStmtDay(cc)));setStmtAmt('');};
+  const handleStmtDaySave=()=>{saveStmtDay(selCC,stmtDay);};
+
+  /* ── Compute billing periods ──
+     last statement was on stmtDay of current or previous month depending on today */
+  const getLastStmtDate=()=>{
+    const d=new Date(today.getFullYear(),today.getMonth(),stmtDay);
+    if(d>today){/* stmt day hasn't hit yet this month → last stmt was previous month */
+      return new Date(today.getFullYear(),today.getMonth()-1,stmtDay);
+    }
+    return d;
+  };
+  const lastStmt=getLastStmtDate();
+  const lastStmtStr=lastStmt.toISOString().slice(0,10);
+  /* Next statement date */
+  const nextStmt=new Date(lastStmt.getFullYear(),lastStmt.getMonth()+1,stmtDay);
+  const nextStmtStr=nextStmt.toISOString().slice(0,10);
+  /* Statement has generated = today >= stmtDay of this month (i.e. lastStmt = this month) */
+  const stmtGenerated=lastStmt.getMonth()===today.getMonth()&&lastStmt.getFullYear()===today.getFullYear();
+  /* Previous bill period = month before lastStmt */
+  const prevBillStart=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,stmtDay);
+  const prevBillStartStr=prevBillStart.toISOString().slice(0,10);
+
+  /* ── Filter helpers ── */
+  const ccSpends=txns.filter(t=>t.status!=='voided'&&t.from_account===selCC&&(t.type==='Expense'||t.type==='UA Expense'));
+  /* UNBILLED: txns after last statement date → these are in current open cycle */
+  const unbilled=ccSpends.filter(t=>t.created_at.slice(0,10)>lastStmtStr);
+  const unbilledTotal=unbilled.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  /* CURRENT BILL: only visible if statement has generated (today >= stmtDay) */
+  const [billStart,setBillStart]=useState(prevBillStartStr);const [billEnd,setBillEnd]=useState(lastStmtStr);
+  const billed=ccSpends.filter(t=>{const d=t.created_at.slice(0,10);return d>billStart&&d<=billEnd;});
+  const billedTotal=billed.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const sa=parseFloat(stmtAmt)||0;const diff=sa-billedTotal;const hasStmt=stmtAmt!==''&&sa>0;
+
   const iS={background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
+  const tabSel=active=>({flex:1,padding:'9px 0',fontFamily:'var(--mono)',fontSize:11,fontWeight:active?700:400,letterSpacing:'0.06em',textTransform:'uppercase',border:'none',borderBottom:active?'2px solid var(--green)':'2px solid transparent',background:'none',color:active?'var(--green)':'var(--text3)',cursor:'pointer'});
+
   return(<div className="fade-in">
-    <p className="sec-label">Credit Card</p><div style={{padding:'0 16px 4px'}}><select value={selCC} onChange={e=>setSelCC(e.target.value)} style={iS}>{ccAccounts.map(a=><option key={a}>{a}</option>)}</select></div>
-    <p className="sec-label" style={{marginTop:8}}>Statement Period</p><div style={{padding:'0 16px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}><input type="date" value={start} onChange={e=>setStart(e.target.value)} style={{...iS,flex:1,minWidth:130}}/><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span><input type="date" value={end} onChange={e=>setEnd(e.target.value)} style={{...iS,flex:1,minWidth:130}}/></div>
-    <p className="sec-label" style={{marginTop:8}}>Bank Statement Amount (₹)</p><div style={{padding:'0 16px'}}><input type="number" inputMode="decimal" placeholder="Enter total bill amount" value={stmtAmt} onChange={e=>setStmtAmt(e.target.value)} style={{...iS,fontSize:16,fontWeight:600}}/></div>
-    <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-      <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{tracked.length} txn{tracked.length!==1?'s':''}</span></div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>{fmtAmt(trackedTotal)}</span></div>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>Bank Statement Amount</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:hasStmt?'var(--text)':'var(--text3)'}}>{hasStmt?fmtAmt(sa):'—'}</span></div>
-      {hasStmt&&<div style={{padding:'14px',background:diff===0?'var(--green-bg)':diff>0?'var(--red-bg)':'var(--green-bg)',borderTop:'2px solid '+(diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)')}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{diff===0?'✓ Perfectly Matched!':diff>0?'Unaccounted Bank Charges':'Cashbacks / Refunds'}</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)'}}>{diff===0?fmtAmt(0):diff>0?'+'+fmtAmt(diff):'−'+fmtAmt(Math.abs(diff))}</div></div>}
-      {!hasStmt&&<div style={{padding:'14px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>Enter bank statement amount above to see reconciliation.</div>}
+    {/* CC Selector */}
+    <p className="sec-label">Credit Card</p>
+    <div style={{padding:'0 16px 4px'}}><select value={selCC} onChange={e=>handleSelCC(e.target.value)} style={iS}>{ccAccounts.map(a=><option key={a}>{a}</option>)}</select></div>
+
+    {/* Statement Day setting */}
+    <div style={{margin:'10px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+      <div style={{flex:1}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',marginBottom:4}}>Statement Generates on (day of month)</div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <input type="number" min="1" max="28" value={stmtDayStr} onChange={e=>setStmtDayStr(e.target.value)} onBlur={handleStmtDaySave} style={{...iS,width:70,textAlign:'center',fontSize:18,fontWeight:700}}/>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:1.5}}>
+            Last stmt: <span style={{color:'var(--text2)'}}>{fmtDate(lastStmt)}</span><br/>
+            Next stmt: <span style={{color:'var(--amber)'}}>{fmtDate(nextStmt)}</span>
+          </div>
+        </div>
+      </div>
+      <div style={{background:stmtGenerated?'var(--green-bg)':'var(--amber-bg)',border:'1px solid '+(stmtGenerated?'var(--green)':'var(--amber)'),borderRadius:8,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:stmtGenerated?'var(--green)':'var(--amber)',whiteSpace:'nowrap'}}>
+        {stmtGenerated?'✓ Stmt Generated':'⏳ Not Yet'}
+      </div>
     </div>
-    {tracked.length>0&&<><p className="sec-label" style={{marginTop:16}}>Tracked Transactions</p><div style={{marginBottom:24}}>{[...tracked].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t=><div key={t.id} className="txn-row"><div className="txn-left"><div className="txn-cat">{t.category}</div><div className="txn-desc">{t.particulars||t.category}</div><div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div><div className="txn-right"><div className="txn-amt out">−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div></div>)}</div></>}
-    {tracked.length===0&&<div className="empty">No tracked transactions for {selCC} in this period.</div>}
+
+    {/* Tab bar */}
+    <div style={{display:'flex',borderBottom:'1px solid var(--border)',marginTop:12,padding:'0 16px'}}>
+      <button style={tabSel(ccTab==='unbilled')} onClick={()=>setCCTab('unbilled')}>Unbilled{unbilledTotal>0?` · ${fmtAmt(unbilledTotal)}`:''}</button>
+      <button style={tabSel(ccTab==='bills')} onClick={()=>setCCTab('bills')}>Reconcile Bill{stmtGenerated?'':' (not yet)'}</button>
+    </div>
+
+    {/* ── UNBILLED TAB ── */}
+    {ccTab==='unbilled'&&(<div>
+      <div style={{margin:'12px 16px 0',background:'var(--bg2)',border:'1px solid var(--amber)',borderRadius:10,padding:'14px'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Current Cycle · Unbilled Spends</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:800,color:'var(--amber)',marginBottom:4}}>{fmtAmt(unbilledTotal)}</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>Since {fmtDate(lastStmt)} · {unbilled.length} txns · Statement on {fmtDate(nextStmt)}</div>
+      </div>
+      {unbilled.length>0
+        ?<><p className="sec-label" style={{marginTop:8}}>Unbilled Transactions</p>
+          <div style={{marginBottom:24}}>{[...unbilled].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t=>(
+            <div key={t.id} className="txn-row">
+              <div className="txn-left"><div className="txn-cat">{t.category}</div><div className="txn-desc">{t.particulars||t.category}</div><div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div>
+              <div className="txn-right"><div className="txn-amt" style={{color:'var(--amber)'}}>−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div>
+            </div>
+          ))}</div></>
+        :<div className="empty">No unbilled charges since {fmtDate(lastStmt)}.<br/>This cycle is clear! 🎉</div>}
+    </div>)}
+
+    {/* ── BILLS TAB ── */}
+    {ccTab==='bills'&&(<div>
+      {!stmtGenerated&&<div style={{margin:'12px 16px',background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--amber)'}}>
+        ⏳ Statement not yet generated for this cycle. It generates on the <strong>{stmtDay}{stmtDay===1?'st':stmtDay===2?'nd':stmtDay===3?'rd':'th'}</strong> of each month.
+        Bill period shown below is the previous cycle which can be reconciled.
+      </div>}
+      <p className="sec-label" style={{marginTop:8}}>Bill Period</p>
+      <div style={{padding:'0 16px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <input type="date" value={billStart} onChange={e=>setBillStart(e.target.value)} style={{...iS,flex:1,minWidth:130}}/>
+        <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span>
+        <input type="date" value={billEnd} onChange={e=>setBillEnd(e.target.value)} style={{...iS,flex:1,minWidth:130}}/>
+      </div>
+      <p className="sec-label" style={{marginTop:8}}>Bank Statement Amount (₹)</p>
+      <div style={{padding:'0 16px'}}><input type="number" inputMode="decimal" placeholder="Enter total bill amount" value={stmtAmt} onChange={e=>setStmtAmt(e.target.value)} style={{...iS,fontSize:16,fontWeight:600}}/></div>
+      <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{billed.length} txn{billed.length!==1?'s':''}</span></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>{fmtAmt(billedTotal)}</span></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>Bank Statement Amount</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:hasStmt?'var(--text)':'var(--text3)'}}>{hasStmt?fmtAmt(sa):'—'}</span></div>
+        {hasStmt&&<div style={{padding:'14px',background:diff===0?'var(--green-bg)':diff>0?'var(--red-bg)':'var(--green-bg)',borderTop:'2px solid '+(diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)')}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{diff===0?'✓ Perfectly Matched!':diff>0?'Unaccounted Bank Charges':'Cashbacks / Refunds'}</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)'}}>{diff===0?fmtAmt(0):diff>0?'+'+fmtAmt(diff):'−'+fmtAmt(Math.abs(diff))}</div></div>}
+        {!hasStmt&&<div style={{padding:'14px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>Enter bank statement amount above to see reconciliation.</div>}
+      </div>
+      {billed.length>0&&<><p className="sec-label" style={{marginTop:16}}>Billed Transactions</p><div style={{marginBottom:24}}>{[...billed].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t=><div key={t.id} className="txn-row"><div className="txn-left"><div className="txn-cat">{t.category}</div><div className="txn-desc">{t.particulars||t.category}</div><div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div><div className="txn-right"><div className="txn-amt out">−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div></div>)}</div></>}
+      {billed.length===0&&<div className="empty">No tracked transactions for {selCC} in this period.</div>}
+    </div>)}
   </div>);
 }
 
@@ -1872,7 +2105,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.6.3 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.7.0 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v1.7: Pagination fix · CC Bill logic · AI CORS fix</div>
   </div>);
 }
 /* ── RENDER ── */
