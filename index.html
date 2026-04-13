@@ -143,6 +143,8 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window['pdfjs-dist/build/pdf'])window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 const { createClient } = supabase;
@@ -190,6 +192,134 @@ function getStreak(){
   if(last!==today){localStorage.setItem('jbf_streak_date',today);localStorage.setItem('jbf_streak_count',String(next));}
   return next;
 }
+/* ─────────────────────────────────────────────────────────
+   PIN LOCK SCREEN  (v1.9 — pre-auth security gate)
+   Flow: App open → PIN gate → Supabase Auth → App
+   PIN stored as SHA-256 hash in localStorage (jbf_pin_hash).
+   First-time: no hash stored → setup mode (set 4-digit PIN).
+   Change/remove PIN from Settings.
+───────────────────────────────────────────────────────── */
+function PinLockScreen({onUnlock}){
+  const [digits,setDigits]   = useState([]);
+  const [shake,setShake]     = useState(false);
+  const [setupMode,setSetupMode] = useState(!localStorage.getItem('jbf_pin_hash'));
+  const [setupStep,setSetupStep] = useState(1); // 1=enter new, 2=confirm
+  const [firstPin,setFirstPin]   = useState([]);
+  const [msg,setMsg]             = useState('');
+
+  const MAX=4;
+
+  const hashPin = async pin => {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  };
+
+  const addDigit = async d => {
+    const next=[...digits,d];
+    setDigits(next);
+    if(next.length<MAX) return;
+    const pin=next.join('');
+
+    if(setupMode){
+      if(setupStep===1){
+        setFirstPin(next);
+        setDigits([]);
+        setSetupStep(2);
+        setMsg('Confirm your PIN');
+      } else {
+        if(pin===firstPin.join('')){
+          const h=await hashPin(pin);
+          localStorage.setItem('jbf_pin_hash',h);
+          setMsg('✓ PIN set!');
+          setTimeout(()=>onUnlock(),400);
+        } else {
+          setMsg('❌ PINs did not match — try again');
+          setShake(true);setTimeout(()=>setShake(false),500);
+          setDigits([]);setSetupStep(1);setFirstPin([]);
+        }
+      }
+    } else {
+      const h=await hashPin(pin);
+      if(h===localStorage.getItem('jbf_pin_hash')){
+        onUnlock();
+      } else {
+        setMsg('❌ Wrong PIN');
+        setShake(true);setTimeout(()=>setShake(false),500);
+        setDigits([]);
+      }
+    }
+  };
+
+  const del=()=>setDigits(p=>p.slice(0,-1));
+
+  const KEYS=[1,2,3,4,5,6,7,8,9,null,0,'⌫'];
+
+  const title = setupMode
+    ? (setupStep===1 ? 'Set a 4-digit PIN' : 'Confirm PIN')
+    : 'Enter PIN';
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100dvh',background:'var(--bg)',padding:24,userSelect:'none'}}>
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:3,letterSpacing:'0.12em',textTransform:'uppercase'}}>{title}</div>
+      </div>
+
+      {/* Dot indicators */}
+      <div style={{
+        display:'flex',gap:16,marginBottom:24,
+        animation:shake?'pinShake 0.4s ease':'none',
+      }}>
+        {Array.from({length:MAX}).map((_,i)=>(
+          <div key={i} style={{
+            width:14,height:14,borderRadius:'50%',
+            background:i<digits.length?'var(--green)':'transparent',
+            border:'2px solid',
+            borderColor:i<digits.length?'var(--green)':'var(--border2)',
+            transition:'all 0.15s',
+          }}/>
+        ))}
+      </div>
+
+      {msg&&<div style={{fontFamily:'var(--mono)',fontSize:11,color:msg.startsWith('✓')?'var(--green)':'var(--amber)',marginBottom:14,letterSpacing:'0.04em'}}>{msg}</div>}
+
+      {/* Numpad */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,72px)',gap:12}}>
+        {KEYS.map((k,i)=>(
+          k===null
+            ? <div key={i}/>
+            : <button key={i}
+                onClick={()=>k==='⌫'?del():digits.length<MAX&&addDigit(k)}
+                style={{
+                  width:72,height:72,borderRadius:'50%',
+                  background:k==='⌫'?'var(--bg2)':'var(--bg3)',
+                  border:'1px solid var(--border)',
+                  color:'var(--text)',
+                  fontFamily:'var(--mono)',
+                  fontSize:k==='⌫'?20:24,
+                  fontWeight:600,
+                  cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  WebkitTapHighlightColor:'transparent',
+                  transition:'background 0.1s',
+                }}
+              >{k}</button>
+        ))}
+      </div>
+
+      {!setupMode&&<button onClick={()=>{
+        // Escape hatch: clear PIN (will require Supabase login still)
+        if(confirm('Forgot PIN? This will remove the PIN lock. You will still need your Supabase password.')){
+          localStorage.removeItem('jbf_pin_hash');
+          setSetupMode(true);setSetupStep(1);setDigits([]);setMsg('');
+        }
+      }} style={{marginTop:28,background:'none',border:'none',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer',textDecoration:'underline'}}>Forgot PIN</button>}
+
+      <style>{`@keyframes pinShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
 /* ─────────────────────────────────────────────────────────
    LOGIN SCREEN  (v1.6 — Supabase Auth gate)
 ───────────────────────────────────────────────────────── */
@@ -259,6 +389,7 @@ function App() {
   /* ── v1.6 Auth ── */
   const [session,setSession]   = useState(null);
   const [authLoading,setAuthLoading] = useState(true);
+  const [pinUnlocked,setPinUnlocked] = useState(false); // v1.9 PIN gate
 
   useEffect(()=>{
     db.auth.getSession().then(({data:{session}})=>{setSession(session);setAuthLoading(false);});
@@ -434,10 +565,12 @@ function App() {
 
   return (
     <div id="root">
+      {/* ── v1.9 PIN gate — shown before auth if PIN is set or being set up ── */}
+      {!pinUnlocked&&<PinLockScreen onUnlock={()=>setPinUnlocked(true)}/>}
       {/* ── v1.6 Auth gate ── */}
-      {authLoading&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',fontFamily:'var(--mono)',fontSize:12,color:'var(--text3)'}}>Authenticating…</div>}
-      {!authLoading&&!session&&<LoginScreen/>}
-      {!authLoading&&session&&<>
+      {pinUnlocked&&authLoading&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',fontFamily:'var(--mono)',fontSize:12,color:'var(--text3)'}}>Authenticating…</div>}
+      {pinUnlocked&&!authLoading&&!session&&<LoginScreen/>}
+      {pinUnlocked&&!authLoading&&session&&<>
       <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
@@ -461,6 +594,7 @@ function App() {
         {!loading&&tab==='settings'&&<SettingsScreen opening={opening} onSave={saveOpening} allAccountsH={allAccountsH} customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts} customCategories={customCategories} onSaveCategories={saveCustomCategories} budgets={budgets} onSaveBudgets={saveBudgets} customSites={customSites} onSaveSites={saveCustomSites} customTeam={customTeam} onSaveTeam={saveCustomTeam} theme={theme} onSaveTheme={saveTheme} customSiteCats={customSiteCats} onSaveSiteCats={saveCustomSiteCats}/>}
         {!loading&&tab==='ai_command'&&<AiCommandScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
         {!loading&&tab==='cashflow'&&<CashflowScreen txns={txns} budgets={budgets} onSaveBudgets={saveBudgets} liquid={liquid} allBanks={allBanks} balances={balances} recurring={recurring}/>}
+        {!loading&&tab==='pdf_import'&&<PdfImportScreen allBanks={allBanks} allCC={allCC} allCategories={activeCats} onSave={addTxn} showToast={showToast}/>}
       </div>
 
       {/* Floating + */}
@@ -471,7 +605,7 @@ function App() {
 
       {/* Menu */}
       {menuOpen&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-start'}} onClick={e=>e.target===e.currentTarget&&setMenuOpen(false)}><div style={{background:'var(--bg)',borderRadius:'0 0 16px 16px',border:'1px solid var(--border)',padding:'16px',maxHeight:'80vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text2)',letterSpacing:'0.08em'}}>MENU</span><button onClick={()=>setMenuOpen(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div>
-        {[{label:'Dashboard',icon:'◈',id:'dash'},{label:'Add Entry',icon:'+',id:'add'},{label:'Transaction Log',icon:'≡',id:'txns'},{label:'Income & Cashflow',icon:'💹',id:'cashflow'},{label:'Wealth & Portfolio',icon:'📈',id:'investments'},{label:'Account Statement',icon:'◧',id:'statement'},{label:'Site Ledger',icon:'🏗',id:'site_ledger'},{label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},{label:'Udhari Ledger',icon:'◎',id:'udhari'},{label:'AI Command Center',icon:'🧠',id:'ai_command'}].map(item=>(<div key={item.id} onClick={()=>{setTab(item.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span><span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span></div>))}
+        {[{label:'Dashboard',icon:'◈',id:'dash'},{label:'Add Entry',icon:'+',id:'add'},{label:'Transaction Log',icon:'≡',id:'txns'},{label:'Income & Cashflow',icon:'💹',id:'cashflow'},{label:'Wealth & Portfolio',icon:'📈',id:'investments'},{label:'Account Statement',icon:'◧',id:'statement'},{label:'Site Ledger',icon:'🏗',id:'site_ledger'},{label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},{label:'Udhari Ledger',icon:'◎',id:'udhari'},{label:'PDF Bank Import',icon:'📄',id:'pdf_import'},{label:'AI Command Center',icon:'🧠',id:'ai_command'}].map(item=>(<div key={item.id} onClick={()=>{setTab(item.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span><span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span></div>))}
         <div onClick={()=>{setTab('settings');setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8,marginTop:4}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)',width:24,textAlign:'center'}}>⚙</span><span style={{fontSize:13,color:'var(--text2)'}}>Settings & Setup</span></div>
         <div onClick={()=>{db.auth.signOut();setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8,marginTop:4,borderTop:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--red)',width:24,textAlign:'center'}}>↩</span><span style={{fontSize:13,color:'var(--red)'}}>Sign Out ({session?.user?.email})</span></div>
       </div></div>}
@@ -2346,6 +2480,462 @@ function CashflowScreen({txns,budgets,onSaveBudgets,liquid,allBanks,balances,rec
   );
 }
 
+/* ── PdfImportScreen v1.9 ─────────────────────────────────────────────
+   In-browser PDF bank statement parser.
+   Uses pdf.js (CDN) to extract text, applies per-bank regex patterns,
+   then shows a side-by-side match UI before importing to Supabase.
+   Supported banks: KB (Karnataka Bank), UB (Union Bank), YB (Yes Bank),
+                    HDFC CC, AXIS CC, SBI CC, RBL CC
+   ─────────────────────────────────────────────────────────────────── */
+function PdfImportScreen({allBanks,allCC,onSave,showToast,allCategories}){
+  const [step,setStep]        = useState('upload');   // upload | review | done
+  const [bank,setBank]        = useState('');
+  const [domain,setDomain]    = useState('Personal');
+  const [rows,setRows]        = useState([]);          // parsed rows
+  const [selected,setSelected]= useState({});          // rowIdx → true/false
+  const [editing,setEditing]  = useState({});          // rowIdx → overrides
+  const [importing,setImporting]=useState(false);
+  const [progress,setProgress]= useState('');
+  const [pdfName,setPdfName]  = useState('');
+
+  const allAccounts=[...allBanks,...allCC];
+
+  // ── Per-bank regex patterns ──────────────────────────────────────
+  // Each parser receives full text and returns [{date,particulars,debit,credit,balance}]
+  const PARSERS = {
+    'KB': text => {
+      // Karnataka Bank: DD/MM/YYYY  Narration  Chq  Debit  Credit  Balance
+      const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s{2,}[\w\d-]*\s{1,}([\d,]*\.\d{2})?\s*([\d,]*\.\d{2})?\s+([\d,]+\.\d{2})/g;
+      return parseMatches(re,text,[1,2,3,4,5]);
+    },
+    'UB': text => {
+      // Union Bank: DD-MM-YYYY  Narration  Ref  Debit  Credit  Balance
+      const re = /(\d{2}-\d{2}-\d{4})\s+(.+?)\s{2,}[\w\d/]*\s{0,}([\d,]*\.\d{2})?\s*([\d,]*\.\d{2})?\s+([\d,]+\.\d{2})/g;
+      return parseMatches(re,text,[1,2,3,4,5]);
+    },
+    'YB': text => {
+      // Yes Bank: DD MMM YYYY  Description  Debit  Credit  Balance
+      const re = /(\d{2}\s+\w{3}\s+\d{4})\s+(.+?)\s{2,}([\d,]*\.\d{2})?\s*([\d,]*\.\d{2})?\s+([\d,]+\.\d{2})/g;
+      return parseMatches(re,text,[1,2,3,4,5]);
+    },
+    'HDFC CC': text => {
+      // HDFC CC: DD/MM/YYYY  Description  Amount (Dr/Cr)
+      const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s{2,}([\d,]+\.\d{2})\s*(Cr)?/g;
+      const out=[];let m;
+      while((m=re.exec(text))!==null){
+        const isCr=!!(m[4]);
+        out.push({date:normalDate(m[1]),particulars:m[2].trim(),debit:isCr?null:m[3],credit:isCr?m[3]:null,balance:null});
+      }
+      return out;
+    },
+    'AXIS CC': text => {
+      // Axis CC: DD MMM YYYY  Description  Amount (CR suffix = credit)
+      const re = /(\d{2}\s+\w{3}\s+\d{4})\s+(.+?)\s{2,}([\d,]+\.\d{2})(CR)?/g;
+      const out=[];let m;
+      while((m=re.exec(text))!==null){
+        const isCr=!!(m[4]);
+        out.push({date:normalDate(m[1]),particulars:m[2].trim(),debit:isCr?null:m[3],credit:isCr?m[3]:null,balance:null});
+      }
+      return out;
+    },
+    'SBI CC': text => {
+      const re = /(\d{2}\/\d{2}\/\d{4})\s+(.+?)\s{2,}([\d,]+\.\d{2})\s*(Cr)?/g;
+      const out=[];let m;
+      while((m=re.exec(text))!==null){
+        const isCr=!!(m[4]);
+        out.push({date:normalDate(m[1]),particulars:m[2].trim(),debit:isCr?null:m[3],credit:isCr?m[3]:null,balance:null});
+      }
+      return out;
+    },
+    'RBL CC': text => {
+      const re = /(\d{2}-\w{3}-\d{4})\s+(.+?)\s{2,}([\d,]+\.\d{2})\s*(CR)?/g;
+      const out=[];let m;
+      while((m=re.exec(text))!==null){
+        const isCr=!!(m[4]);
+        out.push({date:normalDate(m[1]),particulars:m[2].trim(),debit:isCr?null:m[3],credit:isCr?m[3]:null,balance:null});
+      }
+      return out;
+    },
+  };
+
+  function parseMatches(re,text,idx){
+    const out=[];let m;
+    while((m=re.exec(text))!==null){
+      out.push({
+        date:normalDate(m[idx[0]]),
+        particulars:m[idx[1]].trim(),
+        debit:m[idx[2]]?m[idx[2]].replace(/,/g,''):null,
+        credit:m[idx[3]]?m[idx[3]].replace(/,/g,''):null,
+        balance:m[idx[4]]?m[idx[4]].replace(/,/g,''):null,
+      });
+    }
+    return out;
+  }
+
+  function normalDate(s){
+    // Convert DD/MM/YYYY, DD-MM-YYYY, DD MMM YYYY → YYYY-MM-DD
+    const months={Jan:1,Feb:2,Mar:3,Apr:4,May:5,Jun:6,Jul:7,Aug:8,Sep:9,Oct:10,Nov:11,Dec:12};
+    s=s.trim();
+    if(/\d{2}\/\d{2}\/\d{4}/.test(s)){const[d,mo,y]=s.split('/');return`${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;}
+    if(/\d{2}-\d{2}-\d{4}/.test(s)){const[d,mo,y]=s.split('-');return`${y}-${mo.padStart(2,'0')}-${d.padStart(2,'0')}`;}
+    if(/\d{2}\s+\w{3}\s+\d{4}/.test(s)){const[d,mon,y]=s.split(/\s+/);const mo=months[mon]||1;return`${y}-${String(mo).padStart(2,'0')}-${d.padStart(2,'0')}`;}
+    if(/\d{2}-\w{3}-\d{4}/.test(s)){const[d,mon,y]=s.split('-');const mo=months[mon]||1;return`${y}-${String(mo).padStart(2,'0')}-${d.padStart(2,'0')}`;}
+    return s;
+  }
+
+  function guessCategory(desc){
+    const d=desc.toLowerCase();
+    if(/swiggy|zomato|domino|pizza|cafe|restaurant|hotel|food|eat|bake|kitchen/.test(d)) return 'Food & Dining';
+    if(/amazon|flipkart|myntra|shop|mart|store|mall|market/.test(d)) return 'Shopping';
+    if(/fuel|petrol|diesel|hp|bpcl|iocl/.test(d)) return 'Fuel & Transport';
+    if(/uber|ola|rapido|metro|bus|railway|irctc|flight|airline/.test(d)) return 'Travel';
+    if(/medical|pharma|clinic|hospital|apollo|doctor|health/.test(d)) return 'Medical';
+    if(/recharge|jio|airtel|vi |bsnl|broadband|internet/.test(d)) return 'Utilities';
+    if(/electricity|water|gas|mseb|bescom|tata power/.test(d)) return 'Utilities';
+    if(/salary|credited by|credit by employer/.test(d)) return 'Salary';
+    if(/emi|loan/.test(d)) return 'Loan EMI';
+    if(/insurance|lic|hdfc life|sbi life/.test(d)) return 'Insurance';
+    if(/atm|cash withdrawal/.test(d)) return 'Cash Withdrawal';
+    if(/transfer|neft|rtgs|imps|upi/.test(d)) return 'Transfer';
+    return 'Uncategorized';
+  }
+
+  // ── PDF parsing via pdf.js ───────────────────────────────────────
+  const handleFile = async e => {
+    const file=e.target.files[0];
+    if(!file||!bank){showToast('⚠ Select bank first');return;}
+    setPdfName(file.name);
+    setProgress('Reading PDF…');
+    try{
+      const pdfjsLib=window['pdfjs-dist/build/pdf'];
+      if(pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc=
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const arrayBuf=await file.arrayBuffer();
+      const pdf=await pdfjsLib.getDocument({data:arrayBuf}).promise;
+      let fullText='';
+      for(let p=1;p<=pdf.numPages;p++){
+        setProgress(`Reading page ${p}/${pdf.numPages}…`);
+        const page=await pdf.getPage(p);
+        const tc=await page.getTextContent();
+        // Preserve column layout by sorting items left→right, top→bottom
+        const items=tc.items.sort((a,b)=>{
+          const dy=Math.round(b.transform[5])-Math.round(a.transform[5]);
+          return dy!==0?dy:a.transform[4]-b.transform[4];
+        });
+        fullText+=items.map(i=>i.str).join(' ')+'\n';
+      }
+      setProgress('Parsing transactions…');
+      const parser=PARSERS[bank];
+      if(!parser){showToast('⚠ No parser for '+bank);setProgress('');return;}
+      const parsed=parser(fullText).filter(r=>r.date&&(r.debit||r.credit));
+      if(!parsed.length){
+        showToast('⚠ No transactions found — PDF layout may differ');
+        setProgress('Try manual regex tuning in console');
+        return;
+      }
+      // Annotate with guessed category and txn type
+      const enriched=parsed.map((r,i)=>({
+        ...r,
+        _idx:i,
+        amount:parseFloat((r.debit||r.credit||'0').replace(/,/g,'')),
+        type: r.debit ? (allCC.includes(bank)?'Credit Spend':'Expense') : (allCC.includes(bank)?'Credit Payment':'Income'),
+        category:guessCategory(r.particulars),
+        account:bank,
+      }));
+      setRows(enriched);
+      const sel={};enriched.forEach((_,i)=>{sel[i]=true;});
+      setSelected(sel);
+      setEditing({});
+      setStep('review');
+      setProgress('');
+    }catch(err){
+      console.error('PDF parse error:',err);
+      showToast('⚠ PDF parse failed — see console');
+      setProgress('Error: '+err.message);
+    }
+  };
+
+  const toggleAll=val=>{ const s={};rows.forEach((_,i)=>{s[i]=val;});setSelected(s); };
+  const setEdit=(idx,field,val)=>setEditing(p=>({...p,[idx]:{...(p[idx]||{}), [field]:val}}));
+  const getRow=idx=>({...rows[idx],...(editing[idx]||{})});
+
+  const handleImport=async()=>{
+    const toImport=rows.filter((_,i)=>selected[i]);
+    if(!toImport.length){showToast('⚠ Nothing selected');return;}
+    setImporting(true);
+    let ok=0,fail=0;
+    for(let i=0;i<toImport.length;i++){
+      const r=getRow(toImport[i]._idx);
+      setProgress(`Importing ${i+1}/${toImport.length}…`);
+      const isCC=allCC.includes(bank);
+      const txn={
+        domain,
+        type: r.type,
+        amount: Math.abs(parseFloat(String(r.amount).replace(/,/g,''))||0),
+        category: r.category||'Uncategorized',
+        from_account: r.debit ? bank : null,
+        to_account:   r.credit ? bank : null,
+        particulars:  r.particulars,
+        status:'complete',
+        source:'pdf-import',
+        created_at: r.date ? new Date(r.date+'T00:00:00').toISOString() : new Date().toISOString(),
+      };
+      try{ await onSave(txn); ok++; }
+      catch(e){ fail++; console.error('Import row error:',e); }
+    }
+    setImporting(false);
+    setProgress('');
+    showToast(`✓ ${ok} imported${fail?', '+fail+' failed':''}`);
+    setStep('done');
+  };
+
+  const m={padding:'0 16px 16px'};
+
+  // ── STEP: upload ─────────────────────────────────────────────────
+  if(step==='upload') return(
+    <div style={m}>
+      <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,letterSpacing:'0.1em',color:'var(--text3)',padding:'18px 0 12px',textTransform:'uppercase'}}>📄 PDF Bank Import</div>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:16,marginBottom:12}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginBottom:8,letterSpacing:'0.06em'}}>1. SELECT BANK / ACCOUNT</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+          {[...allBanks.filter(b=>b!=='Cash'),...allCC].map(b=>(
+            <button key={b} onClick={()=>setBank(b)} style={{
+              padding:'8px 14px',borderRadius:20,fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer',
+              background: bank===b ? 'var(--green)' : 'var(--bg3)',
+              border: bank===b ? 'none' : '1px solid var(--border)',
+              color: bank===b ? '#000' : 'var(--text2)',
+            }}>{b}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:16,marginBottom:12}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginBottom:8,letterSpacing:'0.06em'}}>2. DOMAIN</div>
+        <div style={{display:'flex',gap:8}}>
+          {['Personal','Site'].map(d=>(
+            <button key={d} onClick={()=>setDomain(d)} style={{
+              flex:1,padding:'9px',borderRadius:8,fontFamily:'var(--mono)',fontSize:12,fontWeight:600,cursor:'pointer',
+              background:domain===d?'var(--blue)':'var(--bg3)',
+              border:domain===d?'none':'1px solid var(--border)',
+              color:domain===d?'#fff':'var(--text2)',
+            }}>{d}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:16,marginBottom:12}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginBottom:8,letterSpacing:'0.06em'}}>3. UPLOAD PDF STATEMENT</div>
+        <label style={{display:'block',background:'var(--bg3)',border:'2px dashed var(--border2)',borderRadius:8,padding:'24px',textAlign:'center',cursor:'pointer'}}>
+          <input type="file" accept=".pdf,application/pdf" onChange={handleFile} style={{display:'none'}}/>
+          <div style={{fontSize:28,marginBottom:8}}>📂</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:12,color:bank?'var(--text)':'var(--text3)'}}>
+            {bank ? `Tap to upload ${bank} statement PDF` : 'Select bank first'}
+          </div>
+        </label>
+        {progress&&<div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--amber)',marginTop:8,textAlign:'center'}}>{progress}</div>}
+      </div>
+      <div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',letterSpacing:'0.06em',marginBottom:4}}>ℹ PARSER NOTES</div>
+        <div style={{fontSize:11,color:'var(--text2)',lineHeight:1.6}}>
+          Works best with text-based PDFs (not scanned). If 0 rows found, the bank's PDF layout may differ — check console for raw text and adjust regex in code.
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── STEP: review ─────────────────────────────────────────────────
+  if(step==='review'){
+    const selCount=Object.values(selected).filter(Boolean).length;
+    return(
+      <div style={{paddingBottom:80}}>
+        {/* Sticky header */}
+        <div style={{position:'sticky',top:0,background:'var(--bg)',borderBottom:'1px solid var(--border)',padding:'12px 16px',zIndex:10,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <div>
+            <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:'var(--text)',letterSpacing:'0.06em'}}>📄 {pdfName.slice(0,28)}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:2}}>{bank} · {rows.length} found · {selCount} selected</div>
+          </div>
+          <div style={{display:'flex',gap:8}}>
+            <button onClick={()=>toggleAll(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'6px 10px',fontFamily:'var(--mono)',fontSize:10,cursor:'pointer'}}>None</button>
+            <button onClick={()=>toggleAll(true)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'6px 10px',fontFamily:'var(--mono)',fontSize:10,cursor:'pointer'}}>All</button>
+            <button onClick={()=>setStep('upload')} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'6px 10px',fontFamily:'var(--mono)',fontSize:10,cursor:'pointer'}}>← Back</button>
+          </div>
+        </div>
+
+        {/* Rows */}
+        <div style={{padding:'0 12px'}}>
+          {rows.map((row,i)=>{
+            const r=getRow(i);
+            const isDebit=!!row.debit;
+            const sel=selected[i];
+            return(
+              <div key={i} style={{
+                background:sel?'var(--bg2)':'var(--bg)',
+                border:`1px solid ${sel?'var(--border2)':'var(--border)'}`,
+                borderRadius:10,marginTop:10,padding:12,opacity:sel?1:0.45,
+              }}>
+                {/* Row header */}
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:10}}>
+                    <input type="checkbox" checked={!!sel} onChange={e=>setSelected(p=>({...p,[i]:e.target.checked}))} style={{width:16,height:16,accentColor:'var(--green)',cursor:'pointer'}}/>
+                    <div>
+                      <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>{r.date}</div>
+                      <div style={{fontSize:12,color:'var(--text)',marginTop:2,maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.particulars}</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:isDebit?'var(--red)':'var(--green)'}}>
+                      {isDebit?'−':'+'} ₹{parseFloat(String(r.amount||0).replace(/,/g,'')).toLocaleString('en-IN',{minimumFractionDigits:2})}
+                    </div>
+                    {row.balance&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>Bal: ₹{row.balance}</div>}
+                  </div>
+                </div>
+
+                {/* Editable fields */}
+                {sel&&<div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  <select value={r.type} onChange={e=>setEdit(i,'type',e.target.value)}
+                    style={{flex:1,minWidth:110,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}}>
+                    {['Expense','Income','Credit Spend','Credit Payment','Transfer'].map(t=>(
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                  <select value={r.category} onChange={e=>setEdit(i,'category',e.target.value)}
+                    style={{flex:2,minWidth:130,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'6px 8px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}}>
+                    {(allCategories||[]).map(c=>(<option key={c.id} value={c.id}>{c.emoji} {c.id}</option>))}
+                    <option value="Uncategorized">• Uncategorized</option>
+                  </select>
+                </div>}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Import bar */}
+        <div style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b))',left:0,right:0,background:'var(--bg)',borderTop:'1px solid var(--border)',padding:'12px 16px',zIndex:10}}>
+          {progress&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textAlign:'center',marginBottom:6}}>{progress}</div>}
+          <button onClick={handleImport} disabled={importing||!selCount} style={{
+            width:'100%',padding:'14px',borderRadius:10,border:'none',
+            background:importing||!selCount?'var(--bg3)':'var(--green)',
+            color:importing||!selCount?'var(--text3)':'#000',
+            fontFamily:'var(--mono)',fontSize:13,fontWeight:700,cursor:'pointer',letterSpacing:'0.06em',
+          }}>
+            {importing?progress||'Importing…':`⬇ Import ${selCount} Transaction${selCount!==1?'s':''}`}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── STEP: done ───────────────────────────────────────────────────
+  return(
+    <div style={{...m,textAlign:'center',paddingTop:48}}>
+      <div style={{fontSize:48,marginBottom:16}}>✅</div>
+      <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:'var(--green)',marginBottom:8}}>Import Complete</div>
+      <div style={{fontSize:12,color:'var(--text2)',marginBottom:32}}>Transactions added to your log.</div>
+      <button onClick={()=>{setStep('upload');setRows([]);setSelected({});setEditing({});setPdfName('');}} style={{
+        background:'var(--green)',border:'none',borderRadius:10,color:'#000',
+        fontFamily:'var(--mono)',fontSize:12,fontWeight:700,padding:'12px 28px',cursor:'pointer',
+      }}>Import Another PDF</button>
+    </div>
+  );
+}
+
+/* ── PinSettingsPanel — embedded in Settings accordion ── */
+function PinSettingsPanel(){
+  const hasPin=!!localStorage.getItem('jbf_pin_hash');
+  const [mode,setMode]=useState('idle'); // idle | change | remove
+  const [step,setStep]=useState(1);
+  const [digits,setDigits]=useState([]);
+  const [firstPin,setFirstPin]=useState([]);
+  const [msg,setMsg]=useState('');
+  const [shake,setShake]=useState(false);
+  const MAX=4;
+
+  const hashPin=async pin=>{
+    const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pin));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  };
+
+  const addDigit=async d=>{
+    const next=[...digits,d];
+    setDigits(next);
+    if(next.length<MAX) return;
+    const pin=next.join('');
+    if(mode==='change'){
+      if(step===1){
+        // verify current
+        const h=await hashPin(pin);
+        if(h!==localStorage.getItem('jbf_pin_hash')){
+          setMsg('❌ Wrong current PIN');setShake(true);setTimeout(()=>setShake(false),500);setDigits([]);
+        } else { setStep(2);setDigits([]);setMsg('Enter new PIN'); }
+      } else if(step===2){
+        setFirstPin(next);setStep(3);setDigits([]);setMsg('Confirm new PIN');
+      } else {
+        if(pin===firstPin.join('')){
+          const h=await hashPin(pin);localStorage.setItem('jbf_pin_hash',h);
+          setMsg('✓ PIN updated');setMode('idle');setStep(1);setDigits([]);setFirstPin([]);
+        } else {
+          setMsg('❌ No match — retry');setShake(true);setTimeout(()=>setShake(false),500);
+          setStep(2);setDigits([]);setFirstPin([]);
+        }
+      }
+    } else if(mode==='remove'){
+      const h=await hashPin(pin);
+      if(h===localStorage.getItem('jbf_pin_hash')){
+        localStorage.removeItem('jbf_pin_hash');
+        setMsg('✓ PIN removed');setMode('idle');setDigits([]);
+      } else {
+        setMsg('❌ Wrong PIN');setShake(true);setTimeout(()=>setShake(false),500);setDigits([]);
+      }
+    }
+  };
+  const del=()=>setDigits(p=>p.slice(0,-1));
+  const KEYS=[1,2,3,4,5,6,7,8,9,null,0,'⌫'];
+
+  const stepLabel={
+    change:{1:'Enter current PIN',2:'Enter new PIN',3:'Confirm new PIN'},
+    remove:{1:'Enter current PIN to remove'},
+  };
+
+  if(mode==='idle') return(
+    <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:10}}>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 12px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
+        <span style={{fontSize:20}}>{hasPin?'🔒':'🔓'}</span>
+        <div>
+          <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text)'}}>{hasPin?'PIN Lock is ON':'PIN Lock is OFF'}</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:2}}>{hasPin?'App requires PIN on every open':'No PIN required to open app'}</div>
+        </div>
+      </div>
+      {hasPin&&<button onClick={()=>{setMode('change');setStep(1);setDigits([]);setMsg('Enter current PIN');}}
+        style={{background:'var(--blue)',border:'none',borderRadius:8,color:'#fff',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer'}}>🔄 Change PIN</button>}
+      {hasPin&&<button onClick={()=>{setMode('remove');setStep(1);setDigits([]);setMsg('Enter PIN to confirm removal');}}
+        style={{background:'var(--bg3)',border:'1px solid var(--red)',borderRadius:8,color:'var(--red)',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer'}}>🗑 Remove PIN</button>}
+      {!hasPin&&<div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center',padding:'6px 0'}}>PIN will be set on next app open.</div>}
+    </div>
+  );
+
+  return(
+    <div style={{padding:'16px',display:'flex',flexDirection:'column',alignItems:'center',gap:16}}>
+      <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',letterSpacing:'0.06em'}}>{stepLabel[mode]?.[step]||''}</div>
+      <div style={{display:'flex',gap:14,animation:shake?'pinShake 0.4s':'none'}}>
+        {Array.from({length:MAX}).map((_,i)=>(
+          <div key={i} style={{width:12,height:12,borderRadius:'50%',background:i<digits.length?'var(--green)':'transparent',border:'2px solid',borderColor:i<digits.length?'var(--green)':'var(--border2)',transition:'all 0.15s'}}/>
+        ))}
+      </div>
+      {msg&&<div style={{fontFamily:'var(--mono)',fontSize:11,color:msg.startsWith('✓')?'var(--green)':'var(--amber)'}}>{msg}</div>}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,60px)',gap:10}}>
+        {KEYS.map((k,i)=>(
+          k===null?<div key={i}/>:
+          <button key={i} onClick={()=>k==='⌫'?del():digits.length<MAX&&addDigit(k)}
+            style={{width:60,height:60,borderRadius:'50%',background:k==='⌫'?'var(--bg2)':'var(--bg3)',border:'1px solid var(--border)',color:'var(--text)',fontFamily:'var(--mono)',fontSize:k==='⌫'?18:20,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>
+            {k}
+          </button>
+        ))}
+      </div>
+      <button onClick={()=>{setMode('idle');setDigits([]);setMsg('');setStep(1);}}
+        style={{background:'none',border:'none',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer',textDecoration:'underline'}}>Cancel</button>
+      <style>{`@keyframes pinShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
 function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme,customSiteCats,onSaveSiteCats}){
   /* Normalize opening — support both legacy number and new {amount, opening_date} */
@@ -2390,6 +2980,11 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
   const THEMES=[{id:'autumn',label:'Deep Autumn',bg:'#faf6f0',accent:'#5a8a1a'},{id:'midnight',label:'Exec Midnight',bg:'#0a0d12',accent:'#00d4aa'},{id:'nordic',label:'Nordic Light',bg:'#f7f9fc',accent:'#38a169'},{id:'terminal',label:'Terminal Quant',bg:'#070a07',accent:'#00ff77'}];
 
   return(<div className="fade-in" style={{paddingBottom:40}}>
+
+    {/* PIN Lock */}
+    <Acc id="pin" title="PIN Lock" emoji="🔒">
+      <PinSettingsPanel/>
+    </Acc>
 
     {/* Theme Picker */}
     <Acc id="theme" title="Theme" emoji="🎨">
