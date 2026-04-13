@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.7.0</title>
+<title>JB Finance v1.8.0</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script>(function(){var t=localStorage.getItem('jbf_theme')||'autumn';document.documentElement.setAttribute('data-theme',t);})();</script>
@@ -209,7 +209,7 @@ function LoginScreen(){
         {/* Logo area */}
         <div style={{textAlign:'center',marginBottom:32}}>
           <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.7.0</div>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',marginTop:4,letterSpacing:'0.12em',textTransform:'uppercase'}}>CFO Operating System · v1.8.0</div>
         </div>
         {/* Card */}
         <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:14,padding:24}}>
@@ -460,6 +460,7 @@ function App() {
         {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts}/>}
         {!loading&&tab==='settings'&&<SettingsScreen opening={opening} onSave={saveOpening} allAccountsH={allAccountsH} customAccounts={customAccounts} onSaveAccounts={saveCustomAccounts} customCategories={customCategories} onSaveCategories={saveCustomCategories} budgets={budgets} onSaveBudgets={saveBudgets} customSites={customSites} onSaveSites={saveCustomSites} customTeam={customTeam} onSaveTeam={saveCustomTeam} theme={theme} onSaveTheme={saveTheme} customSiteCats={customSiteCats} onSaveSiteCats={saveCustomSiteCats}/>}
         {!loading&&tab==='ai_command'&&<AiCommandScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
+        {!loading&&tab==='cashflow'&&<CashflowScreen txns={txns} budgets={budgets} onSaveBudgets={saveBudgets} liquid={liquid} allBanks={allBanks} balances={balances} recurring={recurring}/>}
       </div>
 
       {/* Floating + */}
@@ -470,7 +471,7 @@ function App() {
 
       {/* Menu */}
       {menuOpen&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-start'}} onClick={e=>e.target===e.currentTarget&&setMenuOpen(false)}><div style={{background:'var(--bg)',borderRadius:'0 0 16px 16px',border:'1px solid var(--border)',padding:'16px',maxHeight:'80vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text2)',letterSpacing:'0.08em'}}>MENU</span><button onClick={()=>setMenuOpen(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div>
-        {[{label:'Dashboard',icon:'◈',id:'dash'},{label:'Add Entry',icon:'+',id:'add'},{label:'Transaction Log',icon:'≡',id:'txns'},{label:'Wealth & Portfolio',icon:'📈',id:'investments'},{label:'Account Statement',icon:'◧',id:'statement'},{label:'Site Ledger',icon:'🏗',id:'site_ledger'},{label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},{label:'Udhari Ledger',icon:'◎',id:'udhari'},{label:'AI Command Center',icon:'🧠',id:'ai_command'}].map(item=>(<div key={item.id} onClick={()=>{setTab(item.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span><span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span></div>))}
+        {[{label:'Dashboard',icon:'◈',id:'dash'},{label:'Add Entry',icon:'+',id:'add'},{label:'Transaction Log',icon:'≡',id:'txns'},{label:'Income & Cashflow',icon:'💹',id:'cashflow'},{label:'Wealth & Portfolio',icon:'📈',id:'investments'},{label:'Account Statement',icon:'◧',id:'statement'},{label:'Site Ledger',icon:'🏗',id:'site_ledger'},{label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},{label:'Udhari Ledger',icon:'◎',id:'udhari'},{label:'AI Command Center',icon:'🧠',id:'ai_command'}].map(item=>(<div key={item.id} onClick={()=>{setTab(item.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span><span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span></div>))}
         <div onClick={()=>{setTab('settings');setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8,marginTop:4}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)',width:24,textAlign:'center'}}>⚙</span><span style={{fontSize:13,color:'var(--text2)'}}>Settings & Setup</span></div>
         <div onClick={()=>{db.auth.signOut();setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8,marginTop:4,borderTop:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--red)',width:24,textAlign:'center'}}>↩</span><span style={{fontSize:13,color:'var(--red)'}}>Sign Out ({session?.user?.email})</span></div>
       </div></div>}
@@ -1958,6 +1959,322 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
     </div>
   </div>);
 }
+/* ── CashflowScreen v1.8 ─────────────────────────────────────────
+   Income & Cashflow + YNAB Zero-Based Budgeting
+   Sections:
+     1. Month Selector
+     2. Cashflow Summary (Income − Expense − CC Payments = Net)
+     3. Income Sources breakdown
+     4. 6-month Income vs Expense trend bar chart
+     5. YNAB Budget Envelopes — zero-based, "To Assign" balance
+     6. Budget category editor (add/remove, set limits)
+───────────────────────────────────────────────────────────────── */
+function CashflowScreen({txns,budgets,onSaveBudgets,liquid,allBanks,balances,recurring}){
+  budgets=budgets||{};
+  const now=new Date();
+  const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const [selYear,setSelYear]=useState(now.getFullYear());
+  const [selMonth,setSelMonth]=useState(now.getMonth());
+  const [ynabView,setYnabView]=useState('envelopes'); /* 'envelopes' | 'editor' */
+  const [draftBudgets,setDraftBudgets]=useState({...budgets});
+  const [savingBudgets,setSavingBudgets]=useState(false);
+  const [newCat,setNewCat]=useState('');
+  const [activeSection,setActiveSection]=useState('cashflow'); /* 'cashflow' | 'ynab' */
+
+  /* Sync draft when budgets prop changes */
+  React.useEffect(()=>{setDraftBudgets({...budgets});},[JSON.stringify(budgets)]);
+
+  const active=txns.filter(t=>t.status!=='voided');
+
+  /* ── Month navigation ── */
+  const prevMonth=()=>{if(selMonth===0){setSelMonth(11);setSelYear(y=>y-1);}else setSelMonth(m=>m-1);};
+  const nextMonth=()=>{const isCurrentMonth=selYear===now.getFullYear()&&selMonth===now.getMonth();if(isCurrentMonth)return;if(selMonth===11){setSelMonth(0);setSelYear(y=>y+1);}else setSelMonth(m=>m+1);};
+  const isCurrentMonth=selYear===now.getFullYear()&&selMonth===now.getMonth();
+
+  /* ── Filter txns for selected month ── */
+  const monthTxns=active.filter(t=>{const d=new Date(t.created_at);return d.getMonth()===selMonth&&d.getFullYear()===selYear;});
+
+  /* ── Cashflow calculations ── */
+  const income=monthTxns.filter(t=>t.type==='Income').reduce((s,t)=>s+(+t.amount),0);
+  const expense=monthTxns.filter(t=>t.type==='Expense').reduce((s,t)=>s+(+t.amount),0);
+  const ccPay=monthTxns.filter(t=>t.type==='CC-Bank'||t.type==='Bank→CC').reduce((s,t)=>s+(+t.amount),0);
+  const uaExp=monthTxns.filter(t=>t.type==='UA Expense').reduce((s,t)=>s+(+t.amount),0);
+  const uaRecv=monthTxns.filter(t=>t.type==='UA Received').reduce((s,t)=>s+(+t.amount),0);
+  const netCashflow=income-expense-ccPay;
+
+  /* ── Income sources ── */
+  const incSources={};
+  monthTxns.filter(t=>t.type==='Income').forEach(t=>{
+    const src=t.category||t.particulars||'Other';
+    incSources[src]=(incSources[src]||0)+(+t.amount);
+  });
+  const incSourceList=Object.entries(incSources).sort((a,b)=>b[1]-a[1]);
+
+  /* ── 6-month trend ── */
+  const trend=Array.from({length:6},(_,i)=>{
+    let m=selMonth-5+i,y=selYear;
+    while(m<0){m+=12;y--;}
+    while(m>11){m-=12;y++;}
+    const mt=active.filter(t=>{const d=new Date(t.created_at);return d.getMonth()===m&&d.getFullYear()===y;});
+    const inc=mt.filter(t=>t.type==='Income').reduce((s,t)=>s+(+t.amount),0);
+    const exp=mt.filter(t=>t.type==='Expense').reduce((s,t)=>s+(+t.amount),0);
+    return{label:MONTHS[m],inc,exp,isSelected:m===selMonth&&y===selYear};
+  });
+  const trendMax=Math.max(...trend.map(t=>Math.max(t.inc,t.exp)),1);
+
+  /* ── YNAB: category spend this month ── */
+  const DEFAULT_CATS=['Household','Fuel','Food','Lifestyle','Maintenance','Travelling','Social','Donation','Child Education','Mobile Recharge'];
+  const budgetCats=[...new Set([...DEFAULT_CATS,...Object.keys(budgets),...Object.keys(draftBudgets)])].filter(Boolean);
+  const catSpend={};
+  monthTxns.filter(t=>t.type==='Expense').forEach(t=>{const c=t.category||'Misc';catSpend[c]=(catSpend[c]||0)+(+t.amount);});
+  const totalAssigned=budgetCats.reduce((s,c)=>(draftBudgets[c]||0)+s,0);
+  const toAssign=income-totalAssigned;
+  const totalSpent=monthTxns.filter(t=>t.type==='Expense').reduce((s,t)=>s+(+t.amount),0);
+
+  const handleSaveBudgets=async()=>{setSavingBudgets(true);await onSaveBudgets(draftBudgets);setSavingBudgets(false);};
+
+  const fmtAmt=v=>v>=1e7?'₹'+(v/1e7).toFixed(2)+'Cr':v>=1e5?'₹'+(v/1e5).toFixed(1)+'L':'₹'+Math.round(v).toLocaleString('en-IN');
+  const netCol=netCashflow>0?'var(--green)':netCashflow<0?'var(--red)':'var(--text3)';
+
+  return(
+    <div className="fade-in" style={{paddingBottom:24}}>
+
+      {/* ── Month Nav ── */}
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
+        <button onClick={prevMonth} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'5px 12px',fontFamily:'var(--mono)',fontSize:13,cursor:'pointer'}}>‹</button>
+        <div style={{textAlign:'center'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--text)'}}>{MONTHS[selMonth]} {selYear}</div>
+          {isCurrentMonth&&<div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--green)',textTransform:'uppercase',letterSpacing:'0.08em'}}>● current</div>}
+        </div>
+        <button onClick={nextMonth} disabled={isCurrentMonth} style={{background:isCurrentMonth?'var(--bg)':'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:isCurrentMonth?'var(--border)':'var(--text2)',padding:'5px 12px',fontFamily:'var(--mono)',fontSize:13,cursor:isCurrentMonth?'default':'pointer'}}>›</button>
+      </div>
+
+      {/* ── Section toggle ── */}
+      <div style={{display:'flex',margin:'8px 10px 4px',background:'var(--bg2)',borderRadius:8,padding:3,gap:3}}>
+        {[['cashflow','💹 Cashflow'],['ynab','📊 Budget']].map(([id,label])=>(
+          <button key={id} onClick={()=>setActiveSection(id)} style={{flex:1,background:activeSection===id?'var(--bg3)':'transparent',border:activeSection===id?'1px solid var(--border2)':'1px solid transparent',borderRadius:6,color:activeSection===id?'var(--text)':'var(--text3)',fontFamily:'var(--mono)',fontSize:11,fontWeight:activeSection===id?700:400,padding:'7px 4px',cursor:'pointer'}}>{label}</button>
+        ))}
+      </div>
+
+      {activeSection==='cashflow'&&(<>
+
+        {/* ── Cashflow Summary Card ── */}
+        <div style={{margin:'6px 10px',background:'var(--bg2)',border:'1.5px solid var(--border2)',borderRadius:10,overflow:'hidden'}}>
+          {/* Net Cashflow hero */}
+          <div style={{padding:'12px 14px',background:netCashflow>0?'var(--green-bg)':netCashflow<0?'var(--red-bg)':'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:8,color:netCol,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Net Cashflow</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:800,color:netCol,letterSpacing:'-1px'}}>{netCashflow>=0?'+':''}{fmtAmt(netCashflow)}</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:3}}>{income>0?Math.round((1-(expense/income))*100)+'% saved this month':'No income logged'}</div>
+          </div>
+          {/* Waterfall rows */}
+          {[
+            {label:'Income',value:income,col:'var(--green)',sign:'+',show:true},
+            {label:'Expenses',value:expense,col:'var(--red)',sign:'−',show:true},
+            ...(ccPay>0?[{label:'CC Payments',value:ccPay,col:'var(--amber)',sign:'−',show:true}]:[]),
+            ...(uaExp>uaRecv&&uaExp-uaRecv>0?[{label:'UA Net Out',value:uaExp-uaRecv,col:'var(--amber)',sign:'−',show:true}]:[]),
+          ].map((row,i,arr)=>{
+            const pct=income>0?Math.min(100,Math.round(row.value/income*100)):0;
+            return(
+            <div key={i} style={{padding:'8px 14px',borderBottom:i<arr.length-1?'1px solid var(--border)':'none'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{row.sign} {row.label}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:row.col}}>{row.sign==='+'?'':row.sign}{fmtAmt(row.value)}</span>
+              </div>
+              <div style={{background:'var(--bg3)',borderRadius:3,height:4}}>
+                <div style={{height:4,borderRadius:3,width:pct+'%',background:row.col,opacity:0.8,transition:'width 0.4s ease'}}/>
+              </div>
+              {row.sign!=='+'&&income>0&&<div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',marginTop:2}}>{pct}% of income</div>}
+            </div>
+          );})}
+        </div>
+
+        {/* ── Income Sources ── */}
+        {incSourceList.length>0&&(
+          <div style={{margin:'6px 10px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)'}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:9,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Income Sources</span>
+              <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:'var(--green)'}}>{fmtAmt(income)}</span>
+            </div>
+            {incSourceList.map(([src,amt],i)=>{
+              const pct=income>0?Math.round(amt/income*100):0;
+              return(
+              <div key={i} style={{padding:'8px 12px',borderBottom:i<incSourceList.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
+                  <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',maxWidth:'60%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{src}</span>
+                  <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                    <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>{pct}%</span>
+                    <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--green)'}}>{fmtAmt(amt)}</span>
+                  </div>
+                </div>
+                <div style={{background:'var(--bg3)',borderRadius:3,height:3}}>
+                  <div style={{height:3,borderRadius:3,width:pct+'%',background:'var(--green)',opacity:0.7}}/>
+                </div>
+              </div>
+            );})}
+          </div>
+        )}
+        {incSourceList.length===0&&(
+          <div style={{margin:'6px 10px',padding:'20px',textAlign:'center',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',background:'var(--bg2)',border:'1px dashed var(--border)',borderRadius:8}}>
+            No income logged for {MONTHS[selMonth]} {selYear}
+          </div>
+        )}
+
+        {/* ── 6-Month Trend Chart ── */}
+        <div style={{margin:'6px 10px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden'}}>
+          <div style={{padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)'}}>
+            <span style={{fontFamily:'var(--mono)',fontSize:9,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>6-Month Trend</span>
+          </div>
+          <div style={{padding:'12px 10px 8px'}}>
+            {/* Legend */}
+            <div style={{display:'flex',gap:12,marginBottom:10,paddingLeft:4}}>
+              <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:10,height:4,borderRadius:2,background:'var(--green)'}}/><span style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)'}}>Income</span></div>
+              <div style={{display:'flex',alignItems:'center',gap:4}}><div style={{width:10,height:4,borderRadius:2,background:'var(--red)'}}/><span style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)'}}>Expense</span></div>
+            </div>
+            {/* Bars */}
+            <div style={{display:'flex',gap:4,alignItems:'flex-end',height:80}}>
+              {trend.map((m,i)=>(
+                <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
+                  <div style={{display:'flex',gap:1,alignItems:'flex-end',height:64,width:'100%'}}>
+                    <div style={{flex:1,borderRadius:'2px 2px 0 0',background:'var(--green)',opacity:m.isSelected?1:0.5,height:(trendMax>0?m.inc/trendMax*64:0)+'px',minHeight:m.inc>0?2:0,transition:'height 0.3s ease'}}/>
+                    <div style={{flex:1,borderRadius:'2px 2px 0 0',background:'var(--red)',opacity:m.isSelected?1:0.5,height:(trendMax>0?m.exp/trendMax*64:0)+'px',minHeight:m.exp>0?2:0,transition:'height 0.3s ease'}}/>
+                  </div>
+                  <span style={{fontFamily:'var(--mono)',fontSize:7,color:m.isSelected?'var(--text)':'var(--text3)',fontWeight:m.isSelected?700:400}}>{m.label}</span>
+                  {/* Savings rate dot */}
+                  {m.inc>0&&<div style={{width:4,height:4,borderRadius:'50%',background:m.inc>m.exp?'var(--green)':'var(--red)',opacity:0.8}}/>}
+                </div>
+              ))}
+            </div>
+            <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',marginTop:6,textAlign:'center'}}>● green = saved, ● red = deficit</div>
+          </div>
+        </div>
+
+        {/* ── Running Balance this month ── */}
+        <div style={{margin:'6px 10px 12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'10px 14px'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:8}}>Account Snapshot</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {[
+              {label:'Liquid Balance',v:liquid,col:'var(--blue)'},
+              {label:'Net this month',v:netCashflow,col:netCol},
+            ].map(({label,v,col})=>(
+              <div key={label} style={{background:'var(--bg3)',borderRadius:6,padding:'8px 10px'}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',marginBottom:3}}>{label}</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:col}}>{v>=0?'':'-'}{fmtAmt(Math.abs(v))}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </>)}
+
+      {activeSection==='ynab'&&(<>
+
+        {/* ── YNAB Header — To Assign ── */}
+        <div style={{margin:'6px 10px',background:toAssign>=0?'var(--green-bg)':'var(--red-bg)',border:'1.5px solid '+(toAssign>=0?'var(--green)':'var(--red)'),borderRadius:10,padding:'12px 14px'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:8,color:toAssign>=0?'var(--green)':'var(--red)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>
+            {toAssign>=0?'💰 Ready to Assign':'⚠ Over-Assigned'}
+          </div>
+          <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:800,color:toAssign>=0?'var(--green)':'var(--red)',letterSpacing:'-1px'}}>{toAssign>=0?'':'-'}{fmtAmt(Math.abs(toAssign))}</div>
+          <div style={{display:'flex',gap:16,marginTop:8,paddingTop:8,borderTop:'1px solid '+(toAssign>=0?'var(--green)':'var(--red)'),opacity:0.8}}>
+            <div><div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',marginBottom:2}}>INCOME</div><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--green)'}}>{fmtAmt(income)}</div></div>
+            <div><div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',marginBottom:2}}>ASSIGNED</div><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--text)'}}>{fmtAmt(totalAssigned)}</div></div>
+            <div><div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',marginBottom:2}}>SPENT</div><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--red)'}}>{fmtAmt(totalSpent)}</div></div>
+          </div>
+          {income===0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',marginTop:6}}>⚠ No income for {MONTHS[selMonth]} — budgets set against ₹0</div>}
+        </div>
+
+        {/* ── Sub-toggle: Envelopes | Editor ── */}
+        <div style={{display:'flex',margin:'4px 10px',background:'var(--bg2)',borderRadius:6,padding:2,gap:2}}>
+          {[['envelopes','Envelopes'],['editor','Edit Limits']].map(([id,label])=>(
+            <button key={id} onClick={()=>setYnabView(id)} style={{flex:1,background:ynabView===id?'var(--bg3)':'transparent',border:ynabView===id?'1px solid var(--border2)':'1px solid transparent',borderRadius:5,color:ynabView===id?'var(--text)':'var(--text3)',fontFamily:'var(--mono)',fontSize:10,fontWeight:ynabView===id?700:400,padding:'6px 4px',cursor:'pointer'}}>{label}</button>
+          ))}
+        </div>
+
+        {ynabView==='envelopes'&&(
+          <div style={{margin:'4px 10px 12px'}}>
+            {budgetCats.map((cat,i)=>{
+              const limit=draftBudgets[cat]||0;
+              const spent=catSpend[cat]||0;
+              const remaining=limit-spent;
+              const over=limit>0&&spent>limit;
+              const pct=limit>0?Math.min(100,Math.round(spent/limit*100)):0;
+              const hasLimit=limit>0;
+              return(
+              <div key={cat} style={{background:'var(--bg2)',border:'1px solid '+(over?'var(--red)':'var(--border)'),borderRadius:8,padding:'10px 12px',marginBottom:6}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                  <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text)',fontWeight:600}}>{cat}</span>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:over?'var(--red)':hasLimit?'var(--text)':'var(--text3)'}}>{fmtAmt(spent)}{hasLimit?' / '+fmtAmt(limit):''}</div>
+                    {hasLimit&&<div style={{fontFamily:'var(--mono)',fontSize:8,color:over?'var(--red)':remaining===0?'var(--text3)':'var(--green)',marginTop:1}}>{over?'Over by '+fmtAmt(Math.abs(remaining)):remaining===0?'Fully used':'Left: '+fmtAmt(remaining)}</div>}
+                    {!hasLimit&&spent>0&&<div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--amber)',marginTop:1}}>No limit set</div>}
+                  </div>
+                </div>
+                {hasLimit&&(
+                  <div style={{background:'var(--bg3)',borderRadius:3,height:5}}>
+                    <div style={{height:5,borderRadius:3,width:pct+'%',background:over?'var(--red)':pct>80?'var(--amber)':'var(--green)',transition:'width 0.4s ease'}}/>
+                  </div>
+                )}
+                {!hasLimit&&spent>0&&(
+                  <div style={{background:'var(--bg3)',borderRadius:3,height:3}}>
+                    <div style={{height:3,borderRadius:3,width:'100%',background:'var(--amber)',opacity:0.4}}/>
+                  </div>
+                )}
+              </div>
+            );})}
+            {/* Unbudgeted categories */}
+            {Object.entries(catSpend).filter(([c])=>!budgetCats.includes(c)).map(([cat,spent])=>(
+              <div key={cat} style={{background:'var(--bg2)',border:'1px dashed var(--border)',borderRadius:8,padding:'8px 12px',marginBottom:5,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>{cat}</span>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--red)'}}>{fmtAmt(spent)}</div>
+                  <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)'}}>unbudgeted</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {ynabView==='editor'&&(
+          <div style={{margin:'4px 10px 12px'}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',padding:'4px 2px 8px',letterSpacing:'0.04em'}}>Set monthly limit for each category. Leave blank for no limit.</div>
+            {budgetCats.map(cat=>(
+              <div key={cat} style={{display:'flex',alignItems:'center',gap:8,marginBottom:6}}>
+                <div style={{flex:1,fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{cat}</div>
+                <div style={{display:'flex',alignItems:'center',gap:4}}>
+                  <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>₹</span>
+                  <input
+                    type="number"
+                    value={draftBudgets[cat]||''}
+                    placeholder="no limit"
+                    onChange={e=>setDraftBudgets(p=>({...p,[cat]:parseFloat(e.target.value)||0}))}
+                    style={{width:90,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,padding:'5px 8px',textAlign:'right',outline:'none'}}
+                  />
+                </div>
+                <button onClick={()=>setDraftBudgets(p=>{const n={...p};delete n[cat];return n;})} style={{background:'none',border:'none',color:'var(--text3)',fontSize:14,cursor:'pointer',padding:'2px 4px'}}>✕</button>
+              </div>
+            ))}
+            {/* Add new category */}
+            <div style={{display:'flex',gap:6,marginTop:10,paddingTop:10,borderTop:'1px solid var(--border)'}}>
+              <input
+                value={newCat}
+                onChange={e=>setNewCat(e.target.value)}
+                placeholder="New category..."
+                onKeyDown={e=>{if(e.key==='Enter'&&newCat.trim()){setDraftBudgets(p=>({...p,[newCat.trim()]:0}));setNewCat('');} }}
+                style={{flex:1,background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,padding:'7px 10px',outline:'none'}}
+              />
+              <button onClick={()=>{if(newCat.trim()){setDraftBudgets(p=>({...p,[newCat.trim()]:0}));setNewCat('');}}} style={{background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'0 14px',cursor:'pointer'}}>+ Add</button>
+            </div>
+            {/* Save */}
+            <button onClick={handleSaveBudgets} disabled={savingBudgets} style={{width:'100%',marginTop:10,background:savingBudgets?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:savingBudgets?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,padding:'12px',cursor:'pointer'}}>
+              {savingBudgets?'Saving...':'💾 Save Budget Limits'}
+            </button>
+          </div>
+        )}
+
+      </>)}
+    </div>
+  );
+}
+
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
 function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme,customSiteCats,onSaveSiteCats}){
   /* Normalize opening — support both legacy number and new {amount, opening_date} */
