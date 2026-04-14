@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.9.0</title>
+<title>JB Finance v1.9.1</title>
 <link rel="manifest" href="/jbfinance-/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -1242,6 +1242,34 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
         </div>
       </div>
 
+      {/* ── CC DUES CARD: Two-column Billed/Unbilled ── */}
+      {totalCC>0&&<div style={{background:'var(--bg2)',border:'1.5px solid var(--red)',borderRadius:10,marginBottom:6,overflow:'hidden'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--red-bg)'}}>
+          <span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.08em',color:'var(--red)',textTransform:'uppercase'}}>💳 CC Dues</span>
+          <span onClick={()=>setTab('ccbill')} style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:600,color:'var(--red)',cursor:'pointer'}}>Total {fmtAmt(totalCC)} ›</span>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0}}>
+          {ccDues.map((x,idx)=>{
+            const reconData=(() => {try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[x.name]||null;}catch{return null;}})();
+            const billStart=reconData?reconData.billEnd:(()=>{const sd=parseInt((JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}')[x.name])||'1');const d=new Date();const lastStmt=new Date(d.getFullYear(),d.getMonth(),sd);if(lastStmt>d) return new Date(d.getFullYear(),d.getMonth()-1,sd).toISOString().slice(0,10);const prevBill=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,sd);return prevBill.toISOString().slice(0,10);})();
+            const allCCTxns=active.filter(t=>t.from_account===x.name&&(t.type==='Expense'||t.type==='UA Expense'));
+            const unbilledTxns=allCCTxns.filter(t=>t.created_at.slice(0,10)>billStart);
+            const unbilled=unbilledTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+            const billed=x.due-unbilled;
+            return(<React.Fragment key={x.name}>
+              <div style={{padding:'10px 12px',borderRight:idx<ccDues.length-1?'1px solid var(--border)':'none',borderBottom:idx<ccDues.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{x.name} · Billed</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:billed>0?'var(--red)':'var(--text3)'}}>{billed>0?fmtAmt(billed):'—'}</div>
+              </div>
+              <div style={{padding:'10px 12px',borderBottom:idx<ccDues.length-1?'1px solid var(--border)':'none'}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Unbilled</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:unbilled>0?'var(--amber)':'var(--text3)'}}>{unbilled>0?fmtAmt(unbilled):'—'}</div>
+              </div>
+            </React.Fragment>);
+          })}
+        </div>
+      </div>}
+
       {/* ── Month summary strip ── */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:6}}>
         {[['Income',income,'var(--green)'],['Expense',expense,'var(--red)'],['Liquid',liquid,'var(--blue)']].map(([l,v,c])=>(
@@ -1747,43 +1775,102 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
     })}
   </div>);
 }
-/* ── StatementScreen ── */
+/* ── StatementScreen: 3-column view (Description | Deposits | Withdrawals) with print ── */
 function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances}){
   const [acct,setAcct]=useState(allBanks[0]||'');const [period,setPeriod]=useState('this_month');
+  const [customStart,setCustomStart]=useState('');const [customEnd,setCustomEnd]=useState('');
   const now=new Date();const month=now.getMonth();const year=now.getFullYear();
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const acctTxns=txns.filter(t=>t.status!=='voided').filter(t=>t.from_account===acct||t.to_account===acct).filter(t=>{const d=new Date(t.created_at);if(period==='this_month')return d.getMonth()===month&&d.getFullYear()===year;if(period==='last_month'){const lm=month===0?11:month-1,ly=month===0?year-1:year;return d.getMonth()===lm&&d.getFullYear()===ly;}if(period==='this_year')return d.getFullYear()===year;return true;}).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
-  const beforePeriod=txns.filter(t=>t.status!=='voided').filter(t=>t.from_account===acct||t.to_account===acct).filter(t=>{if(period==='all')return false;const d=new Date(t.created_at);if(period==='this_month')return d<new Date(year,month,1);if(period==='last_month'){const lm=month===0?11:month-1,ly=month===0?year-1:year;return d<new Date(ly,lm,1);}if(period==='this_year')return d<new Date(year,0,1);return false;});
   const isCC=allCC.includes(acct);
-  const eff=t=>{const a=parseFloat(t.amount)||0;if(t.type==='Expense'||t.type==='UA Expense')return t.from_account===acct?-a:0;if(t.type==='Income'||t.type==='UA Received')return t.to_account===acct?+a:0;let e=0;if(t.from_account===acct)e-=a;if(t.to_account===acct)e+=a;return e;};
+  
+  /* Filter txns based on period */
+  const acctTxns=txns.filter(t=>t.status!=='voided').filter(t=>t.from_account===acct||t.to_account===acct).filter(t=>{
+    const d=new Date(t.created_at);
+    if(period==='this_month')return d.getMonth()===month&&d.getFullYear()===year;
+    if(period==='last_month'){const lm=month===0?11:month-1,ly=month===0?year-1:year;return d.getMonth()===lm&&d.getFullYear()===ly;}
+    if(period==='this_year')return d.getFullYear()===year;
+    if(period==='custom'&&customStart&&customEnd){const ds=t.created_at.slice(0,10);return ds>=customStart&&ds<=customEnd;}
+    return true;
+  }).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at));
+  
+  const beforePeriod=txns.filter(t=>t.status!=='voided').filter(t=>t.from_account===acct||t.to_account===acct).filter(t=>{
+    if(period==='all')return false;
+    const d=new Date(t.created_at);
+    if(period==='this_month')return d<new Date(year,month,1);
+    if(period==='last_month'){const lm=month===0?11:month-1,ly=month===0?year-1:year;return d<new Date(ly,lm,1);}
+    if(period==='this_year')return d<new Date(year,0,1);
+    if(period==='custom'&&customStart)return t.created_at.slice(0,10)<customStart;
+    return false;
+  });
+  
   const rawOpen=opening[acct];const openingAmt=typeof rawOpen==='object'&&rawOpen!==null?(rawOpen.amount||0):(rawOpen||0);
-  const openBal=openingAmt+beforePeriod.reduce((s,t)=>s+eff(t),0);
-  let runBal=openBal;const rows=acctTxns.map(t=>{const effect=eff(t);runBal+=effect;return{...t,effect,runBal};});
-  const closeBal=runBal,totIn=rows.filter(r=>r.effect>0).reduce((s,r)=>s+r.effect,0),totOut=rows.filter(r=>r.effect<0).reduce((s,r)=>s+Math.abs(r.effect),0);
-  const periodLabel={this_month:`${MONTHS[month]} ${year}`,last_month:`${MONTHS[month===0?11:month-1]} ${month===0?year-1:year}`,this_year:`FY ${year}`,all:'All Time'}[period];
+  const openBal=openingAmt+beforePeriod.reduce((s,t)=>{
+    const a=parseFloat(t.amount)||0;
+    if(t.type==='Expense'||t.type==='UA Expense')return t.from_account===acct?s-a:s;
+    if(t.type==='Income'||t.type==='UA Received')return t.to_account===acct?s+a:s;
+    let e=0;if(t.from_account===acct)e-=a;if(t.to_account===acct)e+=a;return s+e;
+  },0);
+  
+  /* Build rows with deposit/withdrawal columns */
+  const rows=acctTxns.map(t=>{
+    const a=parseFloat(t.amount)||0;
+    let deposit=0,withdrawal=0;
+    if(t.type==='Income'||t.type==='UA Received'){if(t.to_account===acct)deposit=a;}
+    else if(t.type==='Expense'||t.type==='UA Expense'){if(t.from_account===acct)withdrawal=a;}
+    else{if(t.to_account===acct)deposit=a;if(t.from_account===acct)withdrawal=a;}
+    return{...t,deposit,withdrawal};
+  });
+  
+  const totDeposit=rows.reduce((s,r)=>s+r.deposit,0);
+  const totWithdrawal=rows.reduce((s,r)=>s+r.withdrawal,0);
+  const closeBal=openBal+totDeposit-totWithdrawal;
+  
+  const periodLabel=(()=>{
+    if(period==='this_month')return`${MONTHS[month]} ${year}`;
+    if(period==='last_month')return`${MONTHS[month===0?11:month-1]} ${month===0?year-1:year}`;
+    if(period==='this_year')return`FY ${year}`;
+    if(period==='custom'&&customStart&&customEnd)return`${customStart} to ${customEnd}`;
+    return'All Time';
+  })();
+  
+  const handlePrint=()=>{
+    const html=`<!DOCTYPE html><html><head><title>${acct} Statement - ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.summary div{border:1px solid #ccc;padding:8px;background:#fafafa;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:12px;font-weight:700;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}</style></head><body><h1>${acct} — Bank Ledger</h1><h2>${periodLabel}</h2><div class="summary"><div><div class="label">Opening Balance</div><div class="value">₹${fmtAmt(Math.abs(openBal))}</div></div><div><div class="label">Total Deposits</div><div class="value">₹${fmtAmt(totDeposit)}</div></div><div><div class="label">Total Withdrawals</div><div class="value">₹${fmtAmt(totWithdrawal)}</div></div></div><table><thead><tr><th style="width:20%;">Date</th><th style="width:40%;">Description</th><th style="width:20%;">Deposit (₹)</th><th style="width:20%;">Withdrawal (₹)</th></tr></thead><tbody><tr style="background:#fff8e1;"><td colspan="2" style="font-weight:600;">OPENING BALANCE</td><td class="amt">${openBal>=0?fmtAmt(openBal):'—'}</td><td class="amt">${openBal<0?fmtAmt(Math.abs(openBal)):'—'}</td></tr>${rows.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category||t.type}</td><td class="amt">${t.deposit>0?fmtAmt(t.deposit):'—'}</td><td class="amt">${t.withdrawal>0?fmtAmt(t.withdrawal):'—'}</td></tr>`).join('')}<tr style="background:#e8f5e9;font-weight:600;"><td colspan="2">CLOSING BALANCE</td><td class="amt">${closeBal>=0?fmtAmt(closeBal):'—'}</td><td class="amt">${closeBal<0?fmtAmt(Math.abs(closeBal)):'—'}</td></tr></tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.0</div></body></html>`;
+    const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+  };
+  
   const cS=a=>({display:'inline-block',border:a?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:14,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,color:a?'var(--green)':'var(--text2)',background:a?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',margin:'0 4px 4px 0'});
+  
   return(<div className="fade-in">
     <p className="sec-label">Select Account</p><div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>{[...allBanks,...allCC].map(a=><div key={a} style={cS(acct===a)} onClick={()=>setAcct(a)}>{a}</div>)}</div>
-    <p className="sec-label">Period</p><div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>{[['this_month','This Month'],['last_month','Last Month'],['this_year','This Year'],['all','All Time']].map(([k,l])=><div key={k} style={cS(period===k)} onClick={()=>setPeriod(k)}>{l}</div>)}</div>
+    <p className="sec-label">Period</p><div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>{[['this_month','This Month'],['last_month','Last Month'],['this_year','This Year'],['custom','Custom'],['all','All Time']].map(([k,l])=><div key={k} style={cS(period===k)} onClick={()=>setPeriod(k)}>{l}</div>)}</div>
+    {period==='custom'&&<div style={{padding:'0 16px 8px',display:'flex',gap:8,alignItems:'center'}}><input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text)'}}/><span style={{color:'var(--text3)',fontSize:11}}>to</span><input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text)'}}/></div>}
+    
     <div style={{margin:'8px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px'}}>
-      <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:8,letterSpacing:'0.08em',textTransform:'uppercase'}}>{acct} — {periodLabel}</div>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',letterSpacing:'0.08em',textTransform:'uppercase'}}>{acct} — {periodLabel}</div>
+        <button onClick={handlePrint} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'5px 12px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>
+      </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
         <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Opening</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:openBal<0?'var(--red)':'var(--text)'}}>{openBal<0?'−':''}{fmtAmt(Math.abs(openBal))}</div></div>
-        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{isCC?'Spent':'In/Out'}</div><div style={{fontSize:12,fontFamily:'var(--mono)'}}><span style={{color:'var(--green)'}}>+{fmtAmt(totIn)}</span><span style={{color:'var(--text3)',margin:'0 3px'}}>/</span><span style={{color:'var(--red)'}}>−{fmtAmt(totOut)}</span></div></div>
-        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Closing</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:closeBal<0?'var(--red)':'var(--green)'}}>{closeBal<0?'−':''}{fmtAmt(Math.abs(closeBal))}</div></div>
+        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Deposits</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:'var(--green)'}}>+{fmtAmt(totDeposit)}</div></div>
+        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Withdrawals</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:'var(--red)'}}>−{fmtAmt(totWithdrawal)}</div></div>
       </div>
+      <div style={{borderTop:'1px solid var(--border)',marginTop:8,paddingTop:8}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Closing Balance</div><div style={{fontSize:16,fontWeight:700,fontFamily:'var(--mono)',color:closeBal<0?'var(--red)':'var(--green)'}}>{closeBal<0?'−':''}{fmtAmt(Math.abs(closeBal))}</div></div>
     </div>
+    
     {rows.length===0&&<div className="empty">No transactions for this account in this period.</div>}
-    <div style={{margin:'0 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-      {rows.length>0&&<div style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Amount</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right',minWidth:80}}>Balance</span></div>}
+    {rows.length>0&&<div style={{margin:'0 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Deposit</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Withdrawal</span></div>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:'var(--amber-bg)'}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--text2)'}}>OPENING BALANCE</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:openBal>=0?'var(--green)':'var(--text3)'}}>{openBal>=0?fmtAmt(openBal):'—'}</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:openBal<0?'var(--red)':'var(--text3)'}}>{openBal<0?fmtAmt(Math.abs(openBal)):'—'}</div></div>
       {rows.map((t,i)=>(
-        <div key={t.id} style={{display:'grid',gridTemplateColumns:'1fr auto auto',gap:8,padding:'10px 12px',borderBottom:i<rows.length-1?'1px solid var(--border)':'none',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
-          <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category||t.type}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)}{t.category&&<span style={{marginLeft:6}}>{t.category}</span>}{t.from_account===acct&&t.to_account&&<span style={{marginLeft:6,color:'var(--blue)'}}>→{t.to_account}</span>}{t.to_account===acct&&t.from_account&&<span style={{marginLeft:6,color:'var(--green)'}}>←{t.from_account}</span>}</div></div>
-          <div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:t.effect>0?'var(--green)':t.effect<0?'var(--red)':'var(--text3)'}}>{t.effect>0?'+':'−'}{fmtAmt(Math.abs(t.effect))}</div></div>
-          <div style={{textAlign:'right',minWidth:80,flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:12,color:t.runBal<0?'var(--red)':'var(--text2)'}}>{t.runBal<0?'−':''}{fmtAmt(Math.abs(t.runBal))}</div></div>
+        <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+          <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category||t.type}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)}{t.category&&<span style={{marginLeft:6}}>{t.category}</span>}</div></div>
+          <div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:t.deposit>0?'var(--green)':'var(--text3)'}}>{t.deposit>0?fmtAmt(t.deposit):'—'}</div></div>
+          <div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:t.withdrawal>0?'var(--red)':'var(--text3)'}}>{t.withdrawal>0?fmtAmt(t.withdrawal):'—'}</div></div>
         </div>
       ))}
-    </div>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',background:'var(--green-bg)',fontWeight:700}}><div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>CLOSING BALANCE</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal>=0?'var(--green)':'var(--text3)'}}>{closeBal>=0?fmtAmt(closeBal):'—'}</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal<0?'var(--red)':'var(--text3)'}}>{closeBal<0?fmtAmt(Math.abs(closeBal)):'—'}</div></div>
+    </div>}
   </div>);
 }
 
@@ -1930,28 +2017,37 @@ function CCBillScreen({txns,customAccounts}){
       <button style={tabSel(ccTab==='bills')} onClick={()=>setCCTab('bills')}>Reconcile Bill{stmtGenerated?'':' (not yet)'}</button>
     </div>
 
-    {/* ── UNBILLED TAB ── */}
+    {/* ── UNBILLED TAB with 3-column ledger ── */}
     {ccTab==='unbilled'&&(<div>
       <div style={{margin:'12px 16px 0',background:'var(--bg2)',border:'1px solid var(--amber)',borderRadius:10,padding:'14px'}}>
-        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Current Cycle · Unbilled Spends</div>
-        <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:800,color:'var(--amber)',marginBottom:4}}>{fmtAmt(unbilledTotal)}</div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+          <div>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Current Cycle · Unbilled Spends</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:800,color:'var(--amber)'}}>{fmtAmt(unbilledTotal)}</div>
+          </div>
+          {unbilled.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Unbilled Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;padding:10px;background:#fff3e0;border:1px solid #ff9800;border-radius:6px;text-align:center;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:14px;font-weight:700;color:#ff9800;}</style></head><body><h1>${selCC} — Unbilled Ledger</h1><h2>Current Cycle (Since ${fmtDate(unbilledFrom)})</h2><table><thead><tr><th style="width:15%;">Date</th><th style="width:50%;">Description</th><th style="width:15%;">Category</th><th style="width:20%;">Spend (₹)</th></tr></thead><tbody>${[...unbilled].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div class="summary"><div class="label">Total Unbilled Spends</div><div class="value">₹${fmtAmt(unbilledTotal)}</div><div style="margin-top:8px;font-size:9px;color:#666;">Next Statement: ${fmtDate(nextStmt)} · ${unbilled.length} transactions</div></div><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.0</div></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--amber)',color:'#000',border:'none',borderRadius:6,padding:'5px 12px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer',flexShrink:0}}>🖨 Print</button>}
+        </div>
         <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>
           Since {fmtDate(unbilledFrom)} · {unbilled.length} txns · Statement on {fmtDate(nextStmt)}
           {lastRecon&&<span style={{color:'var(--green)',marginLeft:6}}>· From last reconciled date</span>}
         </div>
       </div>
       {unbilled.length>0
-        ?<><p className="sec-label" style={{marginTop:8}}>Unbilled Transactions</p>
-          <div style={{marginBottom:24}}>{[...unbilled].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t=>(
-            <div key={t.id} className="txn-row">
-              <div className="txn-left"><div className="txn-cat">{t.category}</div><div className="txn-desc">{t.particulars||t.category}</div><div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div>
-              <div className="txn-right"><div className="txn-amt" style={{color:'var(--amber)'}}>−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div>
+        ?<div style={{margin:'12px 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
+          {[...unbilled].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>(
+            <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+              <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div>
+              <div><div style={{fontSize:11,color:'var(--text2)',fontFamily:'var(--mono)'}}>{t.category}</div></div>
+              <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--amber)'}}>−{fmtAmt(t.amount)}</div></div>
             </div>
-          ))}</div></>
+          ))}
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',background:'var(--amber-bg)',fontWeight:700}}><div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>TOTAL UNBILLED</div><div/><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:'var(--amber)'}}>−{fmtAmt(unbilledTotal)}</div></div>
+        </div>
         :<div className="empty">No unbilled charges since {fmtDate(unbilledFrom)}.<br/>This cycle is clear! 🎉</div>}
     </div>)}
 
-    {/* ── BILLS TAB ── */}
+    {/* ── BILLS TAB with 3-column ledger ── */}
     {ccTab==='bills'&&(<div>
       {!stmtGenerated&&<div style={{margin:'12px 16px',background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--amber)'}}>
         ⏳ Statement not yet generated for this cycle. Generates on the <strong>{stmtDay}{ord(stmtDay)}</strong> of each month.
@@ -1968,7 +2064,7 @@ function CCBillScreen({txns,customAccounts}){
 
       {/* Reconciliation summary */}
       <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{billed.length} txn{billed.length!==1?'s':''}</span></div>
+        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><div style={{display:'flex',gap:8,alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{billed.length} txn{billed.length!==1?'s':''}</span>{billed.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Bill Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.summary div{border:1px solid #ccc;padding:8px;background:#fafafa;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:12px;font-weight:700;}</style></head><body><h1>${selCC} — Bill Statement</h1><h2>${fmtDate(billStart)} to ${fmtDate(billEnd)}</h2><div class="summary"><div><div class="label">App Tracked</div><div class="value">₹${fmtAmt(billedTotal)}</div></div><div><div class="label">Bank Statement</div><div class="value">₹${hasStmt?fmtAmt(sa):'—'}</div></div><div><div class="label">Difference</div><div class="value" style="color:${diff===0?'#4caf50':diff>0?'#f44336':'#4caf50'};">${diff===0?'✓ Matched':diff>0?'+₹'+fmtAmt(diff):'−₹'+fmtAmt(Math.abs(diff))}</div></div></div><table><thead><tr><th style="width:15%;">Date</th><th style="width:50%;">Description</th><th style="width:15%;">Category</th><th style="width:20%;">Spend (₹)</th></tr></thead><tbody>${[...billed].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}<tr style="background:#ffebee;font-weight:600;"><td colspan="3">TOTAL BILL</td><td class="amt">₹${fmtAmt(billedTotal)}</td></tr></tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.0${lastRecon?' · Reconciled':'·  Pending Reconciliation'}</div></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontFamily:'var(--mono)',fontSize:9,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>}</div></div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>{fmtAmt(billedTotal)}</span></div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>Bank Statement Amount</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:hasStmt?'var(--text)':'var(--text3)'}}>{hasStmt?fmtAmt(sa):'—'}</span></div>
         {hasStmt&&<div style={{padding:'14px',background:diff===0?'var(--green-bg)':diff>0?'var(--red-bg)':'var(--green-bg)',borderTop:'2px solid '+(diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)')}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{diff===0?'✓ Perfectly Matched!':diff>0?'Unaccounted Bank Charges':'Cashbacks / Refunds'}</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)'}}>{diff===0?fmtAmt(0):diff>0?'+'+fmtAmt(diff):'−'+fmtAmt(Math.abs(diff))}</div></div>}
@@ -1986,8 +2082,19 @@ function CCBillScreen({txns,customAccounts}){
           </button>}
       </div>}
 
-      {billed.length>0&&<><p className="sec-label" style={{marginTop:16}}>Billed Transactions</p><div style={{marginBottom:24}}>{[...billed].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map(t=><div key={t.id} className="txn-row"><div className="txn-left"><div className="txn-cat">{t.category}</div><div className="txn-desc">{t.particulars||t.category}</div><div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div><div className="txn-right"><div className="txn-amt out">−{fmtAmt(t.amount)}</div><div className="txn-acct">{t.from_account}</div></div></div>)}</div></>}
-      {billed.length===0&&<div className="empty">No tracked transactions for {selCC} in this period.</div>}
+      {billed.length>0
+        ?<div style={{margin:'16px 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
+          {[...billed].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>(
+            <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+              <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div></div>
+              <div><div style={{fontSize:11,color:'var(--text2)',fontFamily:'var(--mono)'}}>{t.category}</div></div>
+              <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--red)'}}>−{fmtAmt(t.amount)}</div></div>
+            </div>
+          ))}
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',background:'var(--red-bg)',fontWeight:700}}><div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>TOTAL BILLED</div><div/><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:'var(--red)'}}>−{fmtAmt(billedTotal)}</div></div>
+        </div>
+        :<div className="empty">No tracked transactions for {selCC} in this period.</div>}
     </div>)}
   </div>);
 }
@@ -3116,7 +3223,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.7.0 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v1.7: Pagination fix · CC Bill logic · AI CORS fix</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.9.1 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v1.9.1: CC Billed/Unbilled view · 3-col ledgers · Print statements<br/>v1.7: Pagination fix · CC Bill logic · AI CORS fix</div>
   </div>);
 }
 /* ── RENDER ── */
