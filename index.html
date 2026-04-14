@@ -138,28 +138,7 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-/* ── v1.9 Service Worker Registration ── */
-if('serviceWorker' in navigator){
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/jbfinance-/sw.js', {scope: '/jbfinance-/'})
-      .then(reg => {
-        console.log('[JBF] SW registered, scope:', reg.scope);
-        /* Check for updates every 60 min */
-        setInterval(() => reg.update(), 60 * 60 * 1000);
-        /* Notify user when new version is ready */
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          newWorker.addEventListener('statechange', () => {
-            if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
-              /* Show update toast via custom event — App listens for this */
-              window.dispatchEvent(new CustomEvent('jbf-sw-update'));
-            }
-          });
-        });
-      })
-      .catch(err => console.warn('[JBF] SW registration failed:', err));
-  });
-}
+/* Service Worker disabled for Claude artifact viewer environment */
 </script>
 </head>
 <body>
@@ -408,6 +387,16 @@ function App() {
   const [loading,setLoading]                 = useState(true);
   const [globalSearch,setGlobalSearch]       = useState('');
   const [addPrefill,setAddPrefill]           = useState(null);
+  
+  /* --- NEW ROUTING & FILTER STATES --- */
+  const [txnDateFilter, setTxnDateFilter]    = useState('This Month');
+  const [txnCustomStart, setTxnCustomStart]  = useState('');
+  const [txnCustomEnd, setTxnCustomEnd]      = useState('');
+  const [txnFilterAcct, setTxnFilterAcct]    = useState('');
+  const [txnFilterType, setTxnFilterType]    = useState('');
+  const [stmtAcct, setStmtAcct]              = useState('');
+  const [stmtPeriod, setStmtPeriod]          = useState('this_month');
+
   const [theme,setTheme]                     = useState(()=>localStorage.getItem('jbf_theme')||'autumn');
   const [streak]                             = useState(()=>getStreak());
 
@@ -990,21 +979,29 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   </div>);
 }
 /* ── TxnsScreen ── */
-function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,allCategories,globalSearch,setGlobalSearch}){
-  const [dateFilter,setDateFilter]=useState('This Month');const [customStart,setCustomStart]=useState('');const [customEnd,setCustomEnd]=useState('');
+function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,allCategories,globalSearch,setGlobalSearch, txnDateFilter, setTxnDateFilter, txnCustomStart, setTxnCustomStart, txnCustomEnd, setTxnCustomEnd, txnFilterAcct, setTxnFilterAcct, txnFilterType, setTxnFilterType}){
   const [selected,setSelected]=useState(null);const [editMode,setEditMode]=useState(null);const [saving,setSaving]=useState(false);
   const [corrAmt,setCorrAmt]=useState('');const [corrDesc,setCorrDesc]=useState('');const [corrCat,setCorrCat]=useState('');
   const [corrDate,setCorrDate]=useState('');const [corrFrom,setCorrFrom]=useState('');const [corrTo,setCorrTo]=useState('');
   const [search,setSearch]=useState(globalSearch||'');
   useEffect(()=>{setSearch(globalSearch||'');},[globalSearch]);
+
   const now2=new Date();const curMonth=now2.getMonth();const curYear=now2.getFullYear();
-  const inWin=t=>{const d=new Date(t.created_at);if(dateFilter==='This Month')return d.getMonth()===curMonth&&d.getFullYear()===curYear;if(dateFilter==='Last Month'){const lm=curMonth===0?11:curMonth-1,ly=curMonth===0?curYear-1:curYear;return d.getMonth()===lm&&d.getFullYear()===ly;}if(dateFilter==='Past 3 Months'){const c=new Date(now2);c.setMonth(c.getMonth()-3);c.setDate(1);return d>=c;}if(dateFilter==='This Year')return d.getFullYear()===curYear;if(dateFilter==='Custom'){if(customStart&&d<new Date(customStart))return false;if(customEnd&&d>new Date(customEnd+'T23:59:59'))return false;return true;}return true;};
-  const filtered=txns.filter(t=>{if(!inWin(t))return false;if(t.status==='voided')return false;if(search.trim()){const q=search.toLowerCase();if(!(t.particulars||'').toLowerCase().includes(q)&&!(t.category||'').toLowerCase().includes(q)&&!String(t.amount).includes(q)&&!(t.from_account||t.to_account||'').toLowerCase().includes(q))return false;}return true;});
+  const inWin=t=>{const d=new Date(t.created_at);if(txnDateFilter==='This Month')return d.getMonth()===curMonth&&d.getFullYear()===curYear;if(txnDateFilter==='Last Month'){const lm=curMonth===0?11:curMonth-1,ly=curMonth===0?curYear-1:curYear;return d.getMonth()===lm&&d.getFullYear()===ly;}if(txnDateFilter==='Past 3 Months'){const c=new Date(now2);c.setMonth(c.getMonth()-3);c.setDate(1);return d>=c;}if(txnDateFilter==='This Year')return d.getFullYear()===curYear;if(txnDateFilter==='Custom'){if(txnCustomStart&&d<new Date(txnCustomStart))return false;if(txnCustomEnd&&d>new Date(txnCustomEnd+'T23:59:59'))return false;return true;}return true;};
+  
+  const filtered=txns.filter(t=>{
+    if(!inWin(t))return false;
+    if(t.status==='voided')return false;
+    if(txnFilterAcct && t.from_account !== txnFilterAcct && t.to_account !== txnFilterAcct) return false;
+    if(txnFilterType === 'Income' && t.type !== 'Income' && t.type !== 'UA Received') return false;
+    if(txnFilterType === 'Expense' && t.type !== 'Expense' && t.type !== 'UA Expense' && !t.type.includes('→')) return false;
+    if(search.trim()){const q=search.toLowerCase();if(!(t.particulars||'').toLowerCase().includes(q)&&!(t.category||'').toLowerCase().includes(q)&&!String(t.amount).includes(q)&&!(t.from_account||t.to_account||'').toLowerCase().includes(q))return false;}
+    return true;
+  });
+
   const filteredTotal=filtered.reduce((s,t)=>s+(Number(t.amount)||0),0);
   const amtColor=t=>{if(t.status==='voided')return'';if(t.type==='Income'||t.type==='UA Received')return'in';if(t.type==='UA Expense')return'ua';if(t.type==='Bank→Bank'||t.type==='Bank→CC')return'';return'out';};
-  /* v1.6: UA Received ALWAYS shows + regardless of category name (e.g. Labour) */
   const amtSign=t=>(t.type==='Income'||t.type==='UA Received')?'+':'−';
-  /* v1.6: Correct type label — never show 'Bank to Bank' for income entries */
   const typeLabel=t=>{if(t.type==='Income')return'Income';if(t.type==='UA Received')return'UA Received ↑';if(t.type==='UA Expense')return'UA Expense';if(t.type==='Expense')return'Expense';return t.type;};
   const handleEdit=t=>{setEditMode(t);setCorrAmt(String(t.amount));setCorrDesc(t.particulars||'');setCorrCat(t.category||'');setCorrDate(new Date(t.created_at).toISOString().slice(0,10));setCorrFrom(t.from_account||'');setCorrTo(t.to_account||'');};
   const handleSaveCorr=async()=>{if(!editMode||!corrAmt||saving)return;setSaving(true);await onVoidAndCorrect(editMode,{amount:parseFloat(corrAmt),particulars:corrDesc||editMode.particulars,category:corrCat||editMode.category,from_account:corrFrom||editMode.from_account,to_account:corrTo||editMode.to_account,created_at:corrDate?corrDate+'T06:30:00.000Z':editMode.created_at});setEditMode(null);setSelected(null);setSaving(false);};
@@ -1015,17 +1012,26 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
   const editToList=()=>{const t=editMode?.type||'';if(t==='Bank→CC')return allCC;if(t==='Bank→Bank'||t==='Cash→Bank'||t==='CC→Bank')return allBanks.filter(a=>a!=='Cash');if(t==='Bank→Cash')return['Cash'];return allBanks;};
   const nFrom=t=>['Expense','UA Expense','Bank→CC','Bank→Bank','Bank→Cash','CC→Bank'].includes(t);
   const nTo=t=>['Income','UA Received','Bank→CC','Bank→Bank','Cash→Bank','CC→Bank'].includes(t);
+
+  const handlePrint = () => {
+    const html=`<!DOCTYPE html><html><head><title>Transaction Log</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}</style></head><body><h1>Transaction Log</h1><h2>Filters: ${txnDateFilter} ${txnFilterAcct ? ' | ' + txnFilterAcct : ''} ${txnFilterType ? ' | ' + txnFilterType : ''}</h2><table><thead><tr><th>Date</th><th>Type/Category</th><th>Description</th><th>Account</th><th>Amount (₹)</th></tr></thead><tbody>${filtered.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td>${t.type} / ${t.category||''}</td><td>${t.particulars||''}</td><td>${t.from_account||t.to_account||''}</td><td class="amt" style="color:${t.type==='Income'||t.type==='UA Received'?'green':'red'};">${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')}</div></body></html>`;
+    const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+  };
+
   return(
     <div className="fade-in">
       <div style={{padding:'10px 16px 0',display:'flex',flexDirection:'column',gap:8}}>
         <div style={{display:'flex',alignItems:'center',gap:8}}>
           <div style={{flex:1,position:'relative'}}><input value={search} onChange={e=>{setSearch(e.target.value);setSelected(null);setEditMode(null);}} placeholder="Search description, category, amount, account..." style={{width:'100%',background:'var(--bg2)',border:'1px solid '+(search?'var(--blue)':'var(--border)'),borderRadius:8,padding:'8px 12px 8px 32px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none'}}/><span style={{position:'absolute',left:10,top:'50%',transform:'translateY(-50%)',fontSize:13,color:'var(--text3)',pointerEvents:'none'}}>⌕</span></div>
           {search&&<button onClick={()=>{setSearch('');setGlobalSearch&&setGlobalSearch('');}} style={{background:'none',border:'none',color:'var(--text3)',fontSize:16,cursor:'pointer',padding:'0 4px'}}>✕</button>}
+          <button onClick={handlePrint} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'7px 12px',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>
         </div>
-        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-          <select value={dateFilter} onChange={e=>{setDateFilter(e.target.value);setSelected(null);setEditMode(null);}} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none',cursor:'pointer'}}><option>This Month</option><option>Last Month</option><option>Past 3 Months</option><option>This Year</option><option>All Time</option><option>Custom</option></select>
-          {dateFilter==='Custom'&&<><input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}}/><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span><input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}}/></>}
+        <div style={{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap'}}>
+          <select value={txnDateFilter} onChange={e=>{setTxnDateFilter(e.target.value);setSelected(null);setEditMode(null);}} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none',cursor:'pointer'}}><option>This Month</option><option>Last Month</option><option>Past 3 Months</option><option>This Year</option><option>All Time</option><option>Custom</option></select>
+          <select value={txnFilterAcct} onChange={e=>{setTxnFilterAcct(e.target.value);setSelected(null);setEditMode(null);}} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none',cursor:'pointer'}}><option value="">All Accounts</option>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select>
+          <select value={txnFilterType} onChange={e=>{setTxnFilterType(e.target.value);setSelected(null);setEditMode(null);}} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none',cursor:'pointer'}}><option value="">All Types</option><option value="Income">Income</option><option value="Expense">Expense/Transfer</option></select>
         </div>
+        {txnDateFilter==='Custom'&&<div style={{display:'flex',gap:8,alignItems:'center'}}><input type="date" value={txnCustomStart} onChange={e=>setTxnCustomStart(e.target.value)} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}}/><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span><input type="date" value={txnCustomEnd} onChange={e=>setTxnCustomEnd(e.target.value)} style={{background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:11,outline:'none'}}/></div>}
       </div>
       <div style={{position:'sticky',top:0,zIndex:10,background:'var(--bg)',borderBottom:'1px solid var(--border)',borderTop:'1px solid var(--border)',marginTop:8}}>
         {filtered.length>0?<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px'}}><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{filtered.length} txn{filtered.length!==1?'s':''}{search&&<span style={{color:'var(--blue)',marginLeft:4}}>· "{search}"</span>}</span><div style={{display:'flex',alignItems:'baseline',gap:4}}><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>Total</span><span style={{fontFamily:'var(--mono)',fontSize:17,fontWeight:700,color:'var(--text)',letterSpacing:'-0.3px'}}>₹{filteredTotal.toLocaleString('en-IN')}</span></div></div>:<div className="empty">{search?`No results for "${search}"`:'No transactions found.'}</div>}
@@ -1049,9 +1055,7 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
                 <input type="date" value={corrDate} max={new Date().toISOString().slice(0,10)} onChange={e=>setCorrDate(e.target.value)} style={{...iS,marginBottom:8,borderColor:corrDate!==new Date(editMode.created_at).toISOString().slice(0,10)?'var(--amber)':'var(--border2)'}}/>
                 {editMode.type==='Expense'&&<div style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>CATEGORY</div><div style={{display:'flex',flexWrap:'wrap'}}>{allCategories.filter(c=>c.id!=='UA Expense').map(c=><span key={c.id} style={cS(corrCat===c.id)} onClick={()=>setCorrCat(c.id)}>{c.emoji} {c.id}</span>)}</div></div>}
                 {nFrom(editMode.type)&&<div style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>{editMode.type.includes('→')?'FROM ACCOUNT':'PAID FROM'}</div><div style={{display:'flex',flexWrap:'wrap'}}>{editFromList().map(a=><span key={a} style={cS(corrFrom===a)} onClick={()=>setCorrFrom(a)}>{a}</span>)}</div></div>}
-                {/* v1.6: Received Mode — always show for Income and UA Received */}
                 {nTo(editMode.type)&&<div style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>{editMode.type==='Bank→CC'?'CC CARD':editMode.type.includes('→')?'TO ACCOUNT':(editMode.type==='Income'||editMode.type==='UA Received')?'RECEIVED INTO':'TO ACCOUNT'}</div><div style={{display:'flex',flexWrap:'wrap'}}>{editToList().map(a=><span key={a} style={cS(corrTo===a)} onClick={()=>setCorrTo(a)}>{a}</span>)}</div></div>}
-                {/* v1.6: For Income/UA Received not covered by nTo, explicitly show received mode */}
                 {(editMode.type==='Income'||editMode.type==='UA Received')&&!nTo(editMode.type)&&<div style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>RECEIVED INTO</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.map(a=><span key={a} style={cS(corrTo===a)} onClick={()=>setCorrTo(a)}>{a}</span>)}</div></div>}
                 <div style={{display:'flex',gap:8}}><button onClick={handleSaveCorr} disabled={saving} style={{flex:1,background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',padding:'9px',fontSize:11,fontFamily:'var(--mono)',fontWeight:600,cursor:'pointer'}}>{saving?'Saving...':'Save correction'}</button><button onClick={()=>setEditMode(null)} style={bS('var(--text3)')}>Cancel</button></div>
               </div>
@@ -1242,35 +1246,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
         </div>
       </div>
 
-      {/* ── CC DUES CARD: Two-column Billed/Unbilled ── */}
-      {totalCC>0&&<div style={{background:'var(--bg2)',border:'1.5px solid var(--red)',borderRadius:10,marginBottom:6,overflow:'hidden'}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--red-bg)'}}>
-          <span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.08em',color:'var(--red)',textTransform:'uppercase'}}>💳 CC Dues</span>
-          <span onClick={()=>setTab('ccbill')} style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:600,color:'var(--red)',cursor:'pointer'}}>Total {fmtAmt(totalCC)} ›</span>
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0}}>
-          {ccDues.map((x,idx)=>{
-            const reconData=(() => {try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[x.name]||null;}catch{return null;}})();
-            const billStart=reconData?reconData.billEnd:(()=>{const sd=parseInt((JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}')[x.name])||'1');const d=new Date();const lastStmt=new Date(d.getFullYear(),d.getMonth(),sd);if(lastStmt>d) return new Date(d.getFullYear(),d.getMonth()-1,sd).toISOString().slice(0,10);const prevBill=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,sd);return prevBill.toISOString().slice(0,10);})();
-            const allCCTxns=active.filter(t=>t.from_account===x.name&&(t.type==='Expense'||t.type==='UA Expense'));
-            const unbilledTxns=allCCTxns.filter(t=>t.created_at.slice(0,10)>billStart);
-            const unbilled=unbilledTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-            const billed=x.due-unbilled;
-            return(<React.Fragment key={x.name}>
-              <div style={{padding:'10px 12px',borderRight:idx<ccDues.length-1?'1px solid var(--border)':'none',borderBottom:idx<ccDues.length-1?'1px solid var(--border)':'none'}}>
-                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{x.name} · Billed</div>
-                <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:billed>0?'var(--red)':'var(--text3)'}}>{billed>0?fmtAmt(billed):'—'}</div>
-              </div>
-              <div style={{padding:'10px 12px',borderBottom:idx<ccDues.length-1?'1px solid var(--border)':'none'}}>
-                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Unbilled</div>
-                <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:unbilled>0?'var(--amber)':'var(--text3)'}}>{unbilled>0?fmtAmt(unbilled):'—'}</div>
-              </div>
-            </React.Fragment>);
-          })}
-        </div>
-      </div>}
-
-      {/* ── Month summary strip ── */}
+            {/* ── Month summary strip ── */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:6}}>
         {[['Income',income,'var(--green)'],['Expense',expense,'var(--red)'],['Liquid',liquid,'var(--blue)']].map(([l,v,c])=>(
           <div key={l} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
@@ -1283,22 +1259,68 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
       {/* Alerts */}
       {alerts.length>0&&<div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:6}}>{alerts.map((a,i)=><div key={i} style={{background:a.r==='red'?'var(--red-bg)':a.r==='blue'?'var(--blue-bg)':'var(--amber-bg)',border:'1px solid '+(a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)'),borderRadius:6,padding:'6px 10px',fontSize:11,color:a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)',fontFamily:'var(--mono)'}}>{a.r==='red'?'⚠ ':a.r==='blue'?'◈ ':'● '}{a.t}</div>)}</div>}
 
-      {/* Collapsed Bank Balances */}
       <Card>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',cursor:'pointer',borderBottom:bankOpen?'1px solid var(--border)':'none'}} onClick={()=>setBankOpen(o=>!o)}>
           <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>🏦 Bank Balances</span>
           <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--green)'}}>{fmtAmt(bankTotal)}</span><span style={{fontSize:10,color:'var(--text3)',display:'inline-block',transform:bankOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span></div>
         </div>
-        {bankOpen&&allBanks.filter(a=>a!=='Site Cash').map(a=>{const b=balances[a]||0;return<Row key={a} a={a} b={fmtAmt(b)} grn={b>0} red={b<0} onClick={()=>drillTo(a)}/>;}) }
+        {bankOpen&&<div>
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
+            <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Bank</span>
+            <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Income</span>
+            <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span>
+          </div>
+          {allBanks.filter(a=>a!=='Site Cash').map(a=>{
+             const b=balances[a]||0;
+             const thisMonthBank=thisMonth.filter(t=>t.from_account===a||t.to_account===a);
+             const mInc=thisMonthBank.filter(t=>t.type==='Income'&&t.to_account===a).reduce((s,t)=>s+(+t.amount),0);
+             const mExp=thisMonthBank.filter(t=>(t.type==='Expense'||t.type==='UA Expense')&&t.from_account===a).reduce((s,t)=>s+(+t.amount),0);
+             const cmStart = new Date(year, month, 1).toISOString().slice(0,10);
+             const cmEnd = new Date(year, month+1, 0).toISOString().slice(0,10);
+             return (
+               <div key={a} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',padding:'10px 12px',borderBottom:'1px solid var(--border)',alignItems:'center', background:'var(--bg2)'}}>
+                 <div onClick={()=>{setStmtAcct(a); setStmtPeriod('this_month'); setTab('statement');}} style={{cursor:'pointer'}}>
+                   <div style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)',fontWeight:600}}>{a}</div>
+                   <div style={{fontFamily:'var(--mono)',fontSize:10,color:b>=0?'var(--green)':'var(--red)',marginTop:2}}>Bal: {fmtAmt(b)}</div>
+                 </div>
+                 <div onClick={()=>{setTxnFilterAcct(a); setTxnFilterType('Income'); setTxnDateFilter('Custom'); setTxnCustomStart(cmStart); setTxnCustomEnd(cmEnd); setTab('txns');}} style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:mInc>0?'var(--green)':'var(--text3)',cursor:'pointer'}}>{mInc>0?fmtAmt(mInc):'—'}</div>
+                 <div onClick={()=>{setTxnFilterAcct(a); setTxnFilterType('Expense'); setTxnDateFilter('Custom'); setTxnCustomStart(cmStart); setTxnCustomEnd(cmEnd); setTab('txns');}} style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:mExp>0?'var(--red)':'var(--text3)',cursor:'pointer'}}>{mExp>0?fmtAmt(mExp):'—'}</div>
+               </div>
+             )
+          })}
+        </div>}
       </Card>
 
-      {/* Collapsed CC Dues */}
       <Card>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',cursor:'pointer',borderBottom:ccOpen?'1px solid var(--border)':'none'}} onClick={()=>setCcOpen(o=>!o)}>
           <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>💳 CC Dues</span>
           <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:totalCC>0?'var(--amber)':'var(--text3)'}}>{fmtAmt(totalCC)}</span><span style={{fontSize:10,color:'var(--text3)',display:'inline-block',transform:ccOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span></div>
         </div>
-        {ccOpen&&(allCCAll||allCC).map(a=>{const due=Math.max(0,-(balances[a]||0));return<Row key={a} a={a} b={fmtAmt(due)} amb={due>0} dim={due===0} onClick={()=>drillTo(a)}/>;}) }
+        {ccOpen&&<div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0}}>
+          {(allCCAll||allCC).map((x,idx)=>{
+            const reconData=(() => {try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[x]||null;}catch{return null;}})();
+            const billStart=reconData?reconData.billEnd:(()=>{const sd=parseInt((JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}')[x])||'1');const d=new Date();const lastStmt=new Date(d.getFullYear(),d.getMonth(),sd);if(lastStmt>d) return new Date(d.getFullYear(),d.getMonth()-1,sd).toISOString().slice(0,10);const prevBill=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,sd);return prevBill.toISOString().slice(0,10);})();
+            const allCCTxns=active.filter(t=>t.from_account===x&&(t.type==='Expense'||t.type==='UA Expense'));
+            const unbilledTxns=allCCTxns.filter(t=>t.created_at.slice(0,10)>billStart);
+            const unbilled=unbilledTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+            const due=Math.max(0,-(balances[x]||0));
+            const billed=due-unbilled;
+            return(<React.Fragment key={x}>
+              <div style={{padding:'10px 12px',borderRight:idx%2===0?'1px solid var(--border)':'none',borderBottom:'1px solid var(--border)', gridColumn:'1 / span 2', background:'var(--bg3)', display:'flex', justifyContent:'space-between'}}>
+                <div style={{fontSize:11,fontWeight:600,fontFamily:'var(--mono)',color:'var(--text)'}}>{x}</div>
+                <div style={{fontSize:11,fontWeight:700,fontFamily:'var(--mono)',color:due>0?'var(--amber)':'var(--text3)'}}>{fmtAmt(due)}</div>
+              </div>
+              <div style={{padding:'10px 12px',borderRight:'1px solid var(--border)',borderBottom:idx<(allCCAll||allCC).length-1?'1px solid var(--border)':'none', cursor:'pointer'}} onClick={()=>{setStmtAcct(x);setTab('cc_bill');}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Billed</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:billed>0?'var(--red)':'var(--text3)'}}>{billed>0?fmtAmt(billed):'—'}</div>
+              </div>
+              <div style={{padding:'10px 12px',borderBottom:idx<(allCCAll||allCC).length-1?'1px solid var(--border)':'none', cursor:'pointer'}} onClick={()=>{setStmtAcct(x);setTab('cc_bill');}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Unbilled</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:700,color:unbilled>0?'var(--amber)':'var(--text3)'}}>{unbilled>0?fmtAmt(unbilled):'—'}</div>
+              </div>
+            </React.Fragment>);
+          })}
+        </div>}
       </Card>
 
       {/* ── v1.6 AUDIT + RECALCULATE row ── */}
@@ -1776,8 +1798,11 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
   </div>);
 }
 /* ── StatementScreen: 3-column view (Description | Deposits | Withdrawals) with print ── */
-function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances}){
-  const [acct,setAcct]=useState(allBanks[0]||'');const [period,setPeriod]=useState('this_month');
+function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances, stmtAcct, setStmtAcct, stmtPeriod, setStmtPeriod, setTab, setTxnDateFilter, setTxnCustomStart, setTxnCustomEnd, setTxnFilterAcct, setTxnFilterType}){
+  const acct = stmtAcct || allBanks[0] || '';
+  const setAcct = setStmtAcct;
+  const period = stmtPeriod || 'this_month';
+  const setPeriod = setStmtPeriod;
   const [customStart,setCustomStart]=useState('');const [customEnd,setCustomEnd]=useState('');
   const now=new Date();const month=now.getMonth();const year=now.getFullYear();
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -1852,8 +1877,20 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances}){
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
         <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Opening</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:openBal<0?'var(--red)':'var(--text)'}}>{openBal<0?'−':''}{fmtAmt(Math.abs(openBal))}</div></div>
-        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Deposits</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:'var(--green)'}}>+{fmtAmt(totDeposit)}</div></div>
-        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Withdrawals</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:'var(--red)'}}>−{fmtAmt(totWithdrawal)}</div></div>
+        <div onClick={()=>{
+           setTxnFilterAcct(acct);
+           setTxnFilterType('Income');
+           setTxnDateFilter(period === 'custom' ? 'Custom' : period === 'this_month' ? 'This Month' : period === 'last_month' ? 'Last Month' : period === 'this_year' ? 'This Year' : 'All Time');
+           if (period === 'custom') { setTxnCustomStart(customStart); setTxnCustomEnd(customEnd); }
+           setTab('txns');
+        }} style={{cursor:'pointer', background:'var(--green-bg)', padding:'4px 8px', borderRadius:6}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Deposits</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:'var(--green)'}}>+{fmtAmt(totDeposit)}</div></div>
+        <div onClick={()=>{
+           setTxnFilterAcct(acct);
+           setTxnFilterType('Expense');
+           setTxnDateFilter(period === 'custom' ? 'Custom' : period === 'this_month' ? 'This Month' : period === 'last_month' ? 'Last Month' : period === 'this_year' ? 'This Year' : 'All Time');
+           if (period === 'custom') { setTxnCustomStart(customStart); setTxnCustomEnd(customEnd); }
+           setTab('txns');
+        }} style={{cursor:'pointer', background:'var(--red-bg)', padding:'4px 8px', borderRadius:6}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Withdrawals</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:'var(--red)'}}>−{fmtAmt(totWithdrawal)}</div></div>
       </div>
       <div style={{borderTop:'1px solid var(--border)',marginTop:8,paddingTop:8}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Closing Balance</div><div style={{fontSize:16,fontWeight:700,fontFamily:'var(--mono)',color:closeBal<0?'var(--red)':'var(--green)'}}>{closeBal<0?'−':''}{fmtAmt(Math.abs(closeBal))}</div></div>
     </div>
