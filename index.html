@@ -1550,48 +1550,6 @@ function CCBillScreen({txns,customAccounts,setTxnFilters,setTab}){
     )}
   </div>);
 }
-/* ── InvestmentsScreen ── */
-function InvestmentsScreen({investments,setInvestments,showToast}){
-  const [form,setForm]=useState({name:'',type:'Equity',date:new Date().toISOString().slice(0,10),qty:'',buy:'',current:''});
-  const [saving,setSaving]=useState(false);const [editId,setEditId]=useState(null);const [editPrice,setEditPrice]=useState('');
-  const handleAdd=async e=>{e.preventDefault();setSaving(true);const p={asset_name:form.name,asset_type:form.type,buy_date:form.date,qty:parseFloat(form.qty),buy_price:parseFloat(form.buy),current_price:parseFloat(form.current)};const{data,error}=await db.from('investments').insert([p]).select();if(data&&!error){setInvestments([data[0],...investments]);setForm({name:'',type:'Equity',date:new Date().toISOString().slice(0,10),qty:'',buy:'',current:''});showToast('✓ Investment Logged');}else showToast('⚠ Error Saving');setSaving(false);};
-  const handleDelete=async id=>{if(!window.confirm('Remove this asset?'))return;const{error}=await db.from('investments').delete().eq('id',id);if(!error){setInvestments(investments.filter(i=>i.id!==id));showToast('↩ Asset Removed');}};
-  const handleUpdatePrice=async id=>{if(!editPrice)return setEditId(null);const{error}=await db.from('investments').update({current_price:parseFloat(editPrice)}).eq('id',id);if(!error){setInvestments(investments.map(i=>i.id===id?{...i,current_price:parseFloat(editPrice)}:i));showToast('✓ Price Updated');}setEditId(null);setEditPrice('');};
-  const totalInv=investments.reduce((s,i)=>s+(i.qty*i.buy_price),0);const totalCur=investments.reduce((s,i)=>s+(i.qty*i.current_price),0);const tp=totalCur-totalInv;const pp=totalInv>0?(tp/totalInv*100):0;
-  const iS={background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
-  return(<div className="fade-in" style={{paddingBottom:'24px'}}>
-    <div style={{margin:'12px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'16px'}}>
-      <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Total Portfolio Value</div>
-      <div style={{fontSize:28,fontWeight:700,fontFamily:'var(--mono)',marginTop:4}}>₹{totalCur.toLocaleString('en-IN')}</div>
-      <div style={{display:'flex',gap:16,marginTop:12}}>
-        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Invested</div><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600}}>₹{totalInv.toLocaleString('en-IN')}</div></div>
-        <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>P&L</div><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:tp>=0?'var(--green)':'var(--red)'}}>{tp>=0?'+':'−'}₹{Math.abs(tp).toLocaleString('en-IN')} ({pp.toFixed(2)}%)</div></div>
-      </div>
-    </div>
-    <p className="sec-label" style={{marginTop:8}}>Add Investment</p>
-    <form onSubmit={handleAdd} style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:8}}>
-      <input placeholder="Asset Name (e.g. RELIANCE, SGB 2026)" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} style={iS} required/>
-      <div style={{display:'flex',gap:8}}><select value={form.type} onChange={e=>setForm({...form,type:e.target.value})} style={{...iS,flex:1}}><option>Equity</option><option>SGB</option><option>Mutual Fund</option></select><input type="date" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{...iS,flex:1}} required/></div>
-      <div style={{display:'flex',gap:8}}><input type="number" step="any" placeholder="Qty" value={form.qty} onChange={e=>setForm({...form,qty:e.target.value})} style={{...iS,flex:1}} required/><input type="number" step="any" placeholder="Buy Price" value={form.buy} onChange={e=>setForm({...form,buy:e.target.value})} style={{...iS,flex:1}} required/><input type="number" step="any" placeholder="Current" value={form.current} onChange={e=>setForm({...form,current:e.target.value})} style={{...iS,flex:1}} required/></div>
-      <button type="submit" disabled={saving} style={{background:saving?'var(--bg3)':'var(--blue)',color:saving?'var(--text3)':'#fff',border:'none',borderRadius:8,padding:'12px',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,cursor:'pointer',marginTop:4}}>{saving?'Saving...':'Log Investment'}</button>
-    </form>
-    <p className="sec-label" style={{marginTop:16}}>Holdings</p>
-    {investments.length===0&&<div className="empty" style={{paddingTop:20}}>No investments logged yet.</div>}
-    <div style={{padding:'0 16px'}}>
-      {investments.map(inv=>{
-        const days=Math.floor((new Date()-new Date(inv.buy_date))/(1000*60*60*24));const isLTCG=days>=365;
-        const inv_=inv.qty*inv.buy_price;const cur=inv.qty*inv.current_price;const prof=cur-inv_;const pct=inv_>0?(prof/inv_*100):0;
-        return(<div key={inv.id} style={{padding:'12px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,marginBottom:8}}>
-          <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-            <div><div style={{fontSize:14,fontWeight:600,color:'var(--text)',display:'flex',alignItems:'center',gap:6}}>{inv.asset_name}<span style={{fontSize:8,padding:'2px 6px',borderRadius:4,fontFamily:'var(--mono)',background:isLTCG?'var(--green-bg)':'var(--amber-bg)',color:isLTCG?'var(--green)':'var(--amber)'}}>{isLTCG?'LTCG':'STCG'}</span></div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:4}}>{inv.qty} units @ ₹{inv.buy_price} · {new Date(inv.buy_date).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div></div>
-            <div style={{textAlign:'right',display:'flex',flexDirection:'column',alignItems:'flex-end'}}><div style={{fontFamily:'var(--mono)',fontSize:14,fontWeight:600}}>₹{cur.toLocaleString('en-IN')}</div><div style={{fontSize:10,fontFamily:'var(--mono)',color:prof>=0?'var(--green)':'var(--red)',marginTop:2}}>{prof>=0?'+':'−'}₹{Math.abs(prof).toLocaleString('en-IN')} ({pct.toFixed(1)}%)</div>{editId!==inv.id&&<button onClick={()=>{setEditId(inv.id);setEditPrice(inv.current_price);}} style={{background:'none',border:'none',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:10,cursor:'pointer',marginTop:6,padding:'2px'}}>⚙ Edit</button>}</div>
-          </div>
-          {editId===inv.id&&(<div style={{display:'flex',gap:8,marginTop:12,paddingTop:12,borderTop:'1px solid var(--border)'}}><div style={{display:'flex',gap:6,flex:1}}><input type="number" step="any" autoFocus placeholder="New Price" value={editPrice} onChange={e=>setEditPrice(e.target.value)} style={{...iS,padding:'6px 8px'}}/><button onClick={()=>handleUpdatePrice(inv.id)} style={{background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',padding:'0 12px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>Save</button><button onClick={()=>setEditId(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'0 10px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>✕</button></div><button onClick={()=>handleDelete(inv.id)} style={{background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:6,color:'var(--red)',fontFamily:'var(--mono)',fontSize:11,padding:'0 12px',cursor:'pointer'}}>Sell</button></div>)}
-        </div>);
-      })}
-    </div>
-  </div>);
-}
 
 /* ── AiCommandScreen ── */
 function AiCommandScreen({investments,setInvestments,showToast}){
