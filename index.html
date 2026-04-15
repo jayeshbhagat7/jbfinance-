@@ -328,6 +328,294 @@ function PinLockScreen({onUnlock}){
    LOGIN SCREEN  (v1.6 — Supabase Auth gate)
 ───────────────────────────────────────────────────────── */
 function LoginScreen(){
+  const [email,set  --green:#38a169;--green-bg:#c6f6d5;
+  --red:#e53e3e;--red-bg:#fed7d7;
+  --amber:#d69e2e;--amber-bg:#fefcbf;
+  --blue:#3182ce;--blue-bg:#bee3f8;
+}
+/* ── THEME: TERMINAL QUANT ── */
+html[data-theme="terminal"]{
+  --bg:#070a07;--bg2:#0b100b;--bg3:#101810;--bg4:#152015;
+  --border:#1a2e1a;--border2:#1f3c1f;
+  --text:#00e066;--text2:#00aa44;--text3:#006628;
+  --green:#00ff77;--green-bg:#001a08;
+  --red:#ff4455;--red-bg:#180008;
+  --amber:#ffdd00;--amber-bg:#181200;
+  --blue:#00ccff;--blue-bg:#00101a;
+}
+/* ── BASE (fallback) ── */
+:root{
+  --bg:#faf6f0;--bg2:#f3ede3;--bg3:#ece4d5;--bg4:#e1d7c4;
+  --border:#d0c5ae;--border2:#bfb399;
+  --text:#2c1f0e;--text2:#5c4a2a;--text3:#8b7355;
+  --green:#5a8a1a;--green-bg:#e8f0d0;
+  --red:#c0392b;--red-bg:#fde8e5;
+  --amber:#b8860b;--amber-bg:#fdf3c5;
+  --blue:#2c5f8a;--blue-bg:#ddeaf5;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+  --radius:10px;--tab-h:60px;--safe-b:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;background:var(--bg3);color:var(--text);font-family:var(--sans);overflow:hidden;}
+#root{display:flex;flex-direction:column;height:100dvh;max-width:600px;margin:0 auto;position:relative;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border);box-shadow:0 0 20px rgba(0,0,0,0.08);}
+::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
+.header{padding:10px 16px 8px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:10;}
+.header-title{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.1em;color:var(--text2);text-transform:uppercase;}
+.header-bal{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--green);}
+.main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--tab-h) + var(--safe-b) + 72px);}
+.tabs{position:absolute;bottom:0;left:0;right:0;width:100%;height:calc(var(--tab-h) + var(--safe-b));padding-bottom:var(--safe-b);background:var(--bg2);border-top:1px solid var(--border);display:flex;z-index:100;}
+.tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--text3);font-size:9px;font-family:var(--mono);letter-spacing:0.05em;text-transform:uppercase;cursor:pointer;transition:color 0.2s;padding:0;}
+.tab-btn.active{color:var(--green);}
+.tab-btn svg{width:20px;height:20px;}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);}
+.sec-label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:0.12em;color:var(--text3);text-transform:uppercase;padding:16px 16px 8px;}
+.chip-row{display:flex;gap:6px;padding:0 16px;flex-wrap:wrap;}
+.chip{border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;transition:all 0.15s;white-space:nowrap;background:var(--bg2);-webkit-tap-highlight-color:transparent;}
+.chip.sel{border-color:var(--green);color:var(--green);background:var(--green-bg);}
+.chip.sel-amber{border-color:var(--amber);color:var(--amber);background:var(--amber-bg);}
+.desc-input{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-family:var(--sans);font-size:14px;color:var(--text);width:calc(100% - 32px);margin:0 16px;outline:none;-webkit-appearance:none;}
+.desc-input::placeholder{color:var(--text3);}
+.save-btn{background:var(--green);color:#000;font-family:var(--mono);font-size:14px;font-weight:600;border:none;border-radius:var(--radius);padding:16px;width:calc(100% - 32px);margin:0 16px;cursor:pointer;letter-spacing:0.05em;-webkit-tap-highlight-color:transparent;transition:opacity 0.15s;}
+.save-btn:disabled{opacity:0.3;}
+.txn-row{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);}
+.txn-row:last-child{border-bottom:none;}
+.txn-left{flex:1;min-width:0;}
+.txn-cat{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px;}
+.txn-desc{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.txn-meta{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;}
+.txn-right{text-align:right;flex-shrink:0;margin-left:12px;}
+.txn-amt{font-family:var(--mono);font-size:15px;font-weight:600;}
+.txn-amt.out{color:var(--red);}.txn-amt.in{color:var(--green);}.txn-amt.ua{color:var(--amber);}
+.txn-acct{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;}
+.badge{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:0.05em;text-transform:uppercase;display:inline-block;}
+.badge-pending{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);}
+.badge-in{background:var(--green-bg);color:var(--green);border:1px solid var(--green);}
+.progress-bg{background:var(--bg3);border-radius:3px;height:5px;}
+.progress-fill{height:5px;border-radius:3px;background:var(--green);transition:width 0.4s;}
+.divider{height:1px;background:var(--border);margin:0 16px;}
+.empty{text-align:center;padding:48px 24px;color:var(--text3);font-family:var(--mono);font-size:12px;line-height:2;}
+.toast{position:fixed;bottom:calc(var(--tab-h) + var(--safe-b) + 12px);left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 18px;font-family:var(--mono);font-size:12px;color:var(--text);z-index:999;white-space:nowrap;animation:toastIn 0.2s ease;}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
+.fade-in{animation:fadeIn 0.2s ease;}
+@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
+.settings-row{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);font-size:13px;}
+input[type=number],input[type=text],input[type=date]{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:100%;-webkit-appearance:none;}
+/* Remove number input spinners globally */
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+input[type=number]{-moz-appearance:textfield;}
+input[type=number]:focus,input[type=text]:focus,input[type=date]:focus{border-color:var(--green);}
+select{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:100%;}
+textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:100%;resize:vertical;}
+/* Accordion */
+.acc-hdr{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;cursor:pointer;background:var(--bg2);border-bottom:1px solid var(--border);user-select:none;}
+.acc-hdr:active{background:var(--bg3);}
+.acc-title{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:0.08em;color:var(--text2);text-transform:uppercase;}
+.acc-body{border-bottom:2px solid var(--border2);}
+/* Hero box */
+.hero-box{background:var(--bg2);border:1.5px solid var(--green);border-radius:12px;padding:14px 16px;margin-bottom:8px;}
+.hero-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;}
+.hero-amount{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1;margin-bottom:8px;}
+.hero-sub{font-family:var(--mono);font-size:11px;color:var(--text3);}
+.hero-sub span{color:var(--text2);}
+/* Envelope */
+.env-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:8px;}
+.env-bar{height:4px;background:var(--bg3);}
+.env-fill{height:4px;transition:width 0.4s;}
+/* Theme swatches */
+.swatch{width:28px;height:28px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;flex-shrink:0;}
+.swatch.active{border-color:var(--green);transform:scale(1.1);}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+/* Service Worker disabled for Claude artifact viewer environment */
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window['pdfjs-dist/build/pdf'])window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+const { createClient } = supabase;
+const SUPA_URL = 'https://ayzlaumbrntpqfemnxao.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5emxhdW1icm50cHFmZW1ueGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjQwNTAsImV4cCI6MjA4OTc0MDA1MH0.VEYId6dpxCvmTArXq-FVZqy5WTgl0QTcLamYMovaqgE';
+const db = createClient(SUPA_URL, SUPA_KEY);
+
+/* ── SEED CONSTANTS (used only for initial data; UI derives everything dynamically) ── */
+const SEED_BANKS = ['Cash','KB','UB','YB'];
+const SEED_CC    = ['SBI CC','HDFC CC','RBL CC','AXIS CC'];
+
+const CATEGORIES = [
+  {id:'Fuel',emoji:'⛽',color:'amber',parent:null},{id:'Food',emoji:'🍱',color:'green',parent:null},
+  {id:'Household',emoji:'🏠',color:'blue',parent:null},{id:'Grocery',emoji:'🛒',color:'blue',parent:'Household'},
+  {id:'Electricity',emoji:'💡',color:'blue',parent:'Household'},{id:'PNG Gas',emoji:'🔥',color:'blue',parent:'Household'},
+  {id:'Child Education',emoji:'📚',color:'blue',parent:null},{id:'School Fees',emoji:'🎒',color:'blue',parent:'Child Education'},
+  {id:'Tuition',emoji:'✏️',color:'blue',parent:'Child Education'},
+  {id:'Insurance',emoji:'🛡',color:'green',parent:null,it:'80C'},{id:'LIC Premium',emoji:'🛡',color:'green',parent:'Insurance',it:'80C'},
+  {id:'Term Insurance',emoji:'🛡',color:'green',parent:'Insurance',it:'80C'},{id:'Car Insurance',emoji:'🚗',color:'green',parent:'Insurance',it:'80C'},
+  {id:'Mediclaim',emoji:'💊',color:'green',parent:null,it:'80D'},
+  {id:'Investment',emoji:'📈',color:'green',parent:null},{id:'Zerodha',emoji:'📈',color:'green',parent:'Investment'},{id:'SGB Gold',emoji:'🥇',color:'green',parent:'Investment'},
+  {id:'Maintenance',emoji:'🔧',color:'amber',parent:null},{id:'Car Nexon',emoji:'🚙',color:'amber',parent:null},
+  {id:'Nexon Fuel',emoji:'⛽',color:'amber',parent:'Car Nexon'},{id:'Nexon Service',emoji:'🔧',color:'amber',parent:'Car Nexon'},
+  {id:'Nexon EMI',emoji:'🚙',color:'amber',parent:'Car Nexon'},{id:'Nexon Insurance',emoji:'🛡',color:'amber',parent:'Car Nexon',it:'80C'},
+  {id:'Nexon Misc',emoji:'🚙',color:'amber',parent:'Car Nexon'},{id:'Travelling',emoji:'🚗',color:'amber',parent:null},
+  {id:'Lifestyle',emoji:'🛍',color:'red',parent:null},{id:'Social',emoji:'🤝',color:'amber',parent:null},
+  {id:'Donation',emoji:'🙏',color:'green',parent:null,it:'80G'},{id:'Mobile Recharge',emoji:'📱',color:'blue',parent:null},
+  {id:'UDHARI',emoji:'↗',color:'amber',parent:null},{id:'Society Maintenance',emoji:'🏘',color:'amber',parent:null},
+  {id:'UA Expense',emoji:'🏗',color:'amber',parent:null,ua:true},{id:'Misc',emoji:'•',color:'none',parent:null},
+  {id:'Suspense (Uncategorized)',emoji:'🔍',color:'amber',parent:null},
+];
+
+const fmt    = n => parseFloat(Math.abs(n)).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
+const fmtAmt = n => '₹' + fmt(n);
+const fmtDate= d => new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+const fmtTime= d => new Date(d).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+
+/* ── STREAK ── */
+function getStreak(){
+  const today=new Date().toISOString().slice(0,10);
+  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const last=localStorage.getItem('jbf_streak_date')||'';
+  const cnt=parseInt(localStorage.getItem('jbf_streak_count')||'0');
+  const next=last===today?cnt:last===yesterday?cnt+1:1;
+  if(last!==today){localStorage.setItem('jbf_streak_date',today);localStorage.setItem('jbf_streak_count',String(next));}
+  return next;
+}
+/* ─────────────────────────────────────────────────────────
+   PIN LOCK SCREEN  (v1.9 — pre-auth security gate)
+   Flow: App open → PIN gate → Supabase Auth → App
+   PIN stored as SHA-256 hash in localStorage (jbf_pin_hash).
+   First-time: no hash stored → setup mode (set 4-digit PIN).
+   Change/remove PIN from Settings.
+───────────────────────────────────────────────────────── */
+function PinLockScreen({onUnlock}){
+  const [digits,setDigits]   = useState([]);
+  const [shake,setShake]     = useState(false);
+  const [setupMode,setSetupMode] = useState(!localStorage.getItem('jbf_pin_hash'));
+  const [setupStep,setSetupStep] = useState(1); // 1=enter new, 2=confirm
+  const [firstPin,setFirstPin]   = useState([]);
+  const [msg,setMsg]             = useState('');
+
+  const MAX=4;
+
+  const hashPin = async pin => {
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  };
+
+  const addDigit = async d => {
+    const next=[...digits,d];
+    setDigits(next);
+    if(next.length<MAX) return;
+    const pin=next.join('');
+
+    if(setupMode){
+      if(setupStep===1){
+        setFirstPin(next);
+        setDigits([]);
+        setSetupStep(2);
+        setMsg('Confirm your PIN');
+      } else {
+        if(pin===firstPin.join('')){
+          const h=await hashPin(pin);
+          localStorage.setItem('jbf_pin_hash',h);
+          setMsg('✓ PIN set!');
+          setTimeout(()=>onUnlock(),400);
+        } else {
+          setMsg('❌ PINs did not match — try again');
+          setShake(true);setTimeout(()=>setShake(false),500);
+          setDigits([]);setSetupStep(1);setFirstPin([]);
+        }
+      }
+    } else {
+      const h=await hashPin(pin);
+      if(h===localStorage.getItem('jbf_pin_hash')){
+        onUnlock();
+      } else {
+        setMsg('❌ Wrong PIN');
+        setShake(true);setTimeout(()=>setShake(false),500);
+        setDigits([]);
+      }
+    }
+  };
+
+  const del=()=>setDigits(p=>p.slice(0,-1));
+
+  const KEYS=[1,2,3,4,5,6,7,8,9,null,0,'⌫'];
+
+  const title = setupMode
+    ? (setupStep===1 ? 'Set a 4-digit PIN' : 'Confirm PIN')
+    : 'Enter PIN';
+
+  return(
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100dvh',background:'var(--bg)',padding:24,userSelect:'none'}}>
+      <div style={{textAlign:'center',marginBottom:28}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:3,letterSpacing:'0.12em',textTransform:'uppercase'}}>{title}</div>
+      </div>
+
+      {/* Dot indicators */}
+      <div style={{
+        display:'flex',gap:16,marginBottom:24,
+        animation:shake?'pinShake 0.4s ease':'none',
+      }}>
+        {Array.from({length:MAX}).map((_,i)=>(
+          <div key={i} style={{
+            width:14,height:14,borderRadius:'50%',
+            background:i<digits.length?'var(--green)':'transparent',
+            border:'2px solid',
+            borderColor:i<digits.length?'var(--green)':'var(--border2)',
+            transition:'all 0.15s',
+          }}/>
+        ))}
+      </div>
+
+      {msg&&<div style={{fontFamily:'var(--mono)',fontSize:11,color:msg.startsWith('✓')?'var(--green)':'var(--amber)',marginBottom:14,letterSpacing:'0.04em'}}>{msg}</div>}
+
+      {/* Numpad */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,72px)',gap:12}}>
+        {KEYS.map((k,i)=>(
+          k===null
+            ? <div key={i}/>
+            : <button key={i}
+                onClick={()=>k==='⌫'?del():digits.length<MAX&&addDigit(k)}
+                style={{
+                  width:72,height:72,borderRadius:'50%',
+                  background:k==='⌫'?'var(--bg2)':'var(--bg3)',
+                  border:'1px solid var(--border)',
+                  color:'var(--text)',
+                  fontFamily:'var(--mono)',
+                  fontSize:k==='⌫'?20:24,
+                  fontWeight:600,
+                  cursor:'pointer',
+                  display:'flex',alignItems:'center',justifyContent:'center',
+                  WebkitTapHighlightColor:'transparent',
+                  transition:'background 0.1s',
+                }}
+              >{k}</button>
+        ))}
+      </div>
+
+      {!setupMode&&<button onClick={()=>{
+        // Escape hatch: clear PIN (will require Supabase login still)
+        if(confirm('Forgot PIN? This will remove the PIN lock. You will still need your Supabase password.')){
+          localStorage.removeItem('jbf_pin_hash');
+          setSetupMode(true);setSetupStep(1);setDigits([]);setMsg('');
+        }
+      }} style={{marginTop:28,background:'none',border:'none',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer',textDecoration:'underline'}}>Forgot PIN</button>}
+
+      <style>{`@keyframes pinShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────
+   LOGIN SCREEN  (v1.6 — Supabase Auth gate)
+───────────────────────────────────────────────────────── */
+function LoginScreen(){
   const [email,setEmail]=useState('');const [pass,setPass]=useState('');
   const [loading,setLoading]=useState(false);const [err,setErr]=useState('');const [showPass,setShowPass]=useState(false);
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:10,padding:'13px 15px',color:'var(--text)',fontFamily:'var(--sans)',fontSize:15,outline:'none',width:'100%',WebkitAppearance:'none'};
