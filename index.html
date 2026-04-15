@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.9.1</title>
+<title>JB Finance v1.9.2</title>
 <link rel="manifest" href="/jbfinance-/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -668,7 +668,6 @@ function Header({liquid,tab,onMenu,streak}){
       <span className="header-title" style={{flex:1,textAlign:'center'}}>{titles[tab]||'JB Finance'}</span>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
         {streak>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}}>🔥{streak}</span>}
-        {tab!=='settings'&&<span className="header-bal">{fmtAmt(liquid)}</span>}
       </div>
     </div>
   );
@@ -884,27 +883,17 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
         </div>
       </div>
 
-      {/* Category (for Expense / Income) */}
-      {(siteType==='Expense'||siteType==='Income')&&(
+      {/* Category (for Expense only — minimal) */}
+      {siteType==='Expense'&&(<>
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>Category</p>
           <select value={siteCat} onChange={e=>setSiteCat(e.target.value)} style={selS}>
             {SITE_CATS.map(c=><option key={c}>{c}</option>)}
           </select>
         </div>
-      )}
-
-      {/* EXPENSE: Paid From + To Member */}
-      {siteType==='Expense'&&(<>
-        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Paid From</p>
-          <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
-            {siteFromList().map(a=><span key={a} style={cs(sitePayFrom===a)} onClick={()=>setSitePayFrom(a)}>{a}</span>)}
-          </div>
-        </div>
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>To Member</p>
           <select value={siteMember} onChange={e=>setSiteMember(e.target.value)} style={{...selS,borderColor:'var(--amber)',color:'var(--amber)'}}>
             {allSiteMembers.map(m=><option key={m}>{m}</option>)}
           </select>
-          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💸 {sitePayFrom} → {siteMember}</p>
         </div>
       </>)}
 
@@ -919,7 +908,6 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
           <div style={{display:'flex',flexWrap:'wrap',gap:6}}>
             {siteToList().map(a=><span key={a} style={cs(depositTo===a)} onClick={()=>setDepositTo(a)}>{a}</span>)}
           </div>
-          <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:4}}>💰 {siteMember} → {depositTo}</p>
         </div>
       </>)}
 
@@ -935,18 +923,11 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
             {siteToList().map(a=><span key={a} style={cs(siteTo===a)} onClick={()=>setSiteTo(a)}>{a}</span>)}
           </div>
         </div>
-        <p style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>🏗 Site: {siteName} · {sitePayFrom} → {siteTo}</p>
       </>)}
 
-      {/* SITE TRANSFER: Direction + Person */}
+      {/* SITE TRANSFER: Person only (Given from Site Cash always) */}
       {siteType==='Site Transfer'&&(<>
-        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Direction</p>
-          <div style={{display:'flex',gap:6}}>
-            <span style={cs(transferDir==='Given')} onClick={()=>setTransferDir('Given')}>Given →</span>
-            <span style={cs(transferDir==='Received')} onClick={()=>setTransferDir('Received')}>← Received</span>
-          </div>
-        </div>
-        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Person</p>
+        <div><p className="sec-label" style={{padding:'0 0 6px'}}>Given To</p>
           {allSiteMembers.length>0
             ?<select value={transferUser} onChange={e=>setTransferUser(e.target.value)} style={selS}>{allSiteMembers.map(m=><option key={m}>{m}</option>)}</select>
             :<span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No team — add in Setup</span>}
@@ -1022,7 +1003,7 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
   
   const handlePrint=()=>{
     const periodLabel=(()=>{if(dateFilter==='This Month')return`${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][curMonth]} ${curYear}`;if(dateFilter==='Last Month'){const lm=curMonth===0?11:curMonth-1,ly=curMonth===0?curYear-1:curYear;return`${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][lm]} ${ly}`;}if(dateFilter==='This Year')return`FY ${curYear}`;if(dateFilter==='Custom'&&customStart&&customEnd)return`${customStart} to ${customEnd}`;return'All Time';})();
-    const html=`<!DOCTYPE html><html><head><title>Transactions ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;padding:10px;background:#e8f5e9;border:1px solid #4caf50;border-radius:6px;text-align:center;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:14px;font-weight:700;color:#2e7d32;}</style></head><body><h1>Transaction Log</h1><h2>${periodLabel}${search?' · Filtered by "'+search+'"':''}</h2><table><thead><tr><th style="width:12%;">Date</th><th style="width:15%;">Type</th><th style="width:35%;">Description</th><th style="width:18%;">Account</th><th style="width:20%;">Amount (₹)</th></tr></thead><tbody>${filtered.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td>${typeLabel(t)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.from_account||t.to_account}</td><td class="amt">${amtSign(t)}${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div class="summary"><div class="label">Total Amount (${filtered.length} transactions)</div><div class="value">₹${fmtAmt(filteredTotal)}</div></div><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.1</div></body></html>`;
+    const html=`<!DOCTYPE html><html><head><title>Transactions ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;padding:10px;background:#e8f5e9;border:1px solid #4caf50;border-radius:6px;text-align:center;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:14px;font-weight:700;color:#2e7d32;}</style></head><body><h1>Transaction Log</h1><h2>${periodLabel}${search?' · Filtered by "'+search+'"':''}</h2><table><thead><tr><th style="width:12%;">Date</th><th style="width:15%;">Type</th><th style="width:35%;">Description</th><th style="width:18%;">Account</th><th style="width:20%;">Amount (₹)</th></tr></thead><tbody>${filtered.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td>${typeLabel(t)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.from_account||t.to_account}</td><td class="amt">${amtSign(t)}${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div class="summary"><div class="label">Total Amount (${filtered.length} transactions)</div><div class="value">₹${fmtAmt(filteredTotal)}</div></div><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.2</div></body></html>`;
     const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
   };
   
@@ -1080,10 +1061,9 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
   );
 }
 /* ── DashScreen — Waterfall Hero + Audit Sync + Collapsed Cards + Clickable Chart ── */
-function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,recurring,checklist,setGlobalSearch,setTab,setTxnFilter,investments,onAuditSync}){
+function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,recurring,checklist,setGlobalSearch,setTab,setTxnFilter,onAuditSync}){
   budgets=budgets||{};
-  const [bankOpen,setBankOpen]=useState(false);
-  const [ccOpen,setCcOpen]=useState(false);
+
   const [auditLoading,setAuditLoading]=useState(false);
   const chartRef=useRef(null);const chartInst=useRef(null);
   const drillTo=term=>{setGlobalSearch(term);setTab('txns');};
@@ -1102,8 +1082,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const reservedCapital=totalCC+monthlyProv;
   const safeToSpend=liquid-reservedCapital;
   const spendable=trueSpendable!==undefined?trueSpendable:Math.max(0,liquid-totalCC);
-  const totalInv=(investments||[]).reduce((s,i)=>s+(i.qty*i.current_price),0);
-  const netWorth=liquid-totalCC+totalInv;
+
   const safeCol=safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)';
   const cats={};thisMonth.filter(t=>t.type==='Expense').forEach(t=>{const c=t.category||'Misc';cats[c]=(cats[c]||0)+(+t.amount);});
   const topCats=Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,6);
@@ -1155,9 +1134,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   topCats.forEach(([c,v])=>{if(budgets[c]&&v>budgets[c])alerts.push({r:'amber',t:c+' over budget'});});
   if(gap80C>0&&month>=1&&month<=2)alerts.push({r:'blue',t:'80C gap ₹'+Math.round(gap80C/1000)+'k — before 31 Mar'});
 
-  const bankTotal=allBanks.filter(a=>a!=='Site Cash').reduce((s,a)=>s+(balances[a]||0),0);
-  const netCash=(balances['Cash']||0)+(balances['Site Cash']||0);
-  const pCash=balances['Cash']||0;const sCash=balances['Site Cash']||0;
+
 
   const Card=({children,style})=><div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,overflow:'hidden',marginBottom:8,...(style||{})}}>{children}</div>;
   const Hdr=({t,v,col})=><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg3)'}}><span style={{fontSize:10,fontWeight:600,fontFamily:'var(--mono)',letterSpacing:'0.08em',color:'var(--text3)',textTransform:'uppercase'}}>{t}</span>{v&&<span style={{fontSize:11,fontFamily:'var(--mono)',fontWeight:600,color:col||'var(--text)'}}>{v}</span>}</div>;
@@ -1168,174 +1145,82 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
 
       {/* ── WATERFALL HERO: Safe to Spend breakdown ── */}
       {(()=>{
-        /* Waterfall steps: Liquid → −CC → −Provisions → Safe */
-        const steps=[
-          {label:'Bank Balance',value:liquid,type:'start',color:'var(--blue)'},
-          ...(totalCC>0?[{label:'CC Dues',value:-totalCC,type:'deduct',color:'var(--red)'}]:[]),
-          ...(monthlyProv>0?[{label:'Provisions',value:-monthlyProv,type:'deduct',color:'var(--amber)'}]:[]),
-          {label:'Safe to Spend',value:safeToSpend,type:'result',color:safeCol},
-        ];
-        const maxVal=liquid>0?liquid:1;
         const [wfOpen,setWfOpen]=useState(false);
         return(
         <div style={{background:'var(--bg2)',border:'1.5px solid '+(safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)'),borderRadius:12,marginBottom:6,overflow:'hidden'}}>
-          {/* Top: Safe to Spend + Net Worth row */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0}}>
-            <div style={{padding:'12px 14px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)'}}>
+          {/* Safe to Spend — full width */}
+          <div style={{padding:'14px 16px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
               <div style={{fontFamily:'var(--mono)',fontSize:8,color:safeCol,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Safe to Spend</div>
-              <div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:safeCol,letterSpacing:'-1px',lineHeight:1}}>{safeToSpend<0?'−':''}{fmtAmt(Math.abs(safeToSpend))}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:800,color:safeCol,letterSpacing:'-1px',lineHeight:1}}>{safeToSpend<0?'−':''}{fmtAmt(Math.abs(safeToSpend))}</div>
             </div>
-            <div onClick={()=>setTab('investments')} style={{padding:'12px 14px',borderLeft:'1px solid var(--border)',cursor:'pointer'}}>
-              <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Net Worth ›</div>
-              <div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:700,color:'var(--text)',letterSpacing:'-1px',lineHeight:1}}>{fmtAmt(netWorth)}</div>
-              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>+Inv {fmtAmt(totalInv)}</div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:safeCol,opacity:0.7}}>Bank {fmtAmt(liquid)}</div>
+              {totalCC>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',opacity:0.8}}>−CC {fmtAmt(totalCC)}</div>}
+              {monthlyProv>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',opacity:0.8}}>−Prov {fmtAmt(monthlyProv)}</div>}
             </div>
           </div>
-          {/* Waterfall toggle button */}
+          {/* Expand toggle */}
           <div onClick={()=>setWfOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 14px',borderTop:'1px solid var(--border)',cursor:'pointer',background:'var(--bg3)'}}>
-            <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>📊 Balance Breakdown</span>
+            <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>🏦 Bank &amp; CC Details</span>
             <span style={{fontSize:9,color:'var(--text3)',transform:wfOpen?'rotate(180deg)':'none',display:'inline-block',transition:'transform 0.2s'}}>▼</span>
           </div>
-          {/* Waterfall bars */}
+          {/* Expanded: Bank balances table + CC dues table */}
           {wfOpen&&(
-            <div style={{padding:'12px 14px',display:'flex',flexDirection:'column',gap:8}}>
-              {steps.map((s,i)=>{
-                const pct=Math.abs(s.value)/maxVal*100;
-                const isResult=s.type==='result';
-                const isDeduct=s.type==='deduct';
+            <div>
+              {/* Bank rows header */}
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:0,padding:'6px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
+                <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Bank</span>
+                <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Balance</span>
+                <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>This Mo</span>
+              </div>
+              {allBanks.filter(a=>a!=='Site Cash').map(a=>{
+                const bal=balances[a]||0;
+                const monthTxns=thisMonth.filter(t=>t.from_account===a||t.to_account===a);
+                const moSpend=monthTxns.filter(t=>(t.type==='Expense'||t.type==='UA Expense')&&t.from_account===a).reduce((s,t)=>s+(+t.amount),0);
                 return(
-                <div key={i}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:3}}>
-                    <div style={{display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{fontFamily:'var(--mono)',fontSize:10,color:isDeduct?'var(--red)':isResult?safeCol:'var(--text2)',fontWeight:isResult?700:400}}>
-                        {isDeduct?'−':isResult?'=':''} {s.label}
-                      </span>
-                    </div>
-                    <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:s.color}}>
-                      {isDeduct?'−':''}{fmtAmt(Math.abs(s.value))}
-                    </span>
+                  <div key={a} onClick={()=>{setTab('statement');setTimeout(()=>{window.dispatchEvent(new CustomEvent('jbf-route-statement',{detail:{account:a,period:'this_month'}}));},50);}} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:0,padding:'9px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',cursor:'pointer'}}>
+                    <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text)'}}>{a}</span>
+                    <span style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:bal<0?'var(--red)':bal===0?'var(--text3)':'var(--green)'}}>{bal===0?'—':(bal<0?'−':'')+fmtAmt(Math.abs(bal))}</span>
+                    <span style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:11,color:moSpend>0?'var(--red)':'var(--text3)'}}>{moSpend>0?'−'+fmtAmt(moSpend):'—'}</span>
                   </div>
-                  <div style={{background:'var(--bg4)',borderRadius:3,height:6,overflow:'hidden'}}>
-                    <div style={{
-                      height:6,borderRadius:3,
-                      width:Math.min(pct,100)+'%',
-                      background:s.color,
-                      opacity:isDeduct?0.7:1,
-                      transition:'width 0.4s ease'
-                    }}/>
-                  </div>
-                  {i<steps.length-1&&isDeduct&&(
-                    <div style={{borderBottom:'1px dashed var(--border2)',marginTop:8}}/>
-                  )}
-                  {isResult&&(
-                    <div style={{marginTop:4,fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)'}}>
-                      {safeToSpend>=0?`✓ ${Math.round(safeToSpend/liquid*100)}% of total liquid available`:'⚠ CC dues exceed bank balance'}
-                    </div>
-                  )}
+                );
+              })}
+              {/* CC dues rows — only those with outstanding */}
+              {(allCCAll||allCC).some(a=>Math.max(0,-(balances[a]||0))>0)&&(<>
+                <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:0,padding:'6px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',borderTop:'1px solid var(--border2)'}}>
+                  <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Credit Card</span>
+                  <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Billed</span>
+                  <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Unbilled</span>
                 </div>
-              )})}
+                {(allCCAll||allCC).map(a=>{
+                  const due=Math.max(0,-(balances[a]||0));
+                  if(due===0)return null;
+                  const reconData=(()=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[a]||null;}catch{return null;}})();
+                  const billStart=reconData?reconData.billEnd:(()=>{const sd=parseInt((JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}')[a])||'1');const d=new Date();const lastStmt=new Date(d.getFullYear(),d.getMonth(),sd);if(lastStmt>d)return new Date(d.getFullYear(),d.getMonth()-1,sd).toISOString().slice(0,10);const prevBill=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,sd);return prevBill.toISOString().slice(0,10);})();
+                  const allCCTxns=active.filter(t=>t.from_account===a&&(t.type==='Expense'||t.type==='UA Expense'));
+                  const unbilledTxns=allCCTxns.filter(t=>t.created_at.slice(0,10)>billStart);
+                  const unbilled=unbilledTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+                  const billed=Math.max(0,due-unbilled);
+                  const billedStart=reconData?reconData.billStart:billStart;
+                  const billedEnd=reconData?reconData.billEnd:billStart;
+                  return(
+                    <div key={a} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:0,padding:'9px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
+                      <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--text)'}}>{a}</span>
+                      <span onClick={()=>{if(billed>0){setTxnFilter({account:a,type:null,dateRange:{start:billedStart,end:billedEnd},category:null});setTab('txns');}}} style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:billed>0?'var(--red)':'var(--text3)',cursor:billed>0?'pointer':'default'}}>{billed>0?fmtAmt(billed):'—'}</span>
+                      <span onClick={()=>{if(unbilled>0){const tod=new Date().toISOString().slice(0,10);setTxnFilter({account:a,type:null,dateRange:{start:billStart,end:tod},category:null});setTab('txns');}}} style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:unbilled>0?'var(--amber)':'var(--text3)',cursor:unbilled>0?'pointer':'default'}}>{unbilled>0?fmtAmt(unbilled):'—'}</span>
+                    </div>
+                  );
+                }).filter(Boolean)}
+              </>)}
             </div>
           )}
         </div>
         );
       })()}
 
-      {/* ── v1.6 NET CASH card — prominent with bold Personal/Site split ── */}
-      <div style={{background:'var(--bg2)',border:'1.5px solid var(--border2)',borderRadius:10,padding:'10px 14px',marginBottom:6}}>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-          <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.1em'}}>💵 Net Cash</span>
-          <span style={{fontFamily:'var(--mono)',fontSize:18,fontWeight:800,color:netCash<0?'var(--red)':netCash===0?'var(--text3)':'var(--green)',letterSpacing:'-0.5px'}}>{netCash<0?'−':''}{fmtAmt(Math.abs(netCash))}</span>
-        </div>
-        <div style={{display:'flex',gap:12,borderTop:'1px solid var(--border)',paddingTop:6}}>
-          <div style={{flex:1}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',marginBottom:2}}>Personal Cash</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:pCash<0?'var(--red)':pCash===0?'var(--text3)':'var(--green)'}}>{pCash<0?'−':''}{fmtAmt(Math.abs(pCash))}</div>
-          </div>
-          <div style={{width:1,background:'var(--border)'}}/>
-          <div style={{flex:1}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',marginBottom:2}}>Site Cash</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:sCash<0?'var(--red)':sCash===0?'var(--text3)':'var(--blue)'}}>{sCash<0?'−':''}{fmtAmt(Math.abs(sCash))}</div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Month summary strip ── */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,marginBottom:6}}>
-        {[['Income',income,'var(--green)'],['Expense',expense,'var(--red)'],['Liquid',liquid,'var(--blue)']].map(([l,v,c])=>(
-          <div key={l} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',marginBottom:3}}>{MONTHS[month]} {l}</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:c}}>{fmtAmt(v)}</div>
-          </div>
-        ))}
-      </div>
-
       {/* Alerts */}
       {alerts.length>0&&<div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:6}}>{alerts.map((a,i)=><div key={i} style={{background:a.r==='red'?'var(--red-bg)':a.r==='blue'?'var(--blue-bg)':'var(--amber-bg)',border:'1px solid '+(a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)'),borderRadius:6,padding:'6px 10px',fontSize:11,color:a.r==='red'?'var(--red)':a.r==='blue'?'var(--blue)':'var(--amber)',fontFamily:'var(--mono)'}}>{a.r==='red'?'⚠ ':a.r==='blue'?'◈ ':'● '}{a.t}</div>)}</div>}
-
-      {/* Collapsed Bank Balances — 3-column month view with routing */}
-      <Card>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',cursor:'pointer',borderBottom:bankOpen?'1px solid var(--border)':'none'}} onClick={()=>setBankOpen(o=>!o)}>
-          <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>🏦 Bank Balances</span>
-          <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--green)'}}>{fmtAmt(bankTotal)}</span><span style={{fontSize:10,color:'var(--text3)',display:'inline-block',transform:bankOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span></div>
-        </div>
-        {bankOpen&&(
-          <div style={{overflow:'hidden'}}>
-            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
-              <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Bank</span>
-              <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Income</span>
-              <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spends</span>
-            </div>
-            {allBanks.filter(a=>a!=='Site Cash').map(a=>{
-              const monthTxns=thisMonth.filter(t=>t.from_account===a||t.to_account===a);
-              const income=monthTxns.filter(t=>t.type==='Income'&&t.to_account===a).reduce((s,t)=>s+(+t.amount),0);
-              const spends=monthTxns.filter(t=>(t.type==='Expense'||t.type==='UA Expense')&&t.from_account===a).reduce((s,t)=>s+(+t.amount),0)+monthTxns.filter(t=>t.type.includes('→')&&t.from_account===a).reduce((s,t)=>s+(+t.amount),0);
-              return(<div key={a} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
-                <div onClick={()=>{setTab('statement');setTimeout(()=>{window.dispatchEvent(new CustomEvent('jbf-route-statement',{detail:{account:a,period:'this_month'}}));},50);}} style={{cursor:'pointer',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,textDecoration:'underline',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>e.target.style.textDecorationColor='var(--blue)'} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{a}</div>
-                <div onClick={()=>{setTxnFilter({account:a,type:'Income',dateRange:'this_month',category:null});setTab('txns');}} style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:income>0?'var(--green)':'var(--text3)',cursor:income>0?'pointer':'default',textDecoration:income>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>income>0&&(e.target.style.textDecorationColor='var(--green)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{income>0?fmtAmt(income):'—'}</div>
-                <div onClick={()=>{if(spends>0){setTxnFilter({account:a,type:'Expense',dateRange:'this_month',category:null});setTab('txns');}}} style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:spends>0?'var(--red)':'var(--text3)',cursor:spends>0?'pointer':'default',textDecoration:spends>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>spends>0&&(e.target.style.textDecorationColor='var(--red)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{spends>0?fmtAmt(spends):'—'}</div>
-              </div>);
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* Collapsed CC Dues — 2-column Billed/Unbilled with routing */}
-      <Card>
-        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 12px',cursor:'pointer',borderBottom:ccOpen?'1px solid var(--border)':'none'}} onClick={()=>setCcOpen(o=>!o)}>
-          <span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>💳 CC Dues</span>
-          <div style={{display:'flex',alignItems:'center',gap:8}}><span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:totalCC>0?'var(--amber)':'var(--text3)'}}>{fmtAmt(totalCC)}</span><span style={{fontSize:10,color:'var(--text3)',display:'inline-block',transform:ccOpen?'rotate(180deg)':'none',transition:'transform 0.2s'}}>▼</span></div>
-        </div>
-        {ccOpen&&(
-          <div style={{overflow:'hidden'}}>
-            {(allCCAll||allCC).map((a,idx)=>{
-              const due=Math.max(0,-(balances[a]||0));
-              if(due===0)return null;
-              const reconData=(()=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[a]||null;}catch{return null;}})();
-              const billStart=reconData?reconData.billEnd:(()=>{const sd=parseInt((JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}')[a])||'1');const d=new Date();const lastStmt=new Date(d.getFullYear(),d.getMonth(),sd);if(lastStmt>d)return new Date(d.getFullYear(),d.getMonth()-1,sd).toISOString().slice(0,10);const prevBill=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,sd);return prevBill.toISOString().slice(0,10);})();
-              const allCCTxns=active.filter(t=>t.from_account===a&&(t.type==='Expense'||t.type==='UA Expense'));
-              const unbilledTxns=allCCTxns.filter(t=>t.created_at.slice(0,10)>billStart);
-              const unbilled=unbilledTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-              const billed=due-unbilled;
-              const billedStart=reconData?reconData.billStart:billStart;
-              const billedEnd=reconData?reconData.billEnd:billStart;
-              return(<div key={a} style={{borderBottom:'1px solid var(--border)'}}>
-                <div style={{padding:'8px 12px',background:'var(--bg3)',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text2)',textTransform:'uppercase',letterSpacing:'0.06em'}}>{a}</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:0}}>
-                  <div onClick={()=>{if(billed>0){setTxnFilter({account:a,type:null,dateRange:{start:billedStart,end:billedEnd},category:null});setTab('txns');}}} style={{padding:'10px 12px',borderRight:'1px solid var(--border)',cursor:billed>0?'pointer':'default'}}>
-                    <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Billed</div>
-                    <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:billed>0?'var(--red)':'var(--text3)',textDecoration:billed>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>billed>0&&(e.target.style.textDecorationColor='var(--red)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{billed>0?fmtAmt(billed):'—'}</div>
-                  </div>
-                  <div onClick={()=>{if(unbilled>0){const today=new Date().toISOString().slice(0,10);setTxnFilter({account:a,type:null,dateRange:{start:billStart,end:today},category:null});setTab('txns');}}} style={{padding:'10px 12px',cursor:unbilled>0?'pointer':'default'}}>
-                    <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Unbilled</div>
-                    <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:unbilled>0?'var(--amber)':'var(--text3)',textDecoration:unbilled>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>unbilled>0&&(e.target.style.textDecorationColor='var(--amber)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{unbilled>0?fmtAmt(unbilled):'—'}</div>
-                  </div>
-                </div>
-              </div>);
-            }).filter(Boolean)}
-            {(allCCAll||allCC).filter(a=>Math.max(0,-(balances[a]||0))===0).length===(allCCAll||allCC).length&&<div style={{padding:'14px 12px',textAlign:'center',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>No CC dues! All clear ✓</div>}
-          </div>
-        )}
-      </Card>
 
       {/* ── v1.6 AUDIT + RECALCULATE row ── */}
       <div style={{display:'flex',gap:6,marginBottom:8}}>
@@ -1882,7 +1767,7 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances,setTa
   })();
   
   const handlePrint=()=>{
-    const html=`<!DOCTYPE html><html><head><title>${acct} Statement - ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.summary div{border:1px solid #ccc;padding:8px;background:#fafafa;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:12px;font-weight:700;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}</style></head><body><h1>${acct} — Bank Ledger</h1><h2>${periodLabel}</h2><div class="summary"><div><div class="label">Opening Balance</div><div class="value">₹${fmtAmt(Math.abs(openBal))}</div></div><div><div class="label">Total Deposits</div><div class="value">₹${fmtAmt(totDeposit)}</div></div><div><div class="label">Total Withdrawals</div><div class="value">₹${fmtAmt(totWithdrawal)}</div></div></div><table><thead><tr><th style="width:20%;">Date</th><th style="width:40%;">Description</th><th style="width:20%;">Deposit (₹)</th><th style="width:20%;">Withdrawal (₹)</th></tr></thead><tbody><tr style="background:#fff8e1;"><td colspan="2" style="font-weight:600;">OPENING BALANCE</td><td class="amt">${openBal>=0?fmtAmt(openBal):'—'}</td><td class="amt">${openBal<0?fmtAmt(Math.abs(openBal)):'—'}</td></tr>${rows.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category||t.type}</td><td class="amt">${t.deposit>0?fmtAmt(t.deposit):'—'}</td><td class="amt">${t.withdrawal>0?fmtAmt(t.withdrawal):'—'}</td></tr>`).join('')}<tr style="background:#e8f5e9;font-weight:600;"><td colspan="2">CLOSING BALANCE</td><td class="amt">${closeBal>=0?fmtAmt(closeBal):'—'}</td><td class="amt">${closeBal<0?fmtAmt(Math.abs(closeBal)):'—'}</td></tr></tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.1</div></body></html>`;
+    const html=`<!DOCTYPE html><html><head><title>${acct} Statement - ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.summary div{border:1px solid #ccc;padding:8px;background:#fafafa;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:12px;font-weight:700;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}</style></head><body><h1>${acct} — Bank Ledger</h1><h2>${periodLabel}</h2><div class="summary"><div><div class="label">Opening Balance</div><div class="value">₹${fmtAmt(Math.abs(openBal))}</div></div><div><div class="label">Total Deposits</div><div class="value">₹${fmtAmt(totDeposit)}</div></div><div><div class="label">Total Withdrawals</div><div class="value">₹${fmtAmt(totWithdrawal)}</div></div></div><table><thead><tr><th style="width:20%;">Date</th><th style="width:40%;">Description</th><th style="width:20%;">Deposit (₹)</th><th style="width:20%;">Withdrawal (₹)</th></tr></thead><tbody><tr style="background:#fff8e1;"><td colspan="2" style="font-weight:600;">OPENING BALANCE</td><td class="amt">${openBal>=0?fmtAmt(openBal):'—'}</td><td class="amt">${openBal<0?fmtAmt(Math.abs(openBal)):'—'}</td></tr>${rows.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category||t.type}</td><td class="amt">${t.deposit>0?fmtAmt(t.deposit):'—'}</td><td class="amt">${t.withdrawal>0?fmtAmt(t.withdrawal):'—'}</td></tr>`).join('')}<tr style="background:#e8f5e9;font-weight:600;"><td colspan="2">CLOSING BALANCE</td><td class="amt">${closeBal>=0?fmtAmt(closeBal):'—'}</td><td class="amt">${closeBal<0?fmtAmt(Math.abs(closeBal)):'—'}</td></tr></tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.2</div></body></html>`;
     const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
   };
   
@@ -2073,7 +1958,7 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
             <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Current Cycle · Unbilled Spends</div>
             <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:800,color:'var(--amber)',textDecoration:unbilledTotal>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>unbilledTotal>0&&(e.target.style.textDecorationColor='var(--amber)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{fmtAmt(unbilledTotal)}</div>
           </div>
-          {unbilled.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Unbilled Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;padding:10px;background:#fff3e0;border:1px solid #ff9800;border-radius:6px;text-align:center;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:14px;font-weight:700;color:#ff9800;}</style></head><body><h1>${selCC} — Unbilled Ledger</h1><h2>Current Cycle (Since ${fmtDate(unbilledFrom)})</h2><table><thead><tr><th style="width:15%;">Date</th><th style="width:50%;">Description</th><th style="width:15%;">Category</th><th style="width:20%;">Spend (₹)</th></tr></thead><tbody>${[...unbilled].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div class="summary"><div class="label">Total Unbilled Spends</div><div class="value">₹${fmtAmt(unbilledTotal)}</div><div style="margin-top:8px;font-size:9px;color:#666;">Next Statement: ${fmtDate(nextStmt)} · ${unbilled.length} transactions</div></div><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.1</div></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--amber)',color:'#000',border:'none',borderRadius:6,padding:'5px 12px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer',flexShrink:0}}>🖨 Print</button>}
+          {unbilled.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Unbilled Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;padding:10px;background:#fff3e0;border:1px solid #ff9800;border-radius:6px;text-align:center;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:14px;font-weight:700;color:#ff9800;}</style></head><body><h1>${selCC} — Unbilled Ledger</h1><h2>Current Cycle (Since ${fmtDate(unbilledFrom)})</h2><table><thead><tr><th style="width:15%;">Date</th><th style="width:50%;">Description</th><th style="width:15%;">Category</th><th style="width:20%;">Spend (₹)</th></tr></thead><tbody>${[...unbilled].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div class="summary"><div class="label">Total Unbilled Spends</div><div class="value">₹${fmtAmt(unbilledTotal)}</div><div style="margin-top:8px;font-size:9px;color:#666;">Next Statement: ${fmtDate(nextStmt)} · ${unbilled.length} transactions</div></div><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.2</div></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--amber)',color:'#000',border:'none',borderRadius:6,padding:'5px 12px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer',flexShrink:0}}>🖨 Print</button>}
         </div>
         <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>
           Since {fmtDate(unbilledFrom)} · {unbilled.length} txns · Statement on {fmtDate(nextStmt)}
@@ -2112,7 +1997,7 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
 
       {/* Reconciliation summary */}
       <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><div style={{display:'flex',gap:8,alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{billed.length} txn{billed.length!==1?'s':''}</span>{billed.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Bill Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.summary div{border:1px solid #ccc;padding:8px;background:#fafafa;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:12px;font-weight:700;}</style></head><body><h1>${selCC} — Bill Statement</h1><h2>${fmtDate(billStart)} to ${fmtDate(billEnd)}</h2><div class="summary"><div><div class="label">App Tracked</div><div class="value">₹${fmtAmt(billedTotal)}</div></div><div><div class="label">Bank Statement</div><div class="value">₹${hasStmt?fmtAmt(sa):'—'}</div></div><div><div class="label">Difference</div><div class="value" style="color:${diff===0?'#4caf50':diff>0?'#f44336':'#4caf50'};">${diff===0?'✓ Matched':diff>0?'+₹'+fmtAmt(diff):'−₹'+fmtAmt(Math.abs(diff))}</div></div></div><table><thead><tr><th style="width:15%;">Date</th><th style="width:50%;">Description</th><th style="width:15%;">Category</th><th style="width:20%;">Spend (₹)</th></tr></thead><tbody>${[...billed].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}<tr style="background:#ffebee;font-weight:600;"><td colspan="3">TOTAL BILL</td><td class="amt">₹${fmtAmt(billedTotal)}</td></tr></tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.1${lastRecon?' · Reconciled':'·  Pending Reconciliation'}</div></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontFamily:'var(--mono)',fontSize:9,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>}</div></div>
+        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · Reconciliation</span><div style={{display:'flex',gap:8,alignItems:'center'}}><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{billed.length} txn{billed.length!==1?'s':''}</span>{billed.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Bill Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}.summary div{border:1px solid #ccc;padding:8px;background:#fafafa;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:12px;font-weight:700;}</style></head><body><h1>${selCC} — Bill Statement</h1><h2>${fmtDate(billStart)} to ${fmtDate(billEnd)}</h2><div class="summary"><div><div class="label">App Tracked</div><div class="value">₹${fmtAmt(billedTotal)}</div></div><div><div class="label">Bank Statement</div><div class="value">₹${hasStmt?fmtAmt(sa):'—'}</div></div><div><div class="label">Difference</div><div class="value" style="color:${diff===0?'#4caf50':diff>0?'#f44336':'#4caf50'};">${diff===0?'✓ Matched':diff>0?'+₹'+fmtAmt(diff):'−₹'+fmtAmt(Math.abs(diff))}</div></div></div><table><thead><tr><th style="width:15%;">Date</th><th style="width:50%;">Description</th><th style="width:15%;">Category</th><th style="width:20%;">Spend (₹)</th></tr></thead><tbody>${[...billed].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}<tr style="background:#ffebee;font-weight:600;"><td colspan="3">TOTAL BILL</td><td class="amt">₹${fmtAmt(billedTotal)}</td></tr></tbody></table><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.2${lastRecon?' · Reconciled':'·  Pending Reconciliation'}</div></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontFamily:'var(--mono)',fontSize:9,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>}</div></div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>{fmtAmt(billedTotal)}</span></div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>Bank Statement Amount</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:hasStmt?'var(--text)':'var(--text3)'}}>{hasStmt?fmtAmt(sa):'—'}</span></div>
         {hasStmt&&<div style={{padding:'14px',background:diff===0?'var(--green-bg)':diff>0?'var(--red-bg)':'var(--green-bg)',borderTop:'2px solid '+(diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)')}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{diff===0?'✓ Perfectly Matched!':diff>0?'Unaccounted Bank Charges':'Cashbacks / Refunds'}</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)'}}>{diff===0?fmtAmt(0):diff>0?'+'+fmtAmt(diff):'−'+fmtAmt(Math.abs(diff))}</div></div>}
@@ -3259,7 +3144,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
         return(<div key={a} style={{borderBottom:'1px solid var(--border)',padding:'10px 16px'}}>
           <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginBottom:6,fontWeight:600}}>{a}</div>
           <div style={{display:'flex',gap:8}}>
-            <input type="number" style={{flex:'0 0 130px',textAlign:'right'}} value={val.amount||''} placeholder="0"
+            <input type="text" inputMode="decimal" style={{flex:'0 0 130px',textAlign:'right'}} value={val.amount||''} placeholder="0"
               onChange={e=>setOb(p=>({...p,[a]:{...(p[a]||{}),amount:parseFloat(e.target.value)||0}}))}/>
             <input type="date" style={{flex:1}} value={val.opening_date||''}
               onChange={e=>setOb(p=>({...p,[a]:{...(p[a]||{}),opening_date:e.target.value}}))}/>
@@ -3271,7 +3156,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.9.1 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v1.9.1: CC Billed/Unbilled view · 3-col ledgers · Print statements<br/>v1.7: Pagination fix · CC Bill logic · AI CORS fix</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.9.2 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v1.9.2: Minimal dashboard · Bank+CC in hero · Site form simplification · Input bug fix<br/>v1.9.1: CC Billed/Unbilled view · 3-col ledgers · Print statements<br/>v1.7: Pagination fix · CC Bill logic · AI CORS fix</div>
   </div>);
 }
 /* ── RENDER ── */
