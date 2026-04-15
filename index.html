@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v1.9.2</title>
+<title>JB Finance v2.0-DVE</title>
 <link rel="manifest" href="/jbfinance-/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -476,8 +476,10 @@ function App() {
   const balances = computeBalances(opening,txns,allBanksH,allCCH);
   const liquid   = allBanks.filter(a=>a!=='Site Cash').reduce((s,a)=>s+(balances[a]||0),0);
   const totalCC  = allCC.reduce((s,a)=>s+Math.max(0,-(balances[a]||0)),0);
-  const monthlyProv = recurring.filter(r=>r.active!==false&&r.is_provision&&r.frequency==='monthly').reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-  const trueSpendable = Math.max(0,liquid-totalCC-monthlyProv);
+  /* ── DVE Architecture: Net Blocked replaces old monthlyProv deduction ── */
+  const provisionStates = computeProvisions(recurring,txns);
+  const totalNetBlocked = provisionStates.reduce((s,p)=>s+p.C,0);
+  const trueSpendable = Math.max(0,liquid-totalCC-totalNetBlocked);
   const udhariOut = udhari.filter(u=>u.direction==='given').reduce((s,u)=>s+u.amount,0)-udhari.filter(u=>u.direction==='received').reduce((s,u)=>s+u.amount,0);
 
   /* ── DB HELPERS ── */
@@ -591,7 +593,7 @@ function App() {
         {loading&&<div className="empty">Loading...</div>}
         {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch} txnFilter={txnFilter} setTxnFilter={setTxnFilter}/>}
-        {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} onAuditSync={async(real)=>{
+        {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} totalNetBlocked={totalNetBlocked} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} onAuditSync={async(real)=>{
           const diff=real-liquid;
           if(Math.abs(diff)<1){showToast('✓ Balances match perfectly!');return;}
           const isIncome=diff>0;
@@ -600,7 +602,7 @@ function App() {
           showToast((isIncome?'↑ Income':'↓ Expense')+' ₹'+fmt(Math.abs(diff))+' — Suspense entry created');
         }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
-        {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} showToast={showToast}/>}
+        {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} showToast={showToast} provisionStates={provisionStates}/>}
         {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}}/>}
         {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks}/>}
         {!loading&&tab==='statement'&&<StatementScreen txns={txns} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} opening={opening} balances={balances} setTab={setTab} setTxnFilter={setTxnFilter}/>}
@@ -631,6 +633,9 @@ function App() {
     </div>
   );
 }
+/* ── VIRTUAL PROVISION TYPES — these NEVER touch physical balances ── */
+const PROVISION_VIRTUAL_TYPES=['Provision_Accrue','Provision_Withdraw','Provision_Repay','Provision_Flush'];
+
 /* ── computeBalances ── */
 function computeBalances(opening,txns,allBanks,allCC){
   const bal={};
@@ -641,6 +646,8 @@ function computeBalances(opening,txns,allBanks,allCC){
   txns.filter(t=>t.status!=='voided').forEach(t=>{
     const txnDate=(t.created_at||'').slice(0,10);
     const amt=parseFloat(t.amount)||0,from=t.from_account,to=t.to_account,type=t.type;
+    /* ── STRICT RULE: Virtual provision types MUST NOT affect physical balances ── */
+    if(PROVISION_VIRTUAL_TYPES.includes(type))return;
     /* only include transaction if it's on/after the account's opening_date */
     const after=acc=>{
       const val=opening[acc];
@@ -655,6 +662,31 @@ function computeBalances(opening,txns,allBanks,allCC){
     }
   });
   return bal;
+}
+
+/* ── computeProvisions — Decoupled Virtual Envelope Engine ──
+   For each is_provision recurring entry:
+     A = Target        (target_amount from recurring table)
+     B = Gross Saved   (already_saved + SUM(Provision_Accrue) - SUM(Provision_Flush))
+     D = Debt          (SUM(Provision_Withdraw) - SUM(Provision_Repay))
+     C = Net Blocked   (B - D)  ← the liquidity that is virtually locked
+── */
+function computeProvisions(recurring,txns){
+  const activeTxns=txns.filter(t=>t.status!=='voided');
+  return recurring.filter(r=>r.is_provision&&r.active!==false).map(prov=>{
+    const myTxns=activeTxns.filter(t=>t.provision_envelope===prov.id||t.particulars===('[ENV:'+prov.id+']'));
+    const provTxns=activeTxns.filter(t=>PROVISION_VIRTUAL_TYPES.includes(t.type)&&(t.category===prov.name||t.particulars&&t.particulars.includes('[ENV:'+prov.id+']')));
+    const accrues =provTxns.filter(t=>t.type==='Provision_Accrue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const flushes =provTxns.filter(t=>t.type==='Provision_Flush').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const borrows =provTxns.filter(t=>t.type==='Provision_Withdraw').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const repays  =provTxns.filter(t=>t.type==='Provision_Repay').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const A=parseFloat(prov.target_amount)||0;
+    const B=Math.max(0,(parseFloat(prov.already_saved)||0)+accrues-flushes);
+    const D=Math.max(0,borrows-repays);
+    const C=Math.max(0,B-D);
+    const pct=A>0?Math.min(Math.round(C/A*100),100):0;
+    return{prov,A,B,C,D,accrues,flushes,borrows,repays,provTxns,pct};
+  });
 }
 
 /* ── Header ── */
@@ -1061,7 +1093,7 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
   );
 }
 /* ── DashScreen — Waterfall Hero + Audit Sync + Collapsed Cards + Clickable Chart ── */
-function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,recurring,checklist,setGlobalSearch,setTab,setTxnFilter,onAuditSync}){
+function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,totalNetBlocked,recurring,checklist,setGlobalSearch,setTab,setTxnFilter,onAuditSync}){
   budgets=budgets||{};
 
   const [auditLoading,setAuditLoading]=useState(false);
@@ -1078,8 +1110,9 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const uaOut=uaExp-uaRecv;
   const ccDues=(allCCAll||allCC).map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
   const totalCC=ccDues.reduce((s,x)=>s+x.due,0);
-  const monthlyProv=recurring.filter(r=>r.active!==false&&r.is_provision&&r.frequency==='monthly').reduce((s,r)=>s+(parseFloat(r.amount)||0),0);
-  const reservedCapital=totalCC+monthlyProv;
+  /* DVE: use totalNetBlocked (virtual envelope locks) instead of legacy monthlyProv */
+  const netBlocked=totalNetBlocked||0;
+  const reservedCapital=totalCC+netBlocked;
   const safeToSpend=liquid-reservedCapital;
   const spendable=trueSpendable!==undefined?trueSpendable:Math.max(0,liquid-totalCC);
 
@@ -1157,7 +1190,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
             <div style={{textAlign:'right'}}>
               <div style={{fontFamily:'var(--mono)',fontSize:9,color:safeCol,opacity:0.7}}>Bank {fmtAmt(liquid)}</div>
               {totalCC>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',opacity:0.8}}>−CC {fmtAmt(totalCC)}</div>}
-              {monthlyProv>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',opacity:0.8}}>−Prov {fmtAmt(monthlyProv)}</div>}
+              {netBlocked>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',opacity:0.8}}>−Env {fmtAmt(netBlocked)}</div>}
             </div>
           </div>
           {/* Expand toggle */}
@@ -1578,120 +1611,225 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
     {recurring.filter(r=>!r.is_provision).length>0&&<><p className="sec-label" style={{marginTop:16}}>All recurring bills</p>{recurring.filter(r=>!r.is_provision).map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 14px',borderBottom:'1px solid var(--border)',fontSize:12}}><div style={{flex:1,minWidth:0}}><div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{FREQS.find(f=>f.k===r.frequency)?.l||r.frequency} · {r.account}</div></div><div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{r.amount?fmtAmt(r.amount):'var'}</span><button onClick={()=>onDelete(r.id)} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',padding:'3px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div></div>)}</>}
   </div>);
 }
-/* ── ProvisionLedger — CFO Envelope System ── */
-function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showToast}){
+/* ── ProvisionLedger — Decoupled Virtual Envelope (DVE) Architecture ──
+   Provisions are VIRTUAL TAGS that block liquidity.
+   Physical money NEVER moves until a Flush (actual expense) occurs.
+   Types: Provision_Accrue (+B), Provision_Withdraw (+D), Provision_Repay (−D), Provision_Flush (−B + physical Expense)
+── */
+function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showToast,provisionStates}){
   const [sel,setSel]=useState(null);
-  const [qAction,setQAction]=useState(null); /* {id,type:'add'|'withdraw'} */
-  const [qAmt,setQAmt]=useState('');const [qNote,setQNote]=useState('');const [saving,setSaving]=useState(false);
+  /* qAction: {id, type: 'accrue'|'borrow'|'repay'|'flush'} */
+  const [qAction,setQAction]=useState(null);
+  const [qAmt,setQAmt]=useState('');const [qNote,setQNote]=useState('');
+  const [flushBank,setFlushBank]=useState('');
+  const [saving,setSaving]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
-  const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});
+  const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',active:true});
   const [formSaving,setFormSaving]=useState(false);
 
-  const provisions=recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
-  const activeTxns=txns.filter(t=>t.status!=='voided');
+  /* Use pre-computed provisionStates from App (via computeProvisions) */
+  const states=provisionStates||[];
 
-  const getLedger=prov=>{
-    const deps=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes(prov.name)&&!t.particulars.includes('[WITHDRAW]')&&!t.particulars.includes('[RETURN]'));
-    const wdrs=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[WITHDRAW] '+prov.name));
-    const rets=activeTxns.filter(t=>t.type==='Bank→Bank'&&t.particulars&&t.particulars.includes('[RETURN] '+prov.name));
-    const dep_=deps.reduce((s,t)=>s+(+t.amount),0);const wdr_=wdrs.reduce((s,t)=>s+(+t.amount),0);const ret_=rets.reduce((s,t)=>s+(+t.amount),0);
-    const bal=dep_-wdr_+ret_;const tgt=parseFloat(prov.target_amount)||0;const pct=tgt>0?Math.min(Math.round(bal/tgt*100),100):0;
-    return{deps,wdrs,rets,dep_,wdr_,ret_,bal,tgt,pct};
-  };
-
-  const handleQuick=async(prov,type,amt,note)=>{
-    if(!amt||parseFloat(amt)<=0)return;setSaving(true);
-    const isAdd=type==='add';
-    const from_=isAdd?(prov.account||allBanks.find(b=>b!=='Cash')||'KB'):prov.provision_account;
-    const to_=isAdd?prov.provision_account:(prov.account||allBanks.find(b=>b!=='Cash')||'KB');
-    if(from_&&to_&&from_===to_){alert('⚠ Self-transfer not allowed. Source and destination accounts are the same.');setSaving(false);return;}
-    const label=isAdd?prov.name:'[WITHDRAW] '+prov.name;
-    await onAddTxn({type:'Bank→Bank',amount:parseFloat(amt),category:'Provision',from_account:from_,to_account:to_,particulars:label+(note?' — '+note:''),status:'complete',source:'provision',created_at:new Date().toISOString()});
-    setQAction(null);setQAmt('');setQNote('');setSaving(false);
-    showToast(isAdd?'✓ Funds added to envelope':'↩ Withdrawal logged');
+  /* ── DVE Action Handler ──
+     accrue  → Provision_Accrue  (virtual, increases Gross Saved B)
+     borrow  → Provision_Withdraw (virtual, increases Debt D)
+     repay   → Provision_Repay   (virtual, decreases Debt D)
+     flush   → DUAL WRITE: Provision_Flush (virtual, empties envelope) + Expense (physical debit)
+  ── */
+  const handleAction=async(prov,type,amt,note,bankAcct)=>{
+    const n=parseFloat(amt);if(!n||n<=0){showToast('⚠ Enter a valid amount');return;}
+    setSaving(true);
+    const now=new Date().toISOString();
+    const tag='[ENV:'+prov.id+']';
+    if(type==='flush'){
+      /* 1. Virtual Provision_Flush — empties the envelope */
+      await onAddTxn({type:'Provision_Flush',amount:n,category:prov.name,particulars:tag+(note?' — '+note:''),status:'complete',source:'provision_dve',created_at:now});
+      /* 2. Physical Expense — actual money leaves the bank */
+      const physBank=bankAcct||(allBanks.find(b=>b!=='Cash')||allBanks[0]||'KB');
+      await onAddTxn({type:'Expense',amount:n,category:'Provision',from_account:physBank,particulars:'Flush: '+prov.name+(note?' — '+note:''),status:'complete',source:'provision_flush',created_at:now});
+      showToast('✓ Flushed — ₹'+fmt(n)+' debited from '+physBank);
+    } else {
+      const txnType=type==='accrue'?'Provision_Accrue':type==='borrow'?'Provision_Withdraw':'Provision_Repay';
+      await onAddTxn({type:txnType,amount:n,category:prov.name,particulars:tag+(note?' — '+note:''),status:'complete',source:'provision_dve',created_at:now});
+      const labels={accrue:'✓ Accrued',borrow:'⚠ Borrowed',repay:'✓ Repaid'};
+      showToast((labels[type]||'✓')+' ₹'+fmt(n));
+    }
+    setQAction(null);setQAmt('');setQNote('');setFlushBank('');setSaving(false);
   };
 
   const handleAddProv=async()=>{
-    if(!form.name.trim()||!form.from_account||!form.to_account)return;
-    if(form.from_account===form.to_account){alert('⚠ Self-transfer not allowed. Source account and envelope account must be different.');return;}
-    if(!form.due_date){alert('⚠ Due date is mandatory. Please set a target date for this envelope.');return;}
+    if(!form.name.trim())return;
     setFormSaving(true);
-    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account,provision_account:form.to_account,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
-    setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',to_account:'',active:true});setFormSaving(false);setAddOpen(false);
+    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:null,provision_account:null,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
+    setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',active:true});setFormSaving(false);setAddOpen(false);
   };
 
-  const tgt=parseFloat(form.target_amount)||0;const saved=parseFloat(form.already_saved)||0;const gap=Math.max(0,tgt-saved);
-  const dueDate=form.due_date?new Date(form.due_date):null;
-  const monthsLeft=dueDate?Math.max(1,Math.round((dueDate-new Date())/(1000*60*60*24*30))):0;
-  const sugMonth=monthsLeft>0?Math.ceil(gap/monthsLeft):0;
+  const tgt=parseFloat(form.target_amount)||0;const saved_=parseFloat(form.already_saved)||0;const gap_=Math.max(0,tgt-saved_);
+  const dueDate_=form.due_date?new Date(form.due_date):null;
+  const monthsLeft_=dueDate_?Math.max(1,Math.round((dueDate_-new Date())/(1000*60*60*24*30))):0;
+  const sugMonth_=monthsLeft_>0?Math.ceil(gap_/monthsLeft_):0;
 
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const cS=a=>({display:'inline-block',border:a?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:16,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,color:a?'var(--green)':'var(--text2)',background:a?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',margin:'0 4px 4px 0'});
+  const btnS=(col,active)=>({flex:1,background:active?col:'none',border:'1px solid '+col,borderRadius:6,color:active?'#000':col,fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'7px 0',cursor:'pointer',transition:'all 0.15s'});
+
+  /* Total Net Blocked across all envelopes — shown in header */
+  const totalNetBlocked=states.reduce((s,p)=>s+p.C,0);
 
   return(<div className="fade-in" style={{paddingBottom:8}}>
+    {/* Header */}
     <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-      <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Wealth Envelopes</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>Locked savings goals</div></div>
+      <div>
+        <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Virtual Envelopes</div>
+        <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
+          {totalNetBlocked>0
+            ?<span>Net Blocked: <strong style={{color:'var(--amber)'}}>{fmtAmt(totalNetBlocked)}</strong> across {states.length} envelope{states.length!==1?'s':''}</span>
+            :'No liquidity blocked — all envelopes empty'}
+        </div>
+      </div>
       <button onClick={()=>setAddOpen(o=>!o)} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>+ New</button>
     </div>
 
-    {/* Smart Add Envelope Form */}
-    {addOpen&&(<div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
-      <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 12px',fontWeight:600,letterSpacing:'0.06em'}}>NEW WEALTH ENVELOPE</p>
+    {/* DVE Info Banner */}
+    <div style={{margin:'8px 10px 0',background:'var(--blue-bg)',border:'1px solid var(--blue)',borderRadius:8,padding:'8px 12px',fontFamily:'var(--mono)',fontSize:10,color:'var(--blue)',lineHeight:1.6}}>
+      ◈ DVE Mode: Provisions are virtual tags. Bank balance is <strong>never touched</strong> until you Execute (Flush). Liquidity is blocked logically only.
+    </div>
+
+    {/* Add Envelope Form */}
+    {addOpen&&(<div style={{margin:'8px 10px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
+      <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 12px',fontWeight:600,letterSpacing:'0.06em'}}>NEW VIRTUAL ENVELOPE</p>
       <div style={{display:'flex',flexDirection:'column',gap:8}}>
         <input style={iS} placeholder="Envelope name (e.g. LIC Premium Oct)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
         <div style={{display:'flex',gap:8}}>
-          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET AMOUNT</div><input style={iS} type="number" step="0.01" placeholder="₹ Total needed" value={form.target_amount} onChange={e=>setForm(f=>({...f,target_amount:e.target.value}))}/></div>
-          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>ALREADY SAVED</div><input style={iS} type="number" step="0.01" placeholder="₹ In bank now" value={form.already_saved} onChange={e=>setForm(f=>({...f,already_saved:e.target.value}))}/></div>
+          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET (A)</div><input style={iS} type="number" step="0.01" placeholder="₹ Total needed" value={form.target_amount} onChange={e=>setForm(f=>({...f,target_amount:e.target.value}))}/></div>
+          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>ALREADY SAVED (B₀)</div><input style={iS} type="number" step="0.01" placeholder="₹ already set aside" value={form.already_saved} onChange={e=>setForm(f=>({...f,already_saved:e.target.value}))}/></div>
         </div>
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>PROVISIONED TILL DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
         {tgt>0&&(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'flex',gap:16,flexWrap:'wrap'}}>
-          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(gap)}</strong></span>
-          {dueDate&&<span>Months left: <strong>{monthsLeft}</strong></span>}
-          {sugMonth>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(sugMonth)}/mo</strong></span>}
+          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(gap_)}</strong></span>
+          {dueDate_&&<span>Months left: <strong>{monthsLeft_}</strong></span>}
+          {sugMonth_>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(sugMonth_)}/mo</strong></span>}
         </div>)}
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY CONTRIBUTION</div><input style={iS} type="number" step="0.01" placeholder={sugMonth>0?`Suggested: ₹${fmt(sugMonth)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>DEBIT FROM (source bank)</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.filter(b=>b!=='Cash').map(a=><span key={a} style={cS(form.from_account===a)} onClick={()=>setForm(f=>({...f,from_account:a}))}>{a}</span>)}</div></div>
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>ENVELOPE ACCOUNT (save into)</div><div style={{display:'flex',flexWrap:'wrap'}}>{allBanks.filter(b=>b!=='Cash').map(a=><span key={a} style={cS(form.to_account===a)} onClick={()=>setForm(f=>({...f,to_account:a}))}>{a}</span>)}</div></div>
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY ACCRUE (optional)</div><input style={iS} type="number" step="0.01" placeholder={sugMonth_>0?`Suggested: ₹${fmt(sugMonth_)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
         <div style={{display:'flex',gap:8}}>
-          <button onClick={handleAddProv} disabled={formSaving||!form.name.trim()||!form.from_account||!form.to_account} style={{flex:1,background:formSaving||!form.name.trim()||!form.from_account||!form.to_account?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:formSaving||!form.name.trim()?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>{formSaving?'Saving...':'Create Envelope'}</button>
+          <button onClick={handleAddProv} disabled={formSaving||!form.name.trim()} style={{flex:1,background:formSaving||!form.name.trim()?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:formSaving||!form.name.trim()?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>{formSaving?'Saving...':'Create Envelope'}</button>
           <button onClick={()=>setAddOpen(false)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,color:'var(--text3)',padding:'12px 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>Cancel</button>
         </div>
       </div>
     </div>)}
 
-    {provisions.length===0&&!addOpen&&<div className="empty">No envelopes yet.<br/>Tap "+ New" to create your first savings goal.</div>}
+    {states.length===0&&!addOpen&&<div className="empty">No envelopes yet.<br/>Tap "+ New" to create your first virtual envelope.</div>}
 
-    {provisions.map(prov=>{
-      const{deps,wdrs,rets,dep_,wdr_,ret_,bal,tgt,pct}=getLedger(prov);
-      const isOpen=sel===prov.id;const monthly=parseFloat(prov.amount)||0;
-      const isQAdd=qAction?.id===prov.id&&qAction?.type==='add';const isQWdr=qAction?.id===prov.id&&qAction?.type==='withdraw';
+    {states.map(({prov,A,B,C,D,provTxns,pct})=>{
+      const isOpen=sel===prov.id;
+      const activeType=qAction?.id===prov.id?qAction.type:null;
+      const needFlushBank=activeType==='flush';
       return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px'}}>
-        {/* Header */}
-        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>setSel(isOpen?null:prov.id)}>
+
+        {/* Header — tap to expand ledger */}
+        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{setSel(isOpen?null:prov.id);setQAction(null);}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{prov.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{monthly>0?fmtAmt(monthly)+'/mo':''}{prov.account&&prov.provision_account?' · '+prov.account+'→'+prov.provision_account:''}{prov.due_date&&<span style={{marginLeft:6}}>· due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</span>}</div></div>
-            <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:bal>0?'var(--green)':'var(--text3)'}}>{fmtAmt(bal)}</div>{tgt>0&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pct}% of {fmtAmt(tgt)}</div>}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginBottom:3}}>{prov.name}</div>
+              {prov.due_date&&<div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>Due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</div>}
+            </div>
+            <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:C>0?'var(--green)':'var(--text3)'}}>{fmtAmt(C)}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>Net Blocked</div>
+            </div>
           </div>
-          {tgt>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
-          {(!tgt||!prov.due_date)&&<div style={{marginTop:6,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)',letterSpacing:'0.04em'}}>⚠ Target/Schedule Missing</div>}
+
+          {/* 4-metric grid: A / B / D / C */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4,marginTop:10}}>
+            {[
+              ['A Target',fmtAmt(A),'var(--blue)'],
+              ['B Saved',fmtAmt(B),'var(--green)'],
+              ['D Debt',fmtAmt(D),D>0?'var(--red)':'var(--text3)'],
+              ['C Net',fmtAmt(C),C>0?'var(--green)':'var(--text3)'],
+            ].map(([label,val,col])=>(
+              <div key={label} style={{background:'var(--bg3)',borderRadius:6,padding:'5px 6px',textAlign:'center',border:label==='D Debt'&&D>0?'1px solid var(--red)':'1px solid var(--border)'}}>
+                <div style={{fontSize:8,color:'var(--text3)',fontFamily:'var(--mono)',letterSpacing:'0.06em',marginBottom:2}}>{label.toUpperCase()}</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:col}}>{val}</div>
+              </div>
+            ))}
+          </div>
+
+          {A>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
+          {D>0&&<div style={{marginTop:5,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)'}}>⚠ Debt {fmtAmt(D)} — Repay to clean</div>}
         </div>
-        {/* Action Buttons */}
-        <div style={{display:'flex',gap:6,padding:'0 14px 10px'}}>
-          <button onClick={e=>{e.stopPropagation();setQAction(isQAdd?null:{id:prov.id,type:'add'});setQAmt('');setQNote('');}} style={{flex:1,background:isQAdd?'var(--green)':'var(--green-bg)',border:'1px solid var(--green)',borderRadius:6,color:isQAdd?'#000':'var(--green)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'7px 0',cursor:'pointer'}}>{isQAdd?'▲ Cancel':'+ Add Funds'}</button>
-          <button onClick={e=>{e.stopPropagation();setQAction(isQWdr?null:{id:prov.id,type:'withdraw'});setQAmt('');setQNote('');}} style={{flex:1,background:isQWdr?'var(--red)':'var(--red-bg)',border:'1px solid var(--red)',borderRadius:6,color:isQWdr?'#fff':'var(--red)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'7px 0',cursor:'pointer'}}>{isQWdr?'▼ Cancel':'− Withdraw'}</button>
+
+        {/* 4-Action Button Row */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5,padding:'0 12px 10px'}}>
+          {[
+            {type:'accrue', label:'Accrue', col:'var(--green)'},
+            {type:'borrow', label:'Borrow', col:'var(--amber)'},
+            {type:'repay',  label:'Repay',  col:'var(--blue)'},
+            {type:'flush',  label:'⚡ Execute', col:'var(--red)'},
+          ].map(({type,label,col})=>(
+            <button key={type}
+              onClick={e=>{e.stopPropagation();setQAction(activeType===type?null:{id:prov.id,type});setQAmt('');setQNote('');setFlushBank(allBanks.find(b=>b!=='Cash')||allBanks[0]||'');}}
+              style={{background:activeType===type?col:'none',border:'1px solid '+col,borderRadius:6,color:activeType===type?'#000':col,fontFamily:'var(--mono)',fontSize:10,fontWeight:700,padding:'7px 0',cursor:'pointer',transition:'all 0.15s'}}>
+              {label}
+            </button>
+          ))}
         </div>
-        {/* Quick Action Form */}
-        {(isQAdd||isQWdr)&&(<div style={{padding:'0 14px 12px',borderTop:'1px solid var(--border)'}}>
-          <div style={{display:'flex',gap:6,marginBottom:6}}><input type="number" step="0.01" autoFocus placeholder={isQAdd?"Amount to add":"Amount to withdraw"} value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:2}}/><input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:3}}/></div>
-          <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:6}}>{isQAdd?<>Debit: <strong>{prov.account}</strong> → <strong>{prov.provision_account}</strong></>:<>Debit: <strong>{prov.provision_account}</strong> → <strong>{prov.account}</strong></>}</div>
-          <button onClick={()=>handleQuick(prov,isQAdd?'add':'withdraw',qAmt,qNote)} disabled={saving||!qAmt} style={{width:'100%',background:saving||!qAmt?'var(--bg2)':isQAdd?'var(--green)':'var(--red-bg)',border:'1px solid '+(saving||!qAmt?'var(--border)':isQAdd?'var(--green)':'var(--red)'),borderRadius:6,color:saving||!qAmt?'var(--text3)':isQAdd?'#000':'var(--red)',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'9px',cursor:'pointer'}}>{saving?'Logging...':'Confirm — '+(isQAdd?'Add':'Withdraw')+' '+(qAmt?fmtAmt(parseFloat(qAmt)):'')}</button>
+
+        {/* Inline Action Form */}
+        {activeType&&(<div style={{padding:'0 12px 12px',borderTop:'1px solid var(--border)'}}>
+          {/* Context hint */}
+          <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',padding:'6px 0 8px',lineHeight:1.6}}>
+            {activeType==='accrue'&&'↑ Accrue: Marks more money as virtually saved in this envelope (B increases). No bank movement.'}
+            {activeType==='borrow'&&'↩ Borrow: Temporarily uses envelope funds for something else (D increases). Envelope shrinks.'}
+            {activeType==='repay' &&'↪ Repay: Returns borrowed funds back to envelope (D decreases). Envelope recovers.'}
+            {activeType==='flush' &&'⚡ Execute: Empties the envelope (B→0) AND physically debits the bank. This is the final real-money step.'}
+          </div>
+          <div style={{display:'flex',gap:6,marginBottom:6}}>
+            <input type="number" step="0.01" autoFocus placeholder="Amount (₹)" value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:'0 0 130px'}}/>
+            <input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:1}}/>
+          </div>
+          {/* Bank picker — only shown for Flush */}
+          {needFlushBank&&(
+            <div style={{marginBottom:8}}>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DEBIT FROM BANK (physical debit)</div>
+              <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
+                {allBanks.filter(b=>b!=='Cash').map(b=>(
+                  <span key={b} style={cS(flushBank===b)} onClick={()=>setFlushBank(b)}>{b}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{display:'flex',gap:6}}>
+            <button
+              onClick={()=>handleAction(prov,activeType,qAmt,qNote,flushBank)}
+              disabled={saving||!qAmt||(activeType==='flush'&&!flushBank)}
+              style={{flex:1,background:saving||!qAmt||(activeType==='flush'&&!flushBank)?'var(--bg3)':activeType==='flush'?'var(--red)':activeType==='accrue'?'var(--green)':activeType==='borrow'?'var(--amber)':'var(--blue)',border:'none',borderRadius:6,color:saving||!qAmt||(activeType==='flush'&&!flushBank)?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:11,fontWeight:700,padding:'10px',cursor:'pointer'}}>
+              {saving?'Processing...':`Confirm ${activeType==='accrue'?'Accrue':activeType==='borrow'?'Borrow':activeType==='repay'?'Repay':'Execute'} ${qAmt?'₹'+fmt(parseFloat(qAmt)):''}`}
+            </button>
+            <button onClick={()=>setQAction(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'10px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>✕</button>
+          </div>
         </div>)}
-        {/* Expanded Ledger */}
+
+        {/* Expanded transaction ledger */}
         {isOpen&&(<div style={{borderTop:'1px solid var(--border)'}}>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',borderBottom:'1px solid var(--border)'}}>{[['Added Funds',fmtAmt(dep_),'var(--green)'],['Funds Used',fmtAmt(wdr_),wdr_>0?'var(--red)':'var(--text3)'],['Returned',fmtAmt(ret_),ret_>0?'var(--blue)':'var(--text3)']].map(([l,v,c])=><div key={l} style={{padding:'7px',textAlign:'center',borderRight:'1px solid var(--border)'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>{l.toUpperCase()}</div><div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:c}}>{v}</div></div>)}</div>
-          {[...deps,...wdrs,...rets].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{const isW=t.particulars?.includes('[WITHDRAW]');const isR=t.particulars?.includes('[RETURN]');return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'8px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}><div><div style={{color:isW?'var(--red)':isR?'var(--blue)':'var(--green)',fontFamily:'var(--mono)'}}>{isW?'↩ Funds Used':isR?'↪ Returned':'↑ Added Funds'}</div><div style={{color:'var(--text3)',marginTop:2,fontSize:10}}>{fmtDate(t.created_at)}</div></div><span style={{fontFamily:'var(--mono)',fontWeight:600,color:isW?'var(--red)':isR?'var(--blue)':'var(--green)'}}>{isW?'−':'+'}{fmtAmt(t.amount)}</span></div>);})}
-          {deps.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No transactions yet. Use "+ Add Funds" to start.</div>}
+          <div style={{padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Transaction Log</div>
+          {provTxns.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No virtual entries yet. Use Accrue to start building this envelope.</div>}
+          {[...provTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{
+            const typeConf={
+              Provision_Accrue:{label:'↑ Accrued',col:'var(--green)',sign:'+'},
+              Provision_Withdraw:{label:'↩ Borrowed',col:'var(--amber)',sign:'−'},
+              Provision_Repay:{label:'↪ Repaid',col:'var(--blue)',sign:'+'},
+              Provision_Flush:{label:'⚡ Flushed',col:'var(--red)',sign:'−'},
+            }[t.type]||{label:t.type,col:'var(--text3)',sign:''};
+            return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'8px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}>
+              <div>
+                <div style={{color:typeConf.col,fontFamily:'var(--mono)',fontWeight:600}}>{typeConf.label}</div>
+                <div style={{color:'var(--text3)',marginTop:2,fontSize:10}}>{fmtDate(t.created_at)}{t.particulars&&t.particulars.replace(/\[ENV:[^\]]+\]/,'').trim()?' · '+t.particulars.replace(/\[ENV:[^\]]+\]/,'').trim():''}</div>
+              </div>
+              <span style={{fontFamily:'var(--mono)',fontWeight:700,color:typeConf.col}}>{typeConf.sign}{fmtAmt(t.amount)}</span>
+            </div>);
+          })}
         </div>)}
+
       </div>);
     })}
   </div>);
@@ -3156,7 +3294,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v1.9.2 (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v1.9.2: Minimal dashboard · Bank+CC in hero · Site form simplification · Input bug fix<br/>v1.9.1: CC Billed/Unbilled view · 3-col ledgers · Print statements<br/>v1.7: Pagination fix · CC Bill logic · AI CORS fix</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v2.0-DVE (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v2.0-DVE: Decoupled Virtual Envelope architecture · computeProvisions engine · Provision_Accrue/Withdraw/Repay/Flush types · True Free Liquidity = Bank − CC − Net Blocked · No Bank→Bank transfers for provisions · Dual-write Flush (virtual + physical debit)<br/>v1.9.2: Minimal dashboard · Bank+CC in hero · Site form simplification · Input bug fix</div>
   </div>);
 }
 /* ── RENDER ── */
