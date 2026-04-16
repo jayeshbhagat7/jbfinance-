@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0a0a0a">
-<title>JB Finance v2.0.0</title>
+<title>JB Finance v2.0-DVE</title>
 <link rel="manifest" href="/jbfinance-/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -41,294 +41,6 @@ html[data-theme="nordic"]{
   --border:#d8e0eb;--border2:#c8d4e3;
   --text:#1a202c;--text2:#4a5568;--text3:#718096;
   --green:#38a169;--green-bg:#c6f6d5;
-  --red:#e53e3e;--red-bg:#fed7d7;
-  --amber:#d69e2e;--amber-bg:#fefcbf;
-  --blue:#3182ce;--blue-bg:#bee3f8;
-}
-/* ── THEME: TERMINAL QUANT ── */
-html[data-theme="terminal"]{
-  --bg:#070a07;--bg2:#0b100b;--bg3:#101810;--bg4:#152015;
-  --border:#1a2e1a;--border2:#1f3c1f;
-  --text:#00e066;--text2:#00aa44;--text3:#006628;
-  --green:#00ff77;--green-bg:#001a08;
-  --red:#ff4455;--red-bg:#180008;
-  --amber:#ffdd00;--amber-bg:#181200;
-  --blue:#00ccff;--blue-bg:#00101a;
-}
-/* ── BASE (fallback) ── */
-:root{
-  --bg:#faf6f0;--bg2:#f3ede3;--bg3:#ece4d5;--bg4:#e1d7c4;
-  --border:#d0c5ae;--border2:#bfb399;
-  --text:#2c1f0e;--text2:#5c4a2a;--text3:#8b7355;
-  --green:#5a8a1a;--green-bg:#e8f0d0;
-  --red:#c0392b;--red-bg:#fde8e5;
-  --amber:#b8860b;--amber-bg:#fdf3c5;
-  --blue:#2c5f8a;--blue-bg:#ddeaf5;
-  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
-  --radius:10px;--tab-h:60px;--safe-b:env(safe-area-inset-bottom,0px);
-}
-html,body{height:100%;background:var(--bg3);color:var(--text);font-family:var(--sans);overflow:hidden;}
-#root{display:flex;flex-direction:column;height:100dvh;max-width:600px;margin:0 auto;position:relative;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border);box-shadow:0 0 20px rgba(0,0,0,0.08);}
-::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
-.header{padding:10px 16px 8px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:10;}
-.header-title{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:0.1em;color:var(--text2);text-transform:uppercase;}
-.header-bal{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--green);}
-.main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--tab-h) + var(--safe-b) + 72px);}
-.tabs{position:absolute;bottom:0;left:0;right:0;width:100%;height:calc(var(--tab-h) + var(--safe-b));padding-bottom:var(--safe-b);background:var(--bg2);border-top:1px solid var(--border);display:flex;z-index:100;}
-.tab-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--text3);font-size:9px;font-family:var(--mono);letter-spacing:0.05em;text-transform:uppercase;cursor:pointer;transition:color 0.2s;padding:0;}
-.tab-btn.active{color:var(--green);}
-.tab-btn svg{width:20px;height:20px;}
-.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);}
-.sec-label{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:0.12em;color:var(--text3);text-transform:uppercase;padding:16px 16px 8px;}
-.chip-row{display:flex;gap:6px;padding:0 16px;flex-wrap:wrap;}
-.chip{border:1px solid var(--border2);border-radius:20px;padding:7px 14px;font-family:var(--mono);font-size:11px;color:var(--text2);cursor:pointer;transition:all 0.15s;white-space:nowrap;background:var(--bg2);-webkit-tap-highlight-color:transparent;}
-.chip.sel{border-color:var(--green);color:var(--green);background:var(--green-bg);}
-.chip.sel-amber{border-color:var(--amber);color:var(--amber);background:var(--amber-bg);}
-.desc-input{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;font-family:var(--sans);font-size:14px;color:var(--text);width:calc(100% - 32px);margin:0 16px;outline:none;-webkit-appearance:none;}
-.desc-input::placeholder{color:var(--text3);}
-.save-btn{background:var(--green);color:#000;font-family:var(--mono);font-size:14px;font-weight:600;border:none;border-radius:var(--radius);padding:16px;width:calc(100% - 32px);margin:0 16px;cursor:pointer;letter-spacing:0.05em;-webkit-tap-highlight-color:transparent;transition:opacity 0.15s;}
-.save-btn:disabled{opacity:0.3;}
-.txn-row{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--border);}
-.txn-row:last-child{border-bottom:none;}
-.txn-left{flex:1;min-width:0;}
-.txn-cat{font-family:var(--mono);font-size:10px;color:var(--text3);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:2px;}
-.txn-desc{font-size:13px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.txn-meta{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;}
-.txn-right{text-align:right;flex-shrink:0;margin-left:12px;}
-.txn-amt{font-family:var(--mono);font-size:15px;font-weight:600;}
-.txn-amt.out{color:var(--red);}.txn-amt.in{color:var(--green);}.txn-amt.ua{color:var(--amber);}
-.txn-acct{font-family:var(--mono);font-size:10px;color:var(--text3);margin-top:2px;}
-.badge{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:20px;letter-spacing:0.05em;text-transform:uppercase;display:inline-block;}
-.badge-pending{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);}
-.badge-in{background:var(--green-bg);color:var(--green);border:1px solid var(--green);}
-.progress-bg{background:var(--bg3);border-radius:3px;height:5px;}
-.progress-fill{height:5px;border-radius:3px;background:var(--green);transition:width 0.4s;}
-.divider{height:1px;background:var(--border);margin:0 16px;}
-.empty{text-align:center;padding:48px 24px;color:var(--text3);font-family:var(--mono);font-size:12px;line-height:2;}
-.toast{position:fixed;bottom:calc(var(--tab-h) + var(--safe-b) + 12px);left:50%;transform:translateX(-50%);background:var(--bg4);border:1px solid var(--border2);border-radius:var(--radius);padding:10px 18px;font-family:var(--mono);font-size:12px;color:var(--text);z-index:999;white-space:nowrap;animation:toastIn 0.2s ease;}
-@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(8px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
-.fade-in{animation:fadeIn 0.2s ease;}
-@keyframes fadeIn{from{opacity:0;}to{opacity:1;}}
-.settings-row{display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border);font-size:13px;}
-input[type=number],input[type=text],input[type=date]{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:100%;-webkit-appearance:none;}
-/* Remove number input spinners globally */
-input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
-input[type=number]{-moz-appearance:textfield;}
-input[type=number]:focus,input[type=text]:focus,input[type=date]:focus{border-color:var(--green);}
-select{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:13px;outline:none;width:100%;}
-textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:12px;outline:none;width:100%;resize:vertical;}
-/* Accordion */
-.acc-hdr{display:flex;justify-content:space-between;align-items:center;padding:13px 16px;cursor:pointer;background:var(--bg2);border-bottom:1px solid var(--border);user-select:none;}
-.acc-hdr:active{background:var(--bg3);}
-.acc-title{font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:0.08em;color:var(--text2);text-transform:uppercase;}
-.acc-body{border-bottom:2px solid var(--border2);}
-/* Hero box */
-.hero-box{background:var(--bg2);border:1.5px solid var(--green);border-radius:12px;padding:14px 16px;margin-bottom:8px;}
-.hero-label{font-family:var(--mono);font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:4px;}
-.hero-amount{font-family:var(--mono);font-size:30px;font-weight:700;letter-spacing:-1px;line-height:1;margin-bottom:8px;}
-.hero-sub{font-family:var(--mono);font-size:11px;color:var(--text3);}
-.hero-sub span{color:var(--text2);}
-/* Envelope */
-.env-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:8px;}
-.env-bar{height:4px;background:var(--bg3);}
-.env-fill{height:4px;transition:width 0.4s;}
-/* Theme swatches */
-.swatch{width:28px;height:28px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;flex-shrink:0;}
-.swatch.active{border-color:var(--green);transform:scale(1.1);}
-</style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script>
-/* Service Worker disabled for Claude artifact viewer environment */
-</script>
-</head>
-<body>
-<div id="root"></div>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>if(window['pdfjs-dist/build/pdf'])window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
-<script type="text/babel">
-const { useState, useEffect, useCallback, useRef } = React;
-const { createClient } = supabase;
-const SUPA_URL = 'https://ayzlaumbrntpqfemnxao.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5emxhdW1icm50cHFmZW1ueGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjQwNTAsImV4cCI6MjA4OTc0MDA1MH0.VEYId6dpxCvmTArXq-FVZqy5WTgl0QTcLamYMovaqgE';
-const db = createClient(SUPA_URL, SUPA_KEY);
-
-/* ── SEED CONSTANTS (used only for initial data; UI derives everything dynamically) ── */
-const SEED_BANKS = ['Cash','KB','UB','YB'];
-const SEED_CC    = ['SBI CC','HDFC CC','RBL CC','AXIS CC'];
-
-const CATEGORIES = [
-  {id:'Fuel',emoji:'⛽',color:'amber',parent:null},{id:'Food',emoji:'🍱',color:'green',parent:null},
-  {id:'Household',emoji:'🏠',color:'blue',parent:null},{id:'Grocery',emoji:'🛒',color:'blue',parent:'Household'},
-  {id:'Electricity',emoji:'💡',color:'blue',parent:'Household'},{id:'PNG Gas',emoji:'🔥',color:'blue',parent:'Household'},
-  {id:'Child Education',emoji:'📚',color:'blue',parent:null},{id:'School Fees',emoji:'🎒',color:'blue',parent:'Child Education'},
-  {id:'Tuition',emoji:'✏️',color:'blue',parent:'Child Education'},
-  {id:'Insurance',emoji:'🛡',color:'green',parent:null,it:'80C'},{id:'LIC Premium',emoji:'🛡',color:'green',parent:'Insurance',it:'80C'},
-  {id:'Term Insurance',emoji:'🛡',color:'green',parent:'Insurance',it:'80C'},{id:'Car Insurance',emoji:'🚗',color:'green',parent:'Insurance',it:'80C'},
-  {id:'Mediclaim',emoji:'💊',color:'green',parent:null,it:'80D'},
-  {id:'Investment',emoji:'📈',color:'green',parent:null},{id:'Zerodha',emoji:'📈',color:'green',parent:'Investment'},{id:'SGB Gold',emoji:'🥇',color:'green',parent:'Investment'},
-  {id:'Maintenance',emoji:'🔧',color:'amber',parent:null},{id:'Car Nexon',emoji:'🚙',color:'amber',parent:null},
-  {id:'Nexon Fuel',emoji:'⛽',color:'amber',parent:'Car Nexon'},{id:'Nexon Service',emoji:'🔧',color:'amber',parent:'Car Nexon'},
-  {id:'Nexon EMI',emoji:'🚙',color:'amber',parent:'Car Nexon'},{id:'Nexon Insurance',emoji:'🛡',color:'amber',parent:'Car Nexon',it:'80C'},
-  {id:'Nexon Misc',emoji:'🚙',color:'amber',parent:'Car Nexon'},{id:'Travelling',emoji:'🚗',color:'amber',parent:null},
-  {id:'Lifestyle',emoji:'🛍',color:'red',parent:null},{id:'Social',emoji:'🤝',color:'amber',parent:null},
-  {id:'Donation',emoji:'🙏',color:'green',parent:null,it:'80G'},{id:'Mobile Recharge',emoji:'📱',color:'blue',parent:null},
-  {id:'UDHARI',emoji:'↗',color:'amber',parent:null},{id:'Society Maintenance',emoji:'🏘',color:'amber',parent:null},
-  {id:'UA Expense',emoji:'🏗',color:'amber',parent:null,ua:true},{id:'Misc',emoji:'•',color:'none',parent:null},
-  {id:'Suspense (Uncategorized)',emoji:'🔍',color:'amber',parent:null},
-];
-
-const fmt    = n => parseFloat(Math.abs(n)).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
-const fmtAmt = n => '₹' + fmt(n);
-const fmtDate= d => new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
-const fmtTime= d => new Date(d).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
-
-/* ── STREAK ── */
-function getStreak(){
-  const today=new Date().toISOString().slice(0,10);
-  const yesterday=new Date(Date.now()-86400000).toISOString().slice(0,10);
-  const last=localStorage.getItem('jbf_streak_date')||'';
-  const cnt=parseInt(localStorage.getItem('jbf_streak_count')||'0');
-  const next=last===today?cnt:last===yesterday?cnt+1:1;
-  if(last!==today){localStorage.setItem('jbf_streak_date',today);localStorage.setItem('jbf_streak_count',String(next));}
-  return next;
-}
-/* ─────────────────────────────────────────────────────────
-   PIN LOCK SCREEN  (v1.9 — pre-auth security gate)
-   Flow: App open → PIN gate → Supabase Auth → App
-   PIN stored as SHA-256 hash in localStorage (jbf_pin_hash).
-   First-time: no hash stored → setup mode (set 4-digit PIN).
-   Change/remove PIN from Settings.
-───────────────────────────────────────────────────────── */
-function PinLockScreen({onUnlock}){
-  const [digits,setDigits]   = useState([]);
-  const [shake,setShake]     = useState(false);
-  const [setupMode,setSetupMode] = useState(!localStorage.getItem('jbf_pin_hash'));
-  const [setupStep,setSetupStep] = useState(1); // 1=enter new, 2=confirm
-  const [firstPin,setFirstPin]   = useState([]);
-  const [msg,setMsg]             = useState('');
-
-  const MAX=4;
-
-  const hashPin = async pin => {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pin));
-    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-  };
-
-  const addDigit = async d => {
-    const next=[...digits,d];
-    setDigits(next);
-    if(next.length<MAX) return;
-    const pin=next.join('');
-
-    if(setupMode){
-      if(setupStep===1){
-        setFirstPin(next);
-        setDigits([]);
-        setSetupStep(2);
-        setMsg('Confirm your PIN');
-      } else {
-        if(pin===firstPin.join('')){
-          const h=await hashPin(pin);
-          localStorage.setItem('jbf_pin_hash',h);
-          setMsg('✓ PIN set!');
-          setTimeout(()=>onUnlock(),400);
-        } else {
-          setMsg('❌ PINs did not match — try again');
-          setShake(true);setTimeout(()=>setShake(false),500);
-          setDigits([]);setSetupStep(1);setFirstPin([]);
-        }
-      }
-    } else {
-      const h=await hashPin(pin);
-      if(h===localStorage.getItem('jbf_pin_hash')){
-        onUnlock();
-      } else {
-        setMsg('❌ Wrong PIN');
-        setShake(true);setTimeout(()=>setShake(false),500);
-        setDigits([]);
-      }
-    }
-  };
-
-  const del=()=>setDigits(p=>p.slice(0,-1));
-
-  const KEYS=[1,2,3,4,5,6,7,8,9,null,0,'⌫'];
-
-  const title = setupMode
-    ? (setupStep===1 ? 'Set a 4-digit PIN' : 'Confirm PIN')
-    : 'Enter PIN';
-
-  return(
-    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',minHeight:'100dvh',background:'var(--bg)',padding:24,userSelect:'none'}}>
-      <div style={{textAlign:'center',marginBottom:28}}>
-        <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:700,color:'var(--green)',letterSpacing:'-1px'}}>JB Finance</div>
-        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',marginTop:3,letterSpacing:'0.12em',textTransform:'uppercase'}}>{title}</div>
-      </div>
-
-      {/* Dot indicators */}
-      <div style={{
-        display:'flex',gap:16,marginBottom:24,
-        animation:shake?'pinShake 0.4s ease':'none',
-      }}>
-        {Array.from({length:MAX}).map((_,i)=>(
-          <div key={i} style={{
-            width:14,height:14,borderRadius:'50%',
-            background:i<digits.length?'var(--green)':'transparent',
-            border:'2px solid',
-            borderColor:i<digits.length?'var(--green)':'var(--border2)',
-            transition:'all 0.15s',
-          }}/>
-        ))}
-      </div>
-
-      {msg&&<div style={{fontFamily:'var(--mono)',fontSize:11,color:msg.startsWith('✓')?'var(--green)':'var(--amber)',marginBottom:14,letterSpacing:'0.04em'}}>{msg}</div>}
-
-      {/* Numpad */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(3,72px)',gap:12}}>
-        {KEYS.map((k,i)=>(
-          k===null
-            ? <div key={i}/>
-            : <button key={i}
-                onClick={()=>k==='⌫'?del():digits.length<MAX&&addDigit(k)}
-                style={{
-                  width:72,height:72,borderRadius:'50%',
-                  background:k==='⌫'?'var(--bg2)':'var(--bg3)',
-                  border:'1px solid var(--border)',
-                  color:'var(--text)',
-                  fontFamily:'var(--mono)',
-                  fontSize:k==='⌫'?20:24,
-                  fontWeight:600,
-                  cursor:'pointer',
-                  display:'flex',alignItems:'center',justifyContent:'center',
-                  WebkitTapHighlightColor:'transparent',
-                  transition:'background 0.1s',
-                }}
-              >{k}</button>
-        ))}
-      </div>
-
-      {!setupMode&&<button onClick={()=>{
-        // Escape hatch: clear PIN (will require Supabase login still)
-        if(confirm('Forgot PIN? This will remove the PIN lock. You will still need your Supabase password.')){
-          localStorage.removeItem('jbf_pin_hash');
-          setSetupMode(true);setSetupStep(1);setDigits([]);setMsg('');
-        }
-      }} style={{marginTop:28,background:'none',border:'none',color:'var(--text3)',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer',textDecoration:'underline'}}>Forgot PIN</button>}
-
-      <style>{`@keyframes pinShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}`}</style>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────
-   LOGIN SCREEN  (v1.6 — Supabase Auth gate)
-───────────────────────────────────────────────────────── */
-function LoginScreen(){
-  const [email,set  --green:#38a169;--green-bg:#c6f6d5;
   --red:#e53e3e;--red-bg:#fed7d7;
   --amber:#d69e2e;--amber-bg:#fefcbf;
   --blue:#3182ce;--blue-bg:#bee3f8;
@@ -764,12 +476,10 @@ function App() {
   const balances = computeBalances(opening,txns,allBanksH,allCCH);
   const liquid   = allBanks.filter(a=>a!=='Site Cash').reduce((s,a)=>s+(balances[a]||0),0);
   const totalCC  = allCC.reduce((s,a)=>s+Math.max(0,-(balances[a]||0)),0);
-  /* ── DVE Architecture: compute Net Blocked from virtual envelopes ── */
-  const activeProvisions = recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
-  const provisionStates  = computeProvisions(activeProvisions, txns);
-  const totalNetBlocked  = provisionStates.reduce((s,p)=>s+Math.max(0,p.C),0);
-  const trueFreeLiquidity= liquid - totalCC - totalNetBlocked;
-  const trueSpendable = Math.max(0, trueFreeLiquidity);
+  /* ── DVE Architecture: Net Blocked replaces old monthlyProv deduction ── */
+  const provisionStates = computeProvisions(recurring,txns);
+  const totalNetBlocked = provisionStates.reduce((s,p)=>s+p.C,0);
+  const trueSpendable = Math.max(0,liquid-totalCC-totalNetBlocked);
   const udhariOut = udhari.filter(u=>u.direction==='given').reduce((s,u)=>s+u.amount,0)-udhari.filter(u=>u.direction==='received').reduce((s,u)=>s+u.amount,0);
 
   /* ── DB HELPERS ── */
@@ -883,7 +593,7 @@ function App() {
         {loading&&<div className="empty">Loading...</div>}
         {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch} txnFilter={txnFilter} setTxnFilter={setTxnFilter}/>}
-        {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} trueFreeLiquidity={trueFreeLiquidity} totalNetBlocked={totalNetBlocked} provisionStates={provisionStates} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} onAuditSync={async(real)=>{
+        {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} totalNetBlocked={totalNetBlocked} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} onAuditSync={async(real)=>{
           const diff=real-liquid;
           if(Math.abs(diff)<1){showToast('✓ Balances match perfectly!');return;}
           const isIncome=diff>0;
@@ -923,7 +633,7 @@ function App() {
     </div>
   );
 }
-/* ── VIRTUAL PROVISION TYPES (never affect physical balances) ── */
+/* ── VIRTUAL PROVISION TYPES — these NEVER touch physical balances ── */
 const PROVISION_VIRTUAL_TYPES=['Provision_Accrue','Provision_Withdraw','Provision_Repay','Provision_Flush'];
 
 /* ── computeBalances ── */
@@ -936,7 +646,7 @@ function computeBalances(opening,txns,allBanks,allCC){
   txns.filter(t=>t.status!=='voided').forEach(t=>{
     const txnDate=(t.created_at||'').slice(0,10);
     const amt=parseFloat(t.amount)||0,from=t.from_account,to=t.to_account,type=t.type;
-    /* ── CRITICAL: Virtual provision types NEVER touch physical bank balances ── */
+    /* ── STRICT RULE: Virtual provision types MUST NOT affect physical balances ── */
     if(PROVISION_VIRTUAL_TYPES.includes(type))return;
     /* only include transaction if it's on/after the account's opening_date */
     const after=acc=>{
@@ -954,29 +664,28 @@ function computeBalances(opening,txns,allBanks,allCC){
   return bal;
 }
 
-/* ── computeProvisions: Decoupled Virtual Envelope Engine ──
-   For each provision (is_provision=true in recurring):
-     A = target_amount (from recurring table)
-     B = already_saved + SUM(Provision_Accrue) - SUM(Provision_Flush)  [Gross Saved]
-     D = SUM(Provision_Withdraw) - SUM(Provision_Repay)                [Debt]
-     C = B - D                                                          [Net Blocked]
-   Returns array of {prov, A, B, C, D, pct, accruals, flushes, withdrawals, repayments}
-*/
-function computeProvisions(provisions, txns){
-  const active=txns.filter(t=>t.status!=='voided');
-  return provisions.map(prov=>{
-    const forProv=t=>t.source==='provision'&&t.particulars&&t.particulars.includes(prov.name);
-    const accruals   =active.filter(t=>t.type==='Provision_Accrue'   &&forProv(t));
-    const flushes    =active.filter(t=>t.type==='Provision_Flush'    &&forProv(t));
-    const withdrawals=active.filter(t=>t.type==='Provision_Withdraw' &&forProv(t));
-    const repayments =active.filter(t=>t.type==='Provision_Repay'    &&forProv(t));
-    const sum=arr=>arr.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+/* ── computeProvisions — Decoupled Virtual Envelope Engine ──
+   For each is_provision recurring entry:
+     A = Target        (target_amount from recurring table)
+     B = Gross Saved   (already_saved + SUM(Provision_Accrue) - SUM(Provision_Flush))
+     D = Debt          (SUM(Provision_Withdraw) - SUM(Provision_Repay))
+     C = Net Blocked   (B - D)  ← the liquidity that is virtually locked
+── */
+function computeProvisions(recurring,txns){
+  const activeTxns=txns.filter(t=>t.status!=='voided');
+  return recurring.filter(r=>r.is_provision&&r.active!==false).map(prov=>{
+    const myTxns=activeTxns.filter(t=>t.provision_envelope===prov.id||t.particulars===('[ENV:'+prov.id+']'));
+    const provTxns=activeTxns.filter(t=>PROVISION_VIRTUAL_TYPES.includes(t.type)&&(t.category===prov.name||t.particulars&&t.particulars.includes('[ENV:'+prov.id+']')));
+    const accrues =provTxns.filter(t=>t.type==='Provision_Accrue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const flushes =provTxns.filter(t=>t.type==='Provision_Flush').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const borrows =provTxns.filter(t=>t.type==='Provision_Withdraw').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const repays  =provTxns.filter(t=>t.type==='Provision_Repay').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
     const A=parseFloat(prov.target_amount)||0;
-    const B=(parseFloat(prov.already_saved)||0)+sum(accruals)-sum(flushes);
-    const D=sum(withdrawals)-sum(repayments);
-    const C=B-D;
+    const B=Math.max(0,(parseFloat(prov.already_saved)||0)+accrues-flushes);
+    const D=Math.max(0,borrows-repays);
+    const C=Math.max(0,B-D);
     const pct=A>0?Math.min(Math.round(C/A*100),100):0;
-    return{prov,A,B,C,D,pct,accruals,flushes,withdrawals,repayments};
+    return{prov,A,B,C,D,accrues,flushes,borrows,repays,provTxns,pct};
   });
 }
 
@@ -1081,7 +790,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const firstBank=allBanks.find(a=>a!=='Cash')||allBanks[1]||allBanks[0]||'';
   const fromList=()=>{if(type==='Bank-CC'||type==='Bank-Bank'||type==='Bank-Cash')return allBanks.filter(a=>a!=='Cash');if(type==='CC-Bank')return allCC;if(type==='Cash-Bank')return['Cash'];return allAccounts;};
   const toList=()=>{if(type==='Bank-CC')return allCC;if(type==='Bank-Bank'||type==='Cash-Bank'||type==='CC-Bank')return allBanks.filter(a=>a!=='Cash');if(type==='Bank-Cash')return['Cash'];return allBanks;};
-  const canSaveP=parseFloat(amt)>0&&(PROVISION_VIRTUAL_TYPES.includes(type)?true:type==='Expense'?(cat&&from):type==='UA Expense'?from:type==='Income'?to:type==='UA Received'?to:(from&&to));
+  const canSaveP=parseFloat(amt)>0&&(type==='Expense'?(cat&&from):type==='UA Expense'?from:type==='Income'?to:type==='UA Received'?to:(from&&to));
   const siteNeedFrom=['Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(siteType);
   const siteNeedTo=['Income','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank','Bank-Cash'].includes(siteType);
   const canSaveS=parseFloat(amt)>0&&siteName&&(siteType==='Site Transfer'?transferUser:siteType==='Expense'||siteType==='Income'?true:(siteNeedFrom?sitePayFrom:true)&&(siteNeedTo?siteTo:true));
@@ -1103,12 +812,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     const baseDate=date||today;const created_at=baseDate===today?new Date().toISOString():baseDate+'T06:30:00.000Z';
     let txn;
     if(domain==='Personal'){
-      /* Handle virtual provision types — no from/to accounts */
-      if(PROVISION_VIRTUAL_TYPES.includes(type)){
-        txn={domain:'Personal',type,amount:parseFloat(amt),category:'Provision',from_account:null,to_account:null,particulars:desc||type,status:'complete',source:'provision',created_at};
-      } else {
-        txn={domain:'Personal',type:type.replace('Bank-CC','Bank→CC').replace('Bank-Bank','Bank→Bank').replace('Bank-Cash','Bank→Cash').replace('Cash-Bank','Cash→Bank').replace('CC-Bank','CC→Bank'),amount:parseFloat(amt),category:cat||type,from_account:needFrom?from:null,to_account:needTo?to:null,particulars:desc||null,tower:tower||null,it_section:catInfo?.it||null,status:'complete',source:'app',created_at};
-      }
+      txn={domain:'Personal',type:type.replace('Bank-CC','Bank→CC').replace('Bank-Bank','Bank→Bank').replace('Bank-Cash','Bank→Cash').replace('Cash-Bank','Cash→Bank').replace('CC-Bank','CC→Bank'),amount:parseFloat(amt),category:cat||type,from_account:needFrom?from:null,to_account:needTo?to:null,particulars:desc||null,tower:tower||null,it_section:catInfo?.it||null,status:'complete',source:'app',created_at};
     } else {
       /* v1.8: Site domain — full type support like Personal, proper account debit */
       let sF,sT,txnType,txnCat,partyName,autoParticulars;
@@ -1149,7 +853,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
 
   const cs=active=>({border:active?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:20,padding:'6px 14px',fontFamily:'var(--mono)',fontSize:11,color:active?'var(--green)':'var(--text2)',background:active?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',whiteSpace:'nowrap'});
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'7px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
-  const TYPES_P=[{key:'Expense',label:'Expense'},{key:'Income',label:'Income'},{key:'Bank-CC',label:'Bank→CC'},{key:'Bank-Bank',label:'Bank→Bank'},{key:'Bank-Cash',label:'Bank→Cash'},{key:'Cash-Bank',label:'Cash→Bank'},{key:'CC-Bank',label:'CC→Bank'},{key:'UA Expense',label:'UA Expense'},{key:'UA Received',label:'UA Recv'},{key:'Provision_Accrue',label:'📦 Accrue'},{key:'Provision_Withdraw',label:'↩ Borrow'},{key:'Provision_Repay',label:'↪ Repay'},{key:'Provision_Flush',label:'⚡ Flush'}];
+  const TYPES_P=[{key:'Expense',label:'Expense'},{key:'Income',label:'Income'},{key:'Bank-CC',label:'Bank→CC'},{key:'Bank-Bank',label:'Bank→Bank'},{key:'Bank-Cash',label:'Bank→Cash'},{key:'Cash-Bank',label:'Cash→Bank'},{key:'CC-Bank',label:'CC→Bank'},{key:'UA Expense',label:'UA Expense'},{key:'UA Received',label:'UA Recv'}];
   const SaveBtn=()=><button onClick={handleSave} disabled={!canSave||saving} style={{background:canSave&&!saving?'var(--green)':'var(--bg3)',border:'none',borderRadius:10,color:canSave&&!saving?'#000':'var(--text3)',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,padding:14,cursor:canSave?'pointer':'default',transition:'all 0.2s'}}>{saving?'Saving...':canSave?`Save  ₹${fmt(parseFloat(amt)||0)}`:'Fill required fields'}</button>;
 
   if(domain==='Site'){
@@ -1389,7 +1093,7 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
   );
 }
 /* ── DashScreen — Waterfall Hero + Audit Sync + Collapsed Cards + Clickable Chart ── */
-function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,trueFreeLiquidity,totalNetBlocked,provisionStates,recurring,checklist,setGlobalSearch,setTab,setTxnFilter,onAuditSync}){
+function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSpendable,totalNetBlocked,recurring,checklist,setGlobalSearch,setTab,setTxnFilter,onAuditSync}){
   budgets=budgets||{};
 
   const [auditLoading,setAuditLoading]=useState(false);
@@ -1406,9 +1110,10 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   const uaOut=uaExp-uaRecv;
   const ccDues=(allCCAll||allCC).map(a=>({name:a,due:Math.max(0,-(balances[a]||0))})).filter(x=>x.due>0);
   const totalCC=ccDues.reduce((s,x)=>s+x.due,0);
-  /* DVE: use passed-in values */
+  /* DVE: use totalNetBlocked (virtual envelope locks) instead of legacy monthlyProv */
   const netBlocked=totalNetBlocked||0;
-  const safeToSpend=trueFreeLiquidity!==undefined?trueFreeLiquidity:(liquid-totalCC-netBlocked);
+  const reservedCapital=totalCC+netBlocked;
+  const safeToSpend=liquid-reservedCapital;
   const spendable=trueSpendable!==undefined?trueSpendable:Math.max(0,liquid-totalCC);
 
   const safeCol=safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)';
@@ -1471,29 +1176,23 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
   return(
     <div className="fade-in" style={{padding:'8px 10px'}}>
 
-      {/* ── WATERFALL HERO: True Free Liquidity (DVE Architecture) ── */}
+      {/* ── WATERFALL HERO: Safe to Spend breakdown ── */}
       {(()=>{
         const [wfOpen,setWfOpen]=useState(false);
         return(
         <div style={{background:'var(--bg2)',border:'1.5px solid '+(safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)'),borderRadius:12,marginBottom:6,overflow:'hidden'}}>
-          {/* True Free Liquidity — full width */}
+          {/* Safe to Spend — full width */}
           <div style={{padding:'14px 16px',background:safeToSpend<0?'var(--red-bg)':safeToSpend<10000?'var(--amber-bg)':'var(--green-bg)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
-              <div style={{fontFamily:'var(--mono)',fontSize:8,color:safeCol,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>True Free Liquidity</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:8,color:safeCol,textTransform:'uppercase',letterSpacing:'0.1em',marginBottom:3}}>Safe to Spend</div>
               <div style={{fontFamily:'var(--mono)',fontSize:28,fontWeight:800,color:safeCol,letterSpacing:'-1px',lineHeight:1}}>{safeToSpend<0?'−':''}{fmtAmt(Math.abs(safeToSpend))}</div>
             </div>
             <div style={{textAlign:'right'}}>
               <div style={{fontFamily:'var(--mono)',fontSize:9,color:safeCol,opacity:0.7}}>Bank {fmtAmt(liquid)}</div>
-              {totalCC>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',opacity:0.8}}>−CC dues {fmtAmt(totalCC)}</div>}
-              {netBlocked>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',opacity:0.8}}>−Envelopes {fmtAmt(netBlocked)}</div>}
+              {totalCC>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--red)',opacity:0.8}}>−CC {fmtAmt(totalCC)}</div>}
+              {netBlocked>0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',opacity:0.8}}>−Env {fmtAmt(netBlocked)}</div>}
             </div>
           </div>
-          {/* DVE waterfall sub-row */}
-          {netBlocked>0&&<div style={{display:'flex',gap:0,background:'var(--amber-bg)',borderTop:'1px solid var(--border)'}}>
-            <div style={{flex:1,padding:'6px 12px',borderRight:'1px solid var(--border)'}}><div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:2}}>Actual Bank</div><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:'var(--text)'}}>{fmtAmt(liquid)}</div></div>
-            <div style={{flex:1,padding:'6px 12px',borderRight:'1px solid var(--border)'}}><div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:2}}>Net Blocked</div><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:'var(--amber)'}}>{fmtAmt(netBlocked)}</div></div>
-            <div style={{flex:1,padding:'6px 12px'}} onClick={()=>setWfOpen(o=>!o)} style={{flex:1,padding:'6px 12px',cursor:'pointer'}}><div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:2}}>Free</div><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:safeCol}}>{fmtAmt(Math.max(0,safeToSpend))}</div></div>
-          </div>}
           {/* Expand toggle */}
           <div onClick={()=>setWfOpen(o=>!o)} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 14px',borderTop:'1px solid var(--border)',cursor:'pointer',background:'var(--bg3)'}}>
             <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>🏦 Bank &amp; CC Details</span>
@@ -1912,114 +1611,106 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
     {recurring.filter(r=>!r.is_provision).length>0&&<><p className="sec-label" style={{marginTop:16}}>All recurring bills</p>{recurring.filter(r=>!r.is_provision).map(r=><div key={r.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 14px',borderBottom:'1px solid var(--border)',fontSize:12}}><div style={{flex:1,minWidth:0}}><div style={{color:'var(--text)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{r.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{FREQS.find(f=>f.k===r.frequency)?.l||r.frequency} · {r.account}</div></div><div style={{display:'flex',alignItems:'center',gap:8,flexShrink:0}}><span style={{fontFamily:'var(--mono)',fontSize:12,color:'var(--text2)'}}>{r.amount?fmtAmt(r.amount):'var'}</span><button onClick={()=>onDelete(r.id)} style={{background:'none',border:'1px solid var(--border)',borderRadius:5,color:'var(--text3)',padding:'3px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div></div>)}</>}
   </div>);
 }
-/* ── ProvisionLedger — DVE (Decoupled Virtual Envelope) Architecture v2.0 ──
-   Physical bank balances are NEVER touched by provision transactions.
-   Four virtual types:  Provision_Accrue | Provision_Withdraw | Provision_Repay | Provision_Flush
-   Flush = dual-write: virtual Provision_Flush (empties envelope) + physical Expense (deducts real money)
-─────────────────────────────────────────────────────────────────────────────────────────────────── */
+/* ── ProvisionLedger — Decoupled Virtual Envelope (DVE) Architecture ──
+   Provisions are VIRTUAL TAGS that block liquidity.
+   Physical money NEVER moves until a Flush (actual expense) occurs.
+   Types: Provision_Accrue (+B), Provision_Withdraw (+D), Provision_Repay (−D), Provision_Flush (−B + physical Expense)
+── */
 function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showToast,provisionStates}){
   const [sel,setSel]=useState(null);
   /* qAction: {id, type: 'accrue'|'borrow'|'repay'|'flush'} */
   const [qAction,setQAction]=useState(null);
-  const [qAmt,setQAmt]=useState('');
-  const [qNote,setQNote]=useState('');
-  const [qBank,setQBank]=useState('');
+  const [qAmt,setQAmt]=useState('');const [qNote,setQNote]=useState('');
+  const [flushBank,setFlushBank]=useState('');
   const [saving,setSaving]=useState(false);
   const [addOpen,setAddOpen]=useState(false);
-  const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',active:true});
+  const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',active:true});
   const [formSaving,setFormSaving]=useState(false);
 
-  const provisions=recurring.filter(r=>r.is_provision&&r.active!==false&&!r.is_cc_payment&&!(r.name||'').match(/CC Payment|Credit Card/i));
-  /* Use pre-computed states if passed, else compute locally */
-  const states=provisionStates||computeProvisions(provisions,txns);
+  /* Use pre-computed provisionStates from App (via computeProvisions) */
+  const states=provisionStates||[];
 
-  /* Set default bank when action opens */
-  const openAction=(id,type)=>{
-    setQAction({id,type});
-    setQAmt('');setQNote('');
-    setQBank(allBanks.filter(b=>b!=='Cash')[0]||allBanks[0]||'');
-  };
-  const closeAction=()=>{setQAction(null);setQAmt('');setQNote('');setQBank('');};
-
-  /* Lazy-click: if same button tapped again, close. Otherwise open. */
-  const toggleAction=(id,type)=>{
-    if(qAction?.id===id&&qAction?.type===type){closeAction();}else{openAction(id,type);}
-  };
-
-  const handleQuick=async(prov,type,amt,note,bankAcct)=>{
-    const a=parseFloat(amt);
-    if(!a||a<=0)return;
+  /* ── DVE Action Handler ──
+     accrue  → Provision_Accrue  (virtual, increases Gross Saved B)
+     borrow  → Provision_Withdraw (virtual, increases Debt D)
+     repay   → Provision_Repay   (virtual, decreases Debt D)
+     flush   → DUAL WRITE: Provision_Flush (virtual, empties envelope) + Expense (physical debit)
+  ── */
+  const handleAction=async(prov,type,amt,note,bankAcct)=>{
+    const n=parseFloat(amt);if(!n||n<=0){showToast('⚠ Enter a valid amount');return;}
     setSaving(true);
-    const ts=new Date().toISOString();
-    const label=`[${type.toUpperCase()}] ${prov.name}${note?' — '+note:''}`;
-
+    const now=new Date().toISOString();
+    const tag='[ENV:'+prov.id+']';
     if(type==='flush'){
-      /* DUAL WRITE: virtual Provision_Flush + physical Expense */
-      await onAddTxn({type:'Provision_Flush',amount:a,category:'Provision',from_account:null,to_account:null,particulars:label,status:'complete',source:'provision',created_at:ts});
-      await onAddTxn({type:'Expense',amount:a,category:'Provision',from_account:bankAcct,to_account:null,particulars:`[FLUSH] ${prov.name}${note?' — '+note:''}`,status:'complete',source:'provision_flush',created_at:ts});
-      showToast('✓ Envelope flushed + ₹'+fmt(a)+' debited from '+bankAcct);
+      /* 1. Virtual Provision_Flush — empties the envelope */
+      await onAddTxn({type:'Provision_Flush',amount:n,category:prov.name,particulars:tag+(note?' — '+note:''),status:'complete',source:'provision_dve',created_at:now});
+      /* 2. Physical Expense — actual money leaves the bank */
+      const physBank=bankAcct||(allBanks.find(b=>b!=='Cash')||allBanks[0]||'KB');
+      await onAddTxn({type:'Expense',amount:n,category:'Provision',from_account:physBank,particulars:'Flush: '+prov.name+(note?' — '+note:''),status:'complete',source:'provision_flush',created_at:now});
+      showToast('✓ Flushed — ₹'+fmt(n)+' debited from '+physBank);
     } else {
-      const vtypeMap={accrue:'Provision_Accrue',borrow:'Provision_Withdraw',repay:'Provision_Repay'};
-      const vtype=vtypeMap[type]||'Provision_Accrue';
-      await onAddTxn({type:vtype,amount:a,category:'Provision',from_account:null,to_account:null,particulars:label,status:'complete',source:'provision',created_at:ts});
-      const msgs={accrue:'✓ Accrued ₹'+fmt(a),borrow:'↩ Borrowed ₹'+fmt(a)+' from envelope',repay:'✓ Repaid ₹'+fmt(a)+' to envelope'};
-      showToast(msgs[type]||'✓ Logged');
+      const txnType=type==='accrue'?'Provision_Accrue':type==='borrow'?'Provision_Withdraw':'Provision_Repay';
+      await onAddTxn({type:txnType,amount:n,category:prov.name,particulars:tag+(note?' — '+note:''),status:'complete',source:'provision_dve',created_at:now});
+      const labels={accrue:'✓ Accrued',borrow:'⚠ Borrowed',repay:'✓ Repaid'};
+      showToast((labels[type]||'✓')+' ₹'+fmt(n));
     }
-    closeAction();setSaving(false);
+    setQAction(null);setQAmt('');setQNote('');setFlushBank('');setSaving(false);
   };
 
   const handleAddProv=async()=>{
     if(!form.name.trim())return;
-    if(!form.due_date){alert('⚠ Due date is mandatory.');return;}
     setFormSaving(true);
-    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:form.from_account||allBanks[0]||'',provision_account:null,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
-    setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',from_account:'',active:true});setFormSaving(false);setAddOpen(false);
+    await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:null,provision_account:null,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
+    setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',active:true});setFormSaving(false);setAddOpen(false);
   };
 
-  const tgt=parseFloat(form.target_amount)||0;const saved=parseFloat(form.already_saved)||0;const gap=Math.max(0,tgt-saved);
-  const dueDate=form.due_date?new Date(form.due_date):null;
-  const monthsLeft=dueDate?Math.max(1,Math.round((dueDate-new Date())/(1000*60*60*24*30))):0;
-  const sugMonth=monthsLeft>0?Math.ceil(gap/monthsLeft):0;
+  const tgt=parseFloat(form.target_amount)||0;const saved_=parseFloat(form.already_saved)||0;const gap_=Math.max(0,tgt-saved_);
+  const dueDate_=form.due_date?new Date(form.due_date):null;
+  const monthsLeft_=dueDate_?Math.max(1,Math.round((dueDate_-new Date())/(1000*60*60*24*30))):0;
+  const sugMonth_=monthsLeft_>0?Math.ceil(gap_/monthsLeft_):0;
 
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:6,padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const cS=a=>({display:'inline-block',border:a?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:16,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,color:a?'var(--green)':'var(--text2)',background:a?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',margin:'0 4px 4px 0'});
+  const btnS=(col,active)=>({flex:1,background:active?col:'none',border:'1px solid '+col,borderRadius:6,color:active?'#000':col,fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'7px 0',cursor:'pointer',transition:'all 0.15s'});
 
-  const totalBlocked=states.reduce((s,p)=>s+Math.max(0,p.C),0);
-  const totalTarget =states.reduce((s,p)=>s+p.A,0);
+  /* Total Net Blocked across all envelopes — shown in header */
+  const totalNetBlocked=states.reduce((s,p)=>s+p.C,0);
 
   return(<div className="fade-in" style={{paddingBottom:8}}>
-    {/* Header bar */}
+    {/* Header */}
     <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
       <div>
         <div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Virtual Envelopes</div>
         <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>
-          {states.length>0?<>Net Blocked: <span style={{color:'var(--amber)'}}>{fmtAmt(totalBlocked)}</span> / {fmtAmt(totalTarget)}</>:'No active envelopes'}
+          {totalNetBlocked>0
+            ?<span>Net Blocked: <strong style={{color:'var(--amber)'}}>{fmtAmt(totalNetBlocked)}</strong> across {states.length} envelope{states.length!==1?'s':''}</span>
+            :'No liquidity blocked — all envelopes empty'}
         </div>
       </div>
       <button onClick={()=>setAddOpen(o=>!o)} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>+ New</button>
     </div>
 
-    {/* ── Architecture note ── */}
-    <div style={{margin:'8px 12px 0',background:'var(--blue-bg)',border:'1px solid var(--blue)',borderRadius:8,padding:'8px 12px',fontFamily:'var(--mono)',fontSize:10,color:'var(--blue)',lineHeight:1.6}}>
-      <strong>DVE Mode:</strong> Envelopes are virtual — no money moves until Flush. Physical bank balances are always clean.
+    {/* DVE Info Banner */}
+    <div style={{margin:'8px 10px 0',background:'var(--blue-bg)',border:'1px solid var(--blue)',borderRadius:8,padding:'8px 12px',fontFamily:'var(--mono)',fontSize:10,color:'var(--blue)',lineHeight:1.6}}>
+      ◈ DVE Mode: Provisions are virtual tags. Bank balance is <strong>never touched</strong> until you Execute (Flush). Liquidity is blocked logically only.
     </div>
 
-    {/* Smart Add Envelope Form */}
-    {addOpen&&(<div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
+    {/* Add Envelope Form */}
+    {addOpen&&(<div style={{margin:'8px 10px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
       <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 12px',fontWeight:600,letterSpacing:'0.06em'}}>NEW VIRTUAL ENVELOPE</p>
       <div style={{display:'flex',flexDirection:'column',gap:8}}>
         <input style={iS} placeholder="Envelope name (e.g. LIC Premium Oct)" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/>
         <div style={{display:'flex',gap:8}}>
-          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET</div><input style={iS} type="number" step="0.01" placeholder="₹" value={form.target_amount} onChange={e=>setForm(f=>({...f,target_amount:e.target.value}))}/></div>
-          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>ALREADY SAVED</div><input style={iS} type="number" step="0.01" placeholder="₹" value={form.already_saved} onChange={e=>setForm(f=>({...f,already_saved:e.target.value}))}/></div>
+          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET (A)</div><input style={iS} type="number" step="0.01" placeholder="₹ Total needed" value={form.target_amount} onChange={e=>setForm(f=>({...f,target_amount:e.target.value}))}/></div>
+          <div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>ALREADY SAVED (B₀)</div><input style={iS} type="number" step="0.01" placeholder="₹ already set aside" value={form.already_saved} onChange={e=>setForm(f=>({...f,already_saved:e.target.value}))}/></div>
         </div>
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DATE *</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>TARGET DATE</div><input style={iS} type="date" value={form.due_date} onChange={e=>setForm(f=>({...f,due_date:e.target.value}))}/></div>
         {tgt>0&&(<div style={{background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:8,padding:'10px 12px',fontFamily:'var(--mono)',fontSize:11,display:'flex',gap:16,flexWrap:'wrap'}}>
-          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(gap)}</strong></span>
-          {dueDate&&<span>Months left: <strong>{monthsLeft}</strong></span>}
-          {sugMonth>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(sugMonth)}/mo</strong></span>}
+          <span>Gap: <strong style={{color:'var(--red)'}}>{fmtAmt(gap_)}</strong></span>
+          {dueDate_&&<span>Months left: <strong>{monthsLeft_}</strong></span>}
+          {sugMonth_>0&&<span>Suggested: <strong style={{color:'var(--green)'}}>{fmtAmt(sugMonth_)}/mo</strong></span>}
         </div>)}
-        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY CONTRIBUTION</div><input style={iS} type="number" step="0.01" placeholder={sugMonth>0?`Suggested: ₹${fmt(sugMonth)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
+        <div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>MONTHLY ACCRUE (optional)</div><input style={iS} type="number" step="0.01" placeholder={sugMonth_>0?`Suggested: ₹${fmt(sugMonth_)}`:'₹ per month'} value={form.monthly_contribution} onChange={e=>setForm(f=>({...f,monthly_contribution:e.target.value}))}/></div>
         <div style={{display:'flex',gap:8}}>
           <button onClick={handleAddProv} disabled={formSaving||!form.name.trim()} style={{flex:1,background:formSaving||!form.name.trim()?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:formSaving||!form.name.trim()?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>{formSaving?'Saving...':'Create Envelope'}</button>
           <button onClick={()=>setAddOpen(false)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,color:'var(--text3)',padding:'12px 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>Cancel</button>
@@ -2027,107 +1718,120 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
       </div>
     </div>)}
 
-    {states.length===0&&!addOpen&&<div className="empty">No envelopes yet.<br/>Tap "+ New" to create your first virtual savings goal.</div>}
+    {states.length===0&&!addOpen&&<div className="empty">No envelopes yet.<br/>Tap "+ New" to create your first virtual envelope.</div>}
 
-    {states.map(({prov,A,B,C,D,pct,accruals,flushes,withdrawals,repayments})=>{
+    {states.map(({prov,A,B,C,D,provTxns,pct})=>{
       const isOpen=sel===prov.id;
-      const active_type=qAction?.id===prov.id?qAction.type:null;
-      const barColor=pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)';
+      const activeType=qAction?.id===prov.id?qAction.type:null;
+      const needFlushBank=activeType==='flush';
+      return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px'}}>
 
-      return(<div key={prov.id} className="env-card" style={{margin:'8px 10px 0'}}>
-        {/* Card Header — tap to expand ledger */}
-        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>setSel(isOpen?null:prov.id)}>
+        {/* Header — tap to expand ledger */}
+        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{setSel(isOpen?null:prov.id);setQAction(null);}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{prov.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{prov.due_date&&<span>due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</span>}{prov.amount>0&&<span style={{marginLeft:8}}>{fmtAmt(prov.amount)}/mo</span>}</div></div>
-            <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:C>0?'var(--green)':C<0?'var(--red)':'var(--text3)'}}>{fmtAmt(Math.abs(C))}</div>{A>0&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pct}% of {fmtAmt(A)}</div>}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginBottom:3}}>{prov.name}</div>
+              {prov.due_date&&<div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>Due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</div>}
+            </div>
+            <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:C>0?'var(--green)':'var(--text3)'}}>{fmtAmt(C)}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>Net Blocked</div>
+            </div>
           </div>
-          {A>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:barColor}}/></div>}
 
-          {/* ── 4-metric grid: A / B / D / C ── */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:0,marginTop:8,background:'var(--bg3)',borderRadius:6,overflow:'hidden',border:'1px solid var(--border)'}}>
+          {/* 4-metric grid: A / B / D / C */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4,marginTop:10}}>
             {[
-              ['TARGET (A)',fmtAmt(A),'var(--text2)'],
-              ['SAVED (B)',fmtAmt(B),'var(--green)'],
-              ['DEBT (D)',fmtAmt(D),D>0?'var(--red)':'var(--text3)'],
-              ['NET (C)',fmtAmt(Math.abs(C)),C>=0?'var(--green)':'var(--red)'],
-            ].map(([l,v,c])=>(
-              <div key={l} style={{padding:'6px 4px',textAlign:'center',borderRight:'1px solid var(--border)'}}>
-                <div style={{fontFamily:'var(--mono)',fontSize:8,color:'var(--text3)',letterSpacing:'0.05em'}}>{l}</div>
-                <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:c,marginTop:1}}>{v}</div>
-                {l==='DEBT (D)'&&D>0&&<div style={{fontFamily:'var(--mono)',fontSize:7,color:'var(--red)'}}>⚠ borrowed</div>}
+              ['A Target',fmtAmt(A),'var(--blue)'],
+              ['B Saved',fmtAmt(B),'var(--green)'],
+              ['D Debt',fmtAmt(D),D>0?'var(--red)':'var(--text3)'],
+              ['C Net',fmtAmt(C),C>0?'var(--green)':'var(--text3)'],
+            ].map(([label,val,col])=>(
+              <div key={label} style={{background:'var(--bg3)',borderRadius:6,padding:'5px 6px',textAlign:'center',border:label==='D Debt'&&D>0?'1px solid var(--red)':'1px solid var(--border)'}}>
+                <div style={{fontSize:8,color:'var(--text3)',fontFamily:'var(--mono)',letterSpacing:'0.06em',marginBottom:2}}>{label.toUpperCase()}</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:col}}>{val}</div>
               </div>
             ))}
           </div>
+
+          {A>0&&<div className="env-bar" style={{marginTop:8}}><div className="env-fill" style={{width:pct+'%',background:pct>=100?'var(--green)':pct>=60?'var(--blue)':'var(--amber)'}}/></div>}
+          {D>0&&<div style={{marginTop:5,display:'inline-flex',alignItems:'center',gap:4,background:'var(--red-bg)',border:'1px solid var(--red)',borderRadius:20,padding:'2px 8px',fontFamily:'var(--mono)',fontSize:9,fontWeight:700,color:'var(--red)'}}>⚠ Debt {fmtAmt(D)} — Repay to clean</div>}
         </div>
 
-        {/* ── Action Buttons Row: 4 actions ── */}
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:4,padding:'0 10px 10px'}}>
+        {/* 4-Action Button Row */}
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:5,padding:'0 12px 10px'}}>
           {[
-            {type:'accrue', label:'Accrue', bg:'var(--green-bg)',  border:'var(--green)',  col:'var(--green)',  icon:'＋'},
-            {type:'borrow', label:'Borrow', bg:'var(--amber-bg)',  border:'var(--amber)',  col:'var(--amber)',  icon:'↩'},
-            {type:'repay',  label:'Repay',  bg:'var(--blue-bg)',   border:'var(--blue)',   col:'var(--blue)',   icon:'↪'},
-            {type:'flush',  label:'Flush',  bg:active_type==='flush'?'var(--red)':'var(--red-bg)', border:'var(--red)', col:active_type==='flush'?'#fff':'var(--red)', icon:'⚡'},
-          ].map(btn=>(
-            <button key={btn.type}
-              onClick={e=>{e.stopPropagation();toggleAction(prov.id,btn.type);}}
-              style={{background:active_type===btn.type?(btn.type==='flush'?'var(--red)':'var(--green)'):(btn.bg),border:'1px solid '+btn.border,borderRadius:6,color:active_type===btn.type?(btn.type==='flush'?'#fff':'#000'):(btn.col),fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'7px 2px',cursor:'pointer',display:'flex',flexDirection:'column',alignItems:'center',gap:2}}>
-              <span style={{fontSize:12}}>{btn.icon}</span>
-              <span>{btn.label}</span>
+            {type:'accrue', label:'Accrue', col:'var(--green)'},
+            {type:'borrow', label:'Borrow', col:'var(--amber)'},
+            {type:'repay',  label:'Repay',  col:'var(--blue)'},
+            {type:'flush',  label:'⚡ Execute', col:'var(--red)'},
+          ].map(({type,label,col})=>(
+            <button key={type}
+              onClick={e=>{e.stopPropagation();setQAction(activeType===type?null:{id:prov.id,type});setQAmt('');setQNote('');setFlushBank(allBanks.find(b=>b!=='Cash')||allBanks[0]||'');}}
+              style={{background:activeType===type?col:'none',border:'1px solid '+col,borderRadius:6,color:activeType===type?'#000':col,fontFamily:'var(--mono)',fontSize:10,fontWeight:700,padding:'7px 0',cursor:'pointer',transition:'all 0.15s'}}>
+              {label}
             </button>
           ))}
         </div>
 
-        {/* ── Quick Action Form (lazy design — 2-field inline) ── */}
-        {active_type&&(<div style={{padding:'0 10px 12px',borderTop:'1px solid var(--border)'}}>
-          <div style={{fontSize:10,color:active_type==='flush'?'var(--red)':active_type==='accrue'?'var(--green)':active_type==='borrow'?'var(--amber)':'var(--blue)',fontFamily:'var(--mono)',fontWeight:600,margin:'8px 0 6px',textTransform:'uppercase',letterSpacing:'0.06em'}}>
-            {active_type==='accrue'&&'Accrue — block liquidity for this envelope'}
-            {active_type==='borrow'&&'Borrow — take from envelope (increases Debt)'}
-            {active_type==='repay' &&'Repay — return borrowed amount (reduces Debt)'}
-            {active_type==='flush' &&'⚡ Flush — spend the envelope. Deducts real money.'}
+        {/* Inline Action Form */}
+        {activeType&&(<div style={{padding:'0 12px 12px',borderTop:'1px solid var(--border)'}}>
+          {/* Context hint */}
+          <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',padding:'6px 0 8px',lineHeight:1.6}}>
+            {activeType==='accrue'&&'↑ Accrue: Marks more money as virtually saved in this envelope (B increases). No bank movement.'}
+            {activeType==='borrow'&&'↩ Borrow: Temporarily uses envelope funds for something else (D increases). Envelope shrinks.'}
+            {activeType==='repay' &&'↪ Repay: Returns borrowed funds back to envelope (D decreases). Envelope recovers.'}
+            {activeType==='flush' &&'⚡ Execute: Empties the envelope (B→0) AND physically debits the bank. This is the final real-money step.'}
           </div>
           <div style={{display:'flex',gap:6,marginBottom:6}}>
-            <input type="number" step="0.01" autoFocus placeholder="Amount ₹" value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:'0 0 100px'}}/>
+            <input type="number" step="0.01" autoFocus placeholder="Amount (₹)" value={qAmt} onChange={e=>setQAmt(e.target.value)} style={{...iS,flex:'0 0 130px'}}/>
             <input placeholder="Note (optional)" value={qNote} onChange={e=>setQNote(e.target.value)} style={{...iS,flex:1}}/>
           </div>
-          {active_type==='flush'&&(
+          {/* Bank picker — only shown for Flush */}
+          {needFlushBank&&(
             <div style={{marginBottom:8}}>
-              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>DEBIT FROM (physical bank)</div>
+              <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DEBIT FROM BANK (physical debit)</div>
               <div style={{display:'flex',flexWrap:'wrap',gap:4}}>
                 {allBanks.filter(b=>b!=='Cash').map(b=>(
-                  <span key={b} style={cS(qBank===b)} onClick={()=>setQBank(b)}>{b}</span>
+                  <span key={b} style={cS(flushBank===b)} onClick={()=>setFlushBank(b)}>{b}</span>
                 ))}
               </div>
             </div>
           )}
-          <button
-            onClick={()=>handleQuick(prov,active_type,qAmt,qNote,qBank)}
-            disabled={saving||!qAmt||(active_type==='flush'&&!qBank)}
-            style={{width:'100%',background:saving||!qAmt||(active_type==='flush'&&!qBank)?'var(--bg3)':active_type==='flush'?'var(--red)':active_type==='accrue'?'var(--green)':active_type==='borrow'?'var(--amber)':'var(--blue)',border:'none',borderRadius:6,color:saving||!qAmt||(active_type==='flush'&&!qBank)?'var(--text3)':active_type==='flush'||active_type==='borrow'||active_type==='repay'?'#fff':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'10px',cursor:'pointer',transition:'all 0.15s'}}>
-            {saving?'Logging...':`Confirm — ${active_type==='accrue'?'Accrue':active_type==='borrow'?'Borrow':active_type==='repay'?'Repay':'⚡ Flush'} ${qAmt?fmtAmt(parseFloat(qAmt)):''}`}
-          </button>
-          {active_type==='flush'&&qBank&&<div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:5,textAlign:'center'}}>Provision_Flush (virtual) + Expense on <strong>{qBank}</strong> (physical)</div>}
+          <div style={{display:'flex',gap:6}}>
+            <button
+              onClick={()=>handleAction(prov,activeType,qAmt,qNote,flushBank)}
+              disabled={saving||!qAmt||(activeType==='flush'&&!flushBank)}
+              style={{flex:1,background:saving||!qAmt||(activeType==='flush'&&!flushBank)?'var(--bg3)':activeType==='flush'?'var(--red)':activeType==='accrue'?'var(--green)':activeType==='borrow'?'var(--amber)':'var(--blue)',border:'none',borderRadius:6,color:saving||!qAmt||(activeType==='flush'&&!flushBank)?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:11,fontWeight:700,padding:'10px',cursor:'pointer'}}>
+              {saving?'Processing...':`Confirm ${activeType==='accrue'?'Accrue':activeType==='borrow'?'Borrow':activeType==='repay'?'Repay':'Execute'} ${qAmt?'₹'+fmt(parseFloat(qAmt)):''}`}
+            </button>
+            <button onClick={()=>setQAction(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'10px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>✕</button>
+          </div>
         </div>)}
 
-        {/* ── Expanded Ledger ── */}
+        {/* Expanded transaction ledger */}
         {isOpen&&(<div style={{borderTop:'1px solid var(--border)'}}>
-          <div style={{padding:'6px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>Transaction History</span></div>
-          {[...accruals,...flushes,...withdrawals,...repayments].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{
-            const isFlush=t.type==='Provision_Flush';const isWdr=t.type==='Provision_Withdraw';const isRep=t.type==='Provision_Repay';
-            const col=isFlush?'var(--red)':isWdr?'var(--amber)':isRep?'var(--blue)':'var(--green)';
-            const icon=isFlush?'⚡':isWdr?'↩':isRep?'↪':'＋';
-            const label=isFlush?'Flush':isWdr?'Borrow':isRep?'Repay':'Accrue';
-            return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'9px 14px',borderBottom:'1px solid var(--border)',alignItems:'center'}}>
-              <div><div style={{color:col,fontFamily:'var(--mono)',fontSize:11,fontWeight:600}}>{icon} {label}</div><div style={{color:'var(--text3)',marginTop:2,fontSize:10,fontFamily:'var(--mono)'}}>{fmtDate(t.created_at)}{t.particulars&&<span style={{marginLeft:6,color:'var(--text2)'}}>{(t.particulars||'').replace(/\[.*?\]\s?/,'').replace(prov.name,'').replace('— ','').trim()}</span>}</div></div>
-              <span style={{fontFamily:'var(--mono)',fontWeight:700,color:col}}>{isFlush||isWdr?'−':'+' }{fmtAmt(t.amount)}</span>
+          <div style={{padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Transaction Log</div>
+          {provTxns.length===0&&<div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No virtual entries yet. Use Accrue to start building this envelope.</div>}
+          {[...provTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>{
+            const typeConf={
+              Provision_Accrue:{label:'↑ Accrued',col:'var(--green)',sign:'+'},
+              Provision_Withdraw:{label:'↩ Borrowed',col:'var(--amber)',sign:'−'},
+              Provision_Repay:{label:'↪ Repaid',col:'var(--blue)',sign:'+'},
+              Provision_Flush:{label:'⚡ Flushed',col:'var(--red)',sign:'−'},
+            }[t.type]||{label:t.type,col:'var(--text3)',sign:''};
+            return(<div key={t.id||i} style={{display:'flex',justifyContent:'space-between',padding:'8px 14px',borderBottom:'1px solid var(--border)',fontSize:11}}>
+              <div>
+                <div style={{color:typeConf.col,fontFamily:'var(--mono)',fontWeight:600}}>{typeConf.label}</div>
+                <div style={{color:'var(--text3)',marginTop:2,fontSize:10}}>{fmtDate(t.created_at)}{t.particulars&&t.particulars.replace(/\[ENV:[^\]]+\]/,'').trim()?' · '+t.particulars.replace(/\[ENV:[^\]]+\]/,'').trim():''}</div>
+              </div>
+              <span style={{fontFamily:'var(--mono)',fontWeight:700,color:typeConf.col}}>{typeConf.sign}{fmtAmt(t.amount)}</span>
             </div>);
           })}
-          {accruals.length===0&&flushes.length===0&&withdrawals.length===0&&repayments.length===0&&(
-            <div style={{padding:'12px 14px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>No entries yet. Use Accrue to start building this envelope.</div>
-          )}
         </div>)}
+
       </div>);
     })}
-    <div style={{height:20}}/>
   </div>);
 }
 /* ── StatementScreen: 3-column view (Description | Deposits | Withdrawals) with print ── */
@@ -3590,7 +3294,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     </Acc>
 
     <p className="sec-label">About</p>
-    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v2.0.0 (DVE CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v2.0.0: DVE Architecture — Virtual Envelopes · Provision_Accrue/Withdraw/Repay/Flush · Clean bank reconciliation · True Free Liquidity dashboard<br/>v1.9.2: Minimal dashboard · Bank+CC in hero · Site form simplification</div>
+    <div style={{padding:'0 16px 40px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:2}}>JB Finance v2.0-DVE (CFO OS)<br/>Built for Jayesh Bhagat<br/>Umiya Associates · Mumbai<br/>Auth: Supabase Email/Password<br/>v2.0-DVE: Decoupled Virtual Envelope architecture · computeProvisions engine · Provision_Accrue/Withdraw/Repay/Flush types · True Free Liquidity = Bank − CC − Net Blocked · No Bank→Bank transfers for provisions · Dual-write Flush (virtual + physical debit)<br/>v1.9.2: Minimal dashboard · Bank+CC in hero · Site form simplification · Input bug fix</div>
   </div>);
 }
 /* ── RENDER ── */
