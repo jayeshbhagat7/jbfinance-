@@ -138,7 +138,13 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-/* Service Worker disabled for Claude artifact viewer environment */
+if ('serviceWorker' in navigator && location.hostname === 'jayeshbhagat7.github.io') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/jbfinance-/sw.js', { scope: '/jbfinance-/' })
+      .then(reg => console.log('[JBF] SW registered, scope:', reg.scope))
+      .catch(err => console.warn('[JBF] SW registration failed:', err));
+  });
+}
 </script>
 </head>
 <body>

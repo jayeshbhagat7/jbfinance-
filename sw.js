@@ -1,21 +1,8 @@
-/* ── JB Finance Service Worker v1.9 ──────────────────────────────────
-   Strategy:
-   - App shell (index.html) → Cache First, background update
-   - CDN scripts (React, Babel, Supabase, pdf.js, Chart.js) → Cache First
-   - Google Fonts → Cache First (stale-while-revalidate)
-   - Supabase API → Network First (always fresh data)
-   - Everything else → Network First with cache fallback
-   ─────────────────────────────────────────────────────────────────── */
+/* ── JB Finance Service Worker v2.0 ── */
+const CACHE_NAME = 'jbfinance-v2';
 
-const CACHE_NAME    = 'jbf-v1.9';
-const OFFLINE_PAGE  = '/jbfinance-/index.html';
-const BASE_PATH     = '/jbfinance-';
-
-/* CDN assets to pre-cache on SW install */
-const PRECACHE = [
-  '/jbfinance-/',
-  '/jbfinance-/index.html',
-  '/jbfinance-/sw.js',
+/* All external CDN scripts the app needs */
+const CDN_URLS = [
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
@@ -23,138 +10,103 @@ const PRECACHE = [
   'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
-  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap',
+  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap'
 ];
 
-/* Hosts that must always go network-first (live data) */
-const NETWORK_FIRST_HOSTS = [
-  'supabase.co',
-  'supabase.com',
+/* App shell — local files served from GitHub Pages */
+const APP_SHELL = [
+  '/jbfinance-/',
+  '/jbfinance-/index.html',
+  '/jbfinance-/manifest.json'
 ];
 
-/* ── Install: pre-cache app shell + CDN assets ── */
+/* ── INSTALL: pre-cache everything ── */
 self.addEventListener('install', event => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then(async cache => {
-      /* Cache each asset individually so one failure doesn't block all */
-      await Promise.allSettled(
-        PRECACHE.map(url =>
-          cache.add(url).catch(err =>
-            console.warn('[SW] Pre-cache failed for', url, err)
-          )
-        )
-      );
-    }).then(() => self.skipWaiting())
+      /* Cache app shell */
+      await cache.addAll(APP_SHELL).catch(() => {});
+
+      /* Cache CDN resources individually (don't fail install if one CDN is slow) */
+      for (const url of CDN_URLS) {
+        try {
+          const response = await fetch(url, { mode: 'cors' });
+          if (response.ok) {
+            await cache.put(url, response);
+          }
+        } catch (e) {
+          console.warn('[SW] Could not pre-cache:', url, e.message);
+        }
+      }
+    })
   );
 });
 
-/* ── Activate: delete old caches ── */
+/* ── ACTIVATE: clear old caches ── */
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
       Promise.all(
         keys
-          .filter(k => k !== CACHE_NAME)
-          .map(k => { console.log('[SW] Deleting old cache:', k); return caches.delete(k); })
+          .filter(key => key !== CACHE_NAME)
+          .map(key => caches.delete(key))
       )
     ).then(() => self.clients.claim())
   );
 });
 
-/* ── Fetch: routing logic ── */
+/* ── FETCH: Cache-first for CDN + app shell, Network-first for Supabase API ── */
 self.addEventListener('fetch', event => {
-  const { request } = event;
-  const url = new URL(request.url);
+  const url = event.request.url;
 
   /* Skip non-GET and chrome-extension requests */
-  if (request.method !== 'GET') return;
-  if (url.protocol === 'chrome-extension:') return;
+  if (event.request.method !== 'GET') return;
+  if (url.startsWith('chrome-extension://')) return;
 
-  /* Supabase API — always Network First, no caching */
-  if (NETWORK_FIRST_HOSTS.some(h => url.hostname.includes(h))) {
-    event.respondWith(networkFirst(request, false));
+  /* Supabase API calls — always go to network (live data) */
+  if (url.includes('supabase.co')) {
+    event.respondWith(
+      fetch(event.request).catch(() =>
+        new Response(JSON.stringify({ error: 'Offline — no network' }), {
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    );
     return;
   }
 
-  /* App shell (index.html or root path) — Cache First + background update */
-  if (url.pathname === BASE_PATH+'/' || url.pathname === BASE_PATH+'/index.html' || url.pathname === BASE_PATH) {
-    event.respondWith(cacheFirstWithUpdate(request));
+  /* Google Fonts API — network first, fall back to cache */
+  if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          return response;
+        })
+        .catch(() => caches.match(event.request))
+    );
     return;
   }
 
-  /* CDN scripts — Cache First (they're versioned, safe to cache long-term) */
-  if (
-    url.hostname.includes('cdn.jsdelivr.net') ||
-    url.hostname.includes('unpkg.com') ||
-    url.hostname.includes('cdnjs.cloudflare.com')
-  ) {
-    event.respondWith(cacheFirst(request));
-    return;
-  }
-
-  /* Google Fonts — Cache First */
-  if (
-    url.hostname.includes('fonts.googleapis.com') ||
-    url.hostname.includes('fonts.gstatic.com')
-  ) {
-    event.respondWith(cacheFirst(request));
-    return;
-  }
-
-  /* Everything else — Network First with cache fallback */
-  event.respondWith(networkFirst(request, true));
-});
-
-/* ── Strategy: Cache First ── */
-async function cacheFirst(request) {
-  const cached = await caches.match(request);
-  if (cached) return cached;
-  try {
-    const response = await fetch(request);
-    if (response && response.status === 200) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    return new Response('Offline — resource not cached', { status: 503 });
-  }
-}
-
-/* ── Strategy: Cache First + background update (app shell) ── */
-async function cacheFirstWithUpdate(request) {
-  const cache = await caches.open(CACHE_NAME);
-  const cached = await cache.match(request);
-
-  /* Kick off background fetch to update cache silently */
-  const fetchPromise = fetch(request).then(response => {
-    if (response && response.status === 200) {
-      cache.put(request, response.clone());
-    }
-    return response;
-  }).catch(() => null);
-
-  /* Return cached immediately if available, else wait for network */
-  return cached || fetchPromise || new Response('Offline', { status: 503 });
-}
-
-/* ── Strategy: Network First with optional cache fallback ── */
-async function networkFirst(request, useCacheFallback) {
-  try {
-    const response = await fetch(request);
-    if (response && response.status === 200 && useCacheFallback) {
-      const cache = await caches.open(CACHE_NAME);
-      cache.put(request, response.clone());
-    }
-    return response;
-  } catch {
-    if (useCacheFallback) {
-      const cached = await caches.match(request);
+  /* CDN scripts + app shell — cache first, fallback to network */
+  event.respondWith(
+    caches.match(event.request).then(cached => {
       if (cached) return cached;
-      /* Final fallback: return app shell so app at least loads */
-      const shell = await caches.match(OFFLINE_PAGE);
-      if (shell) return shell;
-    }
-    return new Response('Offline', { status: 503 });
-  }
-}
+
+      return fetch(event.request).then(response => {
+        if (response && response.ok) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        }
+        return response;
+      }).catch(() => {
+        /* If it's a navigation request and we're offline, serve the app shell */
+        if (event.request.mode === 'navigate') {
+          return caches.match('/jbfinance-/index.html');
+        }
+      });
+    })
+  );
+});
