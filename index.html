@@ -411,7 +411,10 @@ function App() {
 
   useEffect(()=>{
     db.auth.getSession().then(({data:{session}})=>{setSession(session);setAuthLoading(false);});
-    const{data:{subscription}}=db.auth.onAuthStateChange((_,session)=>{setSession(session);});
+    const{data:{subscription}}=db.auth.onAuthStateChange((event,session)=>{
+      if(event==='TOKEN_REFRESH_FAILED'||event==='SIGNED_OUT'){setSession(null);}
+      else{setSession(session);}
+    });
     /* v1.9: Listen for SW update event */
     const onSwUpdate=()=>showToast('🔄 Update ready — reopen app to apply');
     window.addEventListener('jbf-sw-update',onSwUpdate);
@@ -428,6 +431,15 @@ function App() {
   const loadData = useCallback(async ()=>{
     setLoading(true);
     try {
+      /* Ensure session is fresh before fetching — refreshes the JWT if expired */
+      const{data:refreshData,error:refreshErr}=await db.auth.refreshSession();
+      if(refreshErr||!refreshData?.session){
+        /* Session truly expired / invalid — force re-login */
+        showToast('⚠ Session expired — please sign in again');
+        await db.auth.signOut();
+        setLoading(false);
+        return;
+      }
       /* v1.7: cursor-based pagination — fetches ALL transactions in 500-row pages
          so data is never silently truncated when txn count exceeds 500            */
       const COLS='id,created_at,type,amount,category,from_account,to_account,particulars,tower,status,source,domain,site_name,site_user,party_name,user_id,it_section,correction_of';
@@ -435,7 +447,15 @@ function App() {
       while(!done){
         const{data:page,error:txnErr}=await db.from('transactions')
           .select(COLS).order('created_at',{ascending:false}).range(from,from+PAGE-1);
-        if(txnErr){console.error('transactions fetch error:',txnErr.message);showToast('⚠ DB: '+txnErr.message);break;}
+        if(txnErr){
+          if(txnErr.message&&(txnErr.message.includes('JWT')||txnErr.message.includes('expired'))){
+            showToast('⚠ Session expired — please sign in again');
+            await db.auth.signOut();
+            setLoading(false);
+            return;
+          }
+          console.error('transactions fetch error:',txnErr.message);showToast('⚠ DB: '+txnErr.message);break;
+        }
         if(!page||page.length===0){done=true;}
         else{allTxns=[...allTxns,...page];from+=PAGE;if(page.length<PAGE)done=true;}
       }
