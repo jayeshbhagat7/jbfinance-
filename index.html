@@ -532,6 +532,7 @@ function App() {
   };
   const addRecurring = async entry=>{const{error}=await db.from('recurring').insert([entry]);if(!error){showToast('✓ Saved');loadData();}else showToast('⚠ '+(error.message||'Error'));};
   const deleteRecurring = async id=>{await db.from('recurring').delete().eq('id',id);showToast('↩ Deleted');loadData();};
+  const updateRecurring = async (id,fields)=>{const{error}=await db.from('recurring').update(fields).eq('id',id);if(!error){showToast('✓ Updated');loadData();}else showToast('⚠ '+(error.message||'Error'));};
 
   const tickChecklist = async (rec,cl,amtPaid,fromAccount)=>{
     if(!amtPaid||amtPaid<=0)return;
@@ -608,7 +609,7 @@ function App() {
           showToast((isIncome?'↑ Income':'↓ Expense')+' ₹'+fmt(Math.abs(diff))+' — Suspense entry created');
         }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
-        {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} showToast={showToast} provisionStates={provisionStates}/>}
+        {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} onDeleteRecurring={deleteRecurring} onUpdateRecurring={updateRecurring} showToast={showToast} provisionStates={provisionStates}/>}
         {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}}/>}
         {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks}/>}
         {!loading&&tab==='statement'&&<StatementScreen txns={txns} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} opening={opening} balances={balances} setTab={setTab} setTxnFilter={setTxnFilter}/>}
@@ -1622,7 +1623,7 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
    Physical money NEVER moves until a Flush (actual expense) occurs.
    Types: Provision_Accrue (+B), Provision_Withdraw (+D), Provision_Repay (−D), Provision_Flush (−B + physical Expense)
 ── */
-function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showToast,provisionStates}){
+function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,onDeleteRecurring,onUpdateRecurring,showToast,provisionStates}){
   const [sel,setSel]=useState(null);
   /* qAction: {id, type: 'accrue'|'borrow'|'repay'|'flush'} */
   const [qAction,setQAction]=useState(null);
@@ -1632,6 +1633,10 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
   const [addOpen,setAddOpen]=useState(false);
   const [form,setForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',active:true});
   const [formSaving,setFormSaving]=useState(false);
+  /* Edit state */
+  const [editId,setEditId]=useState(null);
+  const [editForm,setEditForm]=useState({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:''});
+  const [editSaving,setEditSaving]=useState(false);
 
   /* Use pre-computed provisionStates from App (via computeProvisions) */
   const states=provisionStates||[];
@@ -1668,6 +1673,22 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
     setFormSaving(true);
     await onAddRecurring({name:form.name.trim(),amount:parseFloat(form.monthly_contribution)||0,frequency:'monthly',due_day:1,account:null,provision_account:null,category:'Provision',target_amount:parseFloat(form.target_amount)||0,already_saved:parseFloat(form.already_saved)||0,due_date:form.due_date||null,is_provision:true,active:true});
     setForm({name:'',target_amount:'',already_saved:'',due_date:'',monthly_contribution:'',active:true});setFormSaving(false);setAddOpen(false);
+  };
+
+  const handleEditOpen=(prov)=>{
+    setEditId(prov.id);
+    setEditForm({name:prov.name||'',target_amount:prov.target_amount||'',already_saved:prov.already_saved||'',due_date:prov.due_date||'',monthly_contribution:prov.amount||''});
+    setSel(null);setQAction(null);
+  };
+  const handleEditSave=async()=>{
+    if(!editForm.name.trim())return;
+    setEditSaving(true);
+    await onUpdateRecurring(editId,{name:editForm.name.trim(),target_amount:parseFloat(editForm.target_amount)||0,already_saved:parseFloat(editForm.already_saved)||0,due_date:editForm.due_date||null,amount:parseFloat(editForm.monthly_contribution)||0});
+    setEditId(null);setEditSaving(false);
+  };
+  const handleDelete=async(id)=>{
+    if(!window.confirm('Delete this envelope? This only removes the envelope definition — virtual transactions remain in your ledger.'))return;
+    await onDeleteRecurring(id);
   };
 
   const tgt=parseFloat(form.target_amount)||0;const saved_=parseFloat(form.already_saved)||0;const gap_=Math.max(0,tgt-saved_);
@@ -1730,20 +1751,57 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,showTo
       const isOpen=sel===prov.id;
       const activeType=qAction?.id===prov.id?qAction.type:null;
       const needFlushBank=activeType==='flush';
+      const isEditing=editId===prov.id;
       return(<div key={prov.id} className="env-card" style={{margin:'0 10px 10px'}}>
 
         {/* Header — tap to expand ledger */}
-        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{setSel(isOpen?null:prov.id);setQAction(null);}}>
+        <div style={{padding:'12px 14px',cursor:'pointer'}} onClick={()=>{if(isEditing)return;setSel(isOpen?null:prov.id);setQAction(null);}}>
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:13,fontWeight:600,color:'var(--text)',marginBottom:3}}>{prov.name}</div>
               {prov.due_date&&<div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>Due {new Date(prov.due_date).toLocaleDateString('en-IN',{month:'short',year:'numeric'})}</div>}
             </div>
-            <div style={{textAlign:'right',flexShrink:0,marginLeft:12}}>
-              <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:C>0?'var(--green)':'var(--text3)'}}>{fmtAmt(C)}</div>
-              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>Net Blocked</div>
+            <div style={{display:'flex',alignItems:'center',gap:6,flexShrink:0,marginLeft:8}}>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:C>0?'var(--green)':'var(--text3)'}}>{fmtAmt(C)}</div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>Net Blocked</div>
+              </div>
+              {/* Edit button */}
+              <button onClick={e=>{e.stopPropagation();isEditing?setEditId(null):handleEditOpen(prov);}} style={{background:isEditing?'var(--blue)':'none',border:'1px solid var(--blue)',borderRadius:6,color:isEditing?'#fff':'var(--blue)',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'5px 9px',cursor:'pointer',flexShrink:0}}>✏</button>
+              {/* Delete button */}
+              <button onClick={e=>{e.stopPropagation();handleDelete(prov.id);}} style={{background:'none',border:'1px solid var(--red)',borderRadius:6,color:'var(--red)',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'5px 9px',cursor:'pointer',flexShrink:0}}>✕</button>
             </div>
           </div>
+
+          {/* Inline Edit Form */}
+          {isEditing&&(<div onClick={e=>e.stopPropagation()} style={{marginTop:12,background:'var(--bg3)',border:'1px solid var(--blue)',borderRadius:8,padding:'12px',display:'flex',flexDirection:'column',gap:8}}>
+            <div style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',fontWeight:600,letterSpacing:'0.06em',marginBottom:2}}>EDIT ENVELOPE</div>
+            <input style={iS} placeholder="Envelope name" value={editForm.name} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}/>
+            <div style={{display:'flex',gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>TARGET (A)</div>
+                <input style={iS} type="number" step="0.01" placeholder="₹ Total needed" value={editForm.target_amount} onChange={e=>setEditForm(f=>({...f,target_amount:e.target.value}))}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>ALREADY SAVED (B₀)</div>
+                <input style={iS} type="number" step="0.01" placeholder="₹ opening saved" value={editForm.already_saved} onChange={e=>setEditForm(f=>({...f,already_saved:e.target.value}))}/>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>TARGET DATE</div>
+                <input style={iS} type="date" value={editForm.due_date} onChange={e=>setEditForm(f=>({...f,due_date:e.target.value}))}/>
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>MONTHLY ACCRUE</div>
+                <input style={iS} type="number" step="0.01" placeholder="₹/month" value={editForm.monthly_contribution} onChange={e=>setEditForm(f=>({...f,monthly_contribution:e.target.value}))}/>
+              </div>
+            </div>
+            <div style={{display:'flex',gap:6}}>
+              <button onClick={handleEditSave} disabled={editSaving||!editForm.name.trim()} style={{flex:1,background:editSaving?'var(--bg3)':'var(--blue)',border:'none',borderRadius:6,color:editSaving?'var(--text3)':'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:700,padding:'10px',cursor:'pointer'}}>{editSaving?'Saving...':'Save Changes'}</button>
+              <button onClick={()=>setEditId(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'10px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>Cancel</button>
+            </div>
+          </div>)}
 
           {/* 4-metric grid: A / B / D / C */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:4,marginTop:10}}>
