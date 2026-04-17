@@ -888,13 +888,18 @@ function computeBalances(opening,txns,allBanks,allCC){
 function computeProvisions(recurring,txns){
   const provs=recurring.filter(r=>r.is_provision&&r.active!==false);
   return provs.map(p=>{
-    const virtualTxns=txns.filter(t=>t.category===p.name&&t.status==='complete'&&PROVISION_VIRTUAL_TYPES.includes(t.type));
-    const accrued=virtualTxns.filter(t=>t.type==='Provision_Accrue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-    const withdrawn=virtualTxns.filter(t=>t.type==='Provision_Withdraw').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-    const C=Math.max(0,accrued-withdrawn);
-    const G=parseFloat(p.target_amount)||0;
-    const pct=G>0?Math.min(100,(C/G)*100):0;
-    return{name:p.name,C,G,pct,id:p.id,account:p.account,provision_account:p.provision_account,due_day:p.due_day};
+    const provTxns=txns.filter(t=>t.category===p.name&&t.status==='complete'&&PROVISION_VIRTUAL_TYPES.includes(t.type));
+    const alreadySaved=parseFloat(p.already_saved)||0;
+    const accrued=provTxns.filter(t=>t.type==='Provision_Accrue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const repaid=provTxns.filter(t=>t.type==='Provision_Repay').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const withdrawn=provTxns.filter(t=>t.type==='Provision_Withdraw').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const flushed=provTxns.filter(t=>t.type==='Provision_Flush').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const B=Math.max(0,alreadySaved+accrued+repaid-flushed);
+    const D=Math.max(0,withdrawn-repaid);
+    const C=Math.max(0,B-D);
+    const A=parseFloat(p.target_amount)||0;
+    const pct=A>0?Math.min(100,(C/A)*100):0;
+    return{prov:p,A,B,C,D,provTxns,pct};
   });
 }
 
@@ -1415,16 +1420,67 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
       <div style={{paddingBottom:'calc(var(--tab-h) + var(--safe-b) + 24px)',maxWidth:'600px',margin:'0 auto'}}>
         {filtered.length===0&&<div className="empty">No transactions found.<br/>{!showVirtualLogs&&'Try enabling "Show Virtual Logs" to see provision entries.'}</div>}
         {filtered.map(t=>(
-          <div key={t.id} className="txn-row" onClick={()=>setSelected(selected===t.id?null:t.id)}>
-            <div className="txn-left">
-              <div className="txn-cat">{typeLabel(t)}</div>
-              <div className="txn-desc">{t.particulars||t.category}</div>
-              <div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div>
+          <div key={t.id}>
+            <div className="txn-row" onClick={()=>{setSelected(selected===t.id?null:t.id);setEditMode(null);}}>
+              <div className="txn-left">
+                <div className="txn-cat">{typeLabel(t)}</div>
+                <div className="txn-desc">{t.particulars||t.category}</div>
+                <div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}</div>
+              </div>
+              <div className="txn-right">
+                <div className={`txn-amt ${amtColor(t)}`}>{amtSign(t)}{fmtAmt(t.amount)}</div>
+                <div className="txn-acct">{t.from_account||t.to_account}</div>
+              </div>
             </div>
-            <div className="txn-right">
-              <div className={`txn-amt ${amtColor(t)}`}>{amtSign(t)}{fmtAmt(t.amount)}</div>
-              <div className="txn-acct">{t.from_account||t.to_account}</div>
-            </div>
+            {selected===t.id&&!editMode&&(
+              <div style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'10px 16px',display:'flex',gap:8,flexWrap:'wrap'}}>
+                <div style={{fontSize:10,fontFamily:'var(--mono)',color:'var(--text3)',flex:'1 1 100%',marginBottom:2}}>
+                  {t.from_account&&<span>From: <strong style={{color:'var(--text)'}}>{t.from_account}</strong>&nbsp;&nbsp;</span>}
+                  {t.to_account&&<span>To: <strong style={{color:'var(--text)'}}>{t.to_account}</strong>&nbsp;&nbsp;</span>}
+                  {t.category&&<span>Cat: <strong style={{color:'var(--text)'}}>{t.category}</strong>&nbsp;&nbsp;</span>}
+                  {t.tower&&<span>Site: <strong style={{color:'var(--text)'}}>{t.tower}</strong></span>}
+                </div>
+                <button onClick={()=>handleEdit(t)} style={{background:'var(--blue)',border:'none',borderRadius:6,color:'#fff',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'6px 14px',cursor:'pointer'}}>✏ Edit</button>
+                <button onClick={async()=>{if(window.confirm('Void this transaction?')){await onDelete(t.id);setSelected(null);}}} style={{background:'none',border:'1px solid var(--red)',borderRadius:6,color:'var(--red)',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,padding:'6px 14px',cursor:'pointer'}}>✕ Void</button>
+              </div>
+            )}
+            {editMode&&editMode.id===t.id&&(
+              <div style={{background:'var(--bg2)',borderBottom:'1px solid var(--border)',padding:'12px 16px',display:'flex',flexDirection:'column',gap:8}}>
+                <div style={{fontSize:10,color:'var(--blue)',fontFamily:'var(--mono)',fontWeight:600,letterSpacing:'0.06em'}}>EDIT & CORRECT — original will be voided</div>
+                <div style={{display:'flex',gap:8}}>
+                  <div style={{flex:'0 0 120px'}}>
+                    <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>AMOUNT (₹)</div>
+                    <input style={iS} type="number" step="0.01" value={corrAmt} onChange={e=>setCorrAmt(e.target.value)} placeholder="Amount"/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>DATE</div>
+                    <input style={iS} type="date" value={corrDate} onChange={e=>setCorrDate(e.target.value)}/>
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>PARTICULARS</div>
+                  <input style={iS} placeholder="Description" value={corrDesc} onChange={e=>setCorrDesc(e.target.value)}/>
+                </div>
+                <div style={{display:'flex',gap:8}}>
+                  {editMode.from_account&&<div style={{flex:1}}>
+                    <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>FROM ACCOUNT</div>
+                    <select style={iS} value={corrFrom} onChange={e=>setCorrFrom(e.target.value)}>
+                      {allAccounts.map(a=><option key={a}>{a}</option>)}
+                    </select>
+                  </div>}
+                  {editMode.to_account&&<div style={{flex:1}}>
+                    <div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>TO ACCOUNT</div>
+                    <select style={iS} value={corrTo} onChange={e=>setCorrTo(e.target.value)}>
+                      {allAccounts.map(a=><option key={a}>{a}</option>)}
+                    </select>
+                  </div>}
+                </div>
+                <div style={{display:'flex',gap:6}}>
+                  <button onClick={handleSaveCorr} disabled={saving||!corrAmt} style={{flex:1,background:saving||!corrAmt?'var(--bg3)':'var(--blue)',border:'none',borderRadius:6,color:saving||!corrAmt?'var(--text3)':'#fff',fontFamily:'var(--mono)',fontSize:11,fontWeight:700,padding:'10px',cursor:'pointer'}}>{saving?'Saving...':'Save Correction'}</button>
+                  <button onClick={()=>setEditMode(null)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:6,color:'var(--text3)',padding:'10px 14px',fontFamily:'var(--mono)',fontSize:11,cursor:'pointer'}}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>
