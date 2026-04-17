@@ -1250,7 +1250,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
         </div>
       </>)}
 
-            {{siteType==='Site Transfer'&&(<>
+            {siteType==='Site Transfer'&&(<>
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>From Member</p>
           <select value={siteMember} onChange={e=>setSiteMember(e.target.value)} style={{fontSize:13,padding:'10px 12px',borderColor:'var(--red)',color:'var(--red)'}}>
             {allSiteMembers.map(m=><option key={m}>{m}</option>)}
