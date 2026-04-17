@@ -1000,7 +1000,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
         onSave({domain:'Site',type:'Expense',amount,category:siteCat,from_account:sitePayFrom,particulars:desc||'Site expense',party_name:siteMember,tower:siteName,status:'complete',source:'app',created_at:ts});
       }else if(siteType==='Income'){
         onSave({domain:'Site',type:'Income',amount,to_account:depositTo,particulars:desc||'Site income',party_name:siteMember,tower:siteName,status:'complete',source:'app',created_at:ts});
-      else if(siteType==='Site Transfer'){
+      }else if(siteType==='Site Transfer'){
         // Member-to-Member transfer logic
         // If "To Member" is "Me", increase Site Cash held by Me
         // If "From Member" is "Me", decrease Site Cash held by Me
