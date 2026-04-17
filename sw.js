@@ -1,8 +1,8 @@
-// JB Finance Service Worker v2.1-PRO-SITE
-// Background sync + offline caching
+// JB Finance Service Worker v2.1-PRO-SITE (Session 3 Complete)
+// Background sync + offline caching + all features
 
-const CACHE_NAME = 'jbf-v2.1-pro-site';
-const RUNTIME_CACHE = 'jbf-runtime-v2.1';
+const CACHE_NAME = 'jbf-v2.1-pro-site-complete';
+const RUNTIME_CACHE = 'jbf-runtime-v2.1-complete';
 
 const PRECACHE_URLS = [
   '/jbfinance-/',
@@ -13,22 +13,28 @@ const PRECACHE_URLS = [
   'https://unpkg.com/react@18/umd/react.production.min.js',
   'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
   'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js'
+  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
 ];
 
 // Install event
 self.addEventListener('install', event => {
-  console.log('[SW] Installing v2.1...');
+  console.log('[SW] Installing v2.1-PRO-SITE...');
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(PRECACHE_URLS))
+      .then(cache => {
+        console.log('[SW] Caching precache assets...');
+        return cache.addAll(PRECACHE_URLS.filter(url => url.startsWith('https://fonts') || url.startsWith('https://cdn') || url.startsWith('https://unpkg') || url.startsWith('https://cdnjs')));
+      })
       .then(() => self.skipWaiting())
+      .catch(err => console.warn('[SW] Precache failed (non-critical):', err))
   );
 });
 
 // Activate event
 self.addEventListener('activate', event => {
-  console.log('[SW] Activating v2.1...');
+  console.log('[SW] Activating v2.1-PRO-SITE...');
   event.waitUntil(
     caches.keys().then(cacheNames => {
       return Promise.all(
@@ -53,12 +59,17 @@ self.addEventListener('fetch', event => {
     return event.respondWith(fetch(request));
   }
 
+  // Skip Chrome extension requests
+  if (url.protocol === 'chrome-extension:') {
+    return;
+  }
+
   // Network-first strategy
   event.respondWith(
     fetch(request)
       .then(response => {
         // Cache successful responses
-        if (response && response.status === 200) {
+        if (response && response.status === 200 && response.type === 'basic') {
           const responseClone = response.clone();
           caches.open(RUNTIME_CACHE).then(cache => {
             cache.put(request, responseClone);
@@ -74,7 +85,11 @@ self.addEventListener('fetch', event => {
             return cached;
           }
           // Return offline page if available
-          return caches.match('/jbfinance-/index.html');
+          if (request.mode === 'navigate') {
+            return caches.match('/jbfinance-/index.html');
+          }
+          // Return empty response for other failed requests
+          return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
         });
       })
   );
@@ -138,7 +153,8 @@ async function syncTransactions() {
     clients.forEach(client => {
       client.postMessage({
         type: 'SYNC_COMPLETE',
-        count: synced
+        count: synced,
+        remaining: items.length - synced
       });
     });
 
@@ -183,4 +199,12 @@ function deleteFromStore(db, storeName, key) {
   });
 }
 
-console.log('[SW] Service Worker v2.1-PRO-SITE loaded');
+// Message handler for manual sync requests
+self.addEventListener('message', event => {
+  if (event.data && event.data.type === 'MANUAL_SYNC') {
+    console.log('[SW] Manual sync requested');
+    syncTransactions();
+  }
+});
+
+console.log('[SW] Service Worker v2.1-PRO-SITE (Complete Edition) loaded');

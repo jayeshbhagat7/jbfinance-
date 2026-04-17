@@ -1,27 +1,61 @@
 {
-  "name": "JB Finance",
+  "name": "JB Finance v2.1-PRO-SITE",
   "short_name": "JB Finance",
-  "description": "Personal Finance App by Jayesh Bhagat",
+  "description": "Personal Finance & Construction Site Management - Complete CFO Operating System",
   "start_url": "/jbfinance-/",
   "scope": "/jbfinance-/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#faf6f0",
-  "theme_color": "#0a0a0a",
+  "background_color": "#0a0d12",
+  "theme_color": "#0a0d12",
+  "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' fill='%230a0a0a' rx='32'/%3E%3Ctext x='96' y='130' font-size='100' text-anchor='middle' font-family='monospace' fill='%2300d4aa'%3E₹%3C/text%3E%3C/svg%3E",
+      "src": "/jbfinance-/icon-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     },
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' fill='%230a0a0a' rx='80'/%3E%3Ctext x='256' y='360' font-size='280' text-anchor='middle' font-family='monospace' fill='%2300d4aa'%3E₹%3C/text%3E%3C/svg%3E",
+      "src": "/jbfinance-/icon-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any maskable"
     }
   ],
-  "categories": ["finance", "productivity"],
-  "lang": "en-IN"
+  "categories": ["finance", "productivity", "business"],
+  "screenshots": [
+    {
+      "src": "/jbfinance-/screenshot-1.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Dashboard with Safe to Spend and Cash in Hand"
+    },
+    {
+      "src": "/jbfinance-/screenshot-2.png",
+      "sizes": "1170x2532",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Transaction Log with Advanced Filtering"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Add Transaction",
+      "short_name": "Add",
+      "description": "Quick add new transaction",
+      "url": "/jbfinance-/?tab=add",
+      "icons": [{ "src": "/jbfinance-/icon-add.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Dashboard",
+      "short_name": "Home",
+      "description": "View financial dashboard",
+      "url": "/jbfinance-/?tab=dash",
+      "icons": [{ "src": "/jbfinance-/icon-dash.png", "sizes": "96x96" }]
+    }
+  ],
+  "related_applications": [],
+  "prefer_related_applications": false,
+  "iarc_rating_id": ""
 }
