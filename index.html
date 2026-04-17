@@ -1018,7 +1018,6 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
           created_at:ts,
           transfer_metadata:JSON.stringify({from_member:siteMember,to_member:transferUser,mode:sitePayFrom})
         });
-      }
       }else{
         onSave({domain:'Site',type:siteType,amount,from_account:sitePayFrom,to_account:siteTo,particulars:desc,tower:siteName,status:'complete',source:'app',created_at:ts});
       }
