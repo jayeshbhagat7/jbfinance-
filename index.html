@@ -1770,8 +1770,8 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
     if(r.frequency==='annual')return month===r.due_month;
     return false;
   };
-  /* CC bills auto-appear */
-  const ccItems=allCC.map(a=>({balance:balances[a]||0,name:a})).filter(x=>x.balance<0).map(x=>({id:'cc-'+x.name,name:x.name+' bill payment',amount:Math.abs(x.balance),frequency:'monthly',account:allBanks.find(b=>b!=='Cash')||allBanks[0]||'',category:'Credit Card Bill',is_cc_payment:true,cc_name:x.name,due_day:null,active:true}));
+  /* CC bills auto-appear — show only BILLED amount from reconciliation, not total balance */
+  const ccItems=allCC.map(a=>{const balance=balances[a]||0;if(balance>=0)return null;const reconData=(()=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');return v[a]||null;}catch{return null;}})();const billedAmt=reconData?reconData.bankAmt:Math.abs(balance);if(billedAmt<=0)return null;return{id:'cc-'+a,name:a+' bill payment',amount:billedAmt,frequency:'monthly',account:allBanks.find(b=>b!=='Cash')||allBanks[0]||'',category:'Credit Card Bill',is_cc_payment:true,cc_name:a,due_day:null,active:true};}).filter(Boolean);
   const activeItems=[...ccItems,...recurring.filter(isDue)];
   const paid=activeItems.filter(r=>getCL(r.id)?.status==='paid');
   const pending=activeItems.filter(r=>getCL(r.id)?.status!=='paid');
