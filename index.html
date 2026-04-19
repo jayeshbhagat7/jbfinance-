@@ -1068,17 +1068,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     {needFrom&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>PAID FROM</p><div style={{display:'flex',flexWrap:'wrap',gap:6}}>{fromList().map(a=><span key={a} style={cs(from===a)} onClick={()=>setFrom(a)}>{a}</span>)}</div></div>}
     {needTo&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>{type==='Income'||type==='UA Received'?'TO ACCOUNT':'TO'}</p><div style={{display:'flex',flexWrap:'wrap',gap:6}}>{toList().map(a=><span key={a} style={cs(to===a)} onClick={()=>setTo(a)}>{a}</span>)}</div></div>}
     {(type==='UA Expense'||type==='UA Received')&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>TOWER / SITE</p><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['D5','E2','C3','Common'].map(t=><span key={t} style={cs(tower===t)} onClick={()=>setTower(tower===t?'':t)}>{t}</span>)}</div></div>}
-    {/* 🏗 Site Tag — only for Expense and Income */}
-    {(type==='Expense'||type==='Income')&&(
-      <div onClick={()=>setIsSite(s=>!s)} style={{display:'flex',alignItems:'center',gap:10,background:isSite?'var(--amber-bg)':'var(--bg2)',border:'1.5px solid '+(isSite?'var(--amber)':'var(--border2)'),borderRadius:10,padding:'10px 14px',cursor:'pointer',userSelect:'none'}}>
-        <span style={{fontSize:18}}>🏗</span>
-        <div style={{flex:1}}>
-          <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:isSite?'var(--amber)':'var(--text2)',letterSpacing:'0.06em'}}>TAG AS SITE</div>
-          <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:2}}>{isSite?'This will adjust Site Cash balance':'Toggle ON if this is a site expense/income'}</div>
-        </div>
-        <div style={{width:20,height:20,borderRadius:10,background:isSite?'var(--amber)':'var(--border2)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,color:isSite?'#000':'var(--text3)',fontWeight:700}}>{isSite?'✓':'○'}</div>
-      </div>
-    )}
+
     {catInfo&&catInfo.it&&<span className="badge badge-in">IT: {catInfo.it} Eligible</span>}
     <SaveBtn/>
   </div>);
