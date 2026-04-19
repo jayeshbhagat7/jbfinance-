@@ -1,13 +1,15 @@
 {
-  "name": "JB Finance v2.1-PRO-SITE",
+  "name": "JB Finance — CFO OS",
   "short_name": "JB Finance",
-  "description": "Personal Finance & Construction Site Management - Complete CFO Operating System",
-  "start_url": "/jbfinance-/",
+  "description": "Personal wealth tracker & construction site ledger for Umiya Associates",
+  "start_url": "/jbfinance-/?pwa=1",
   "scope": "/jbfinance-/",
   "display": "standalone",
-  "background_color": "#0a0d12",
-  "theme_color": "#0a0d12",
-  "orientation": "portrait-primary",
+  "orientation": "portrait",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "lang": "en-IN",
+  "categories": ["finance", "productivity"],
   "icons": [
     {
       "src": "/jbfinance-/icon-192.png",
@@ -22,40 +24,7 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["finance", "productivity", "business"],
-  "screenshots": [
-    {
-      "src": "/jbfinance-/screenshot-1.png",
-      "sizes": "1170x2532",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Dashboard with Safe to Spend and Cash in Hand"
-    },
-    {
-      "src": "/jbfinance-/screenshot-2.png",
-      "sizes": "1170x2532",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Transaction Log with Advanced Filtering"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Add Transaction",
-      "short_name": "Add",
-      "description": "Quick add new transaction",
-      "url": "/jbfinance-/?tab=add",
-      "icons": [{ "src": "/jbfinance-/icon-add.png", "sizes": "96x96" }]
-    },
-    {
-      "name": "Dashboard",
-      "short_name": "Home",
-      "description": "View financial dashboard",
-      "url": "/jbfinance-/?tab=dash",
-      "icons": [{ "src": "/jbfinance-/icon-dash.png", "sizes": "96x96" }]
-    }
-  ],
+  "screenshots": [],
   "related_applications": [],
-  "prefer_related_applications": false,
-  "iarc_rating_id": ""
+  "prefer_related_applications": false
 }

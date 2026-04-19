@@ -1,210 +1,128 @@
-// JB Finance Service Worker v2.1-PRO-SITE (Session 3 Complete)
-// Background sync + offline caching + all features
+/* ── JB Finance Service Worker v2.0 ── */
+const CACHE_NAME   = 'jbf-v2';
+const STATIC_CACHE = 'jbf-static-v2';
 
-const CACHE_NAME = 'jbf-v2.1-pro-site-complete';
-const RUNTIME_CACHE = 'jbf-runtime-v2.1-complete';
-
+/* Assets to cache on install (app shell) */
 const PRECACHE_URLS = [
   '/jbfinance-/',
   '/jbfinance-/index.html',
-  '/jbfinance-/manifest.json',
-  'https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap',
-  'https://cdn.jsdelivr.net/npm/chart.js',
-  'https://unpkg.com/react@18/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18/umd/react-dom.production.min.js',
-  'https://unpkg.com/@babel/standalone/babel.min.js',
-  'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  /* CDN assets — cached on first fetch via runtime caching */
 ];
 
-// Install event
+/* CDN origins to cache aggressively (fonts, chart.js, react, etc.) */
+const CDN_ORIGINS = [
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
+  'cdn.jsdelivr.net',
+  'unpkg.com',
+  'cdnjs.cloudflare.com',
+];
+
+/* Supabase origin — never serve from cache (always fresh) */
+const SUPABASE_ORIGIN = 'supabase.co';
+
+/* ── INSTALL: pre-cache app shell ── */
 self.addEventListener('install', event => {
-  console.log('[SW] Installing v2.1-PRO-SITE...');
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => {
-        console.log('[SW] Caching precache assets...');
-        return cache.addAll(PRECACHE_URLS.filter(url => url.startsWith('https://fonts') || url.startsWith('https://cdn') || url.startsWith('https://unpkg') || url.startsWith('https://cdnjs')));
-      })
-      .then(() => self.skipWaiting())
-      .catch(err => console.warn('[SW] Precache failed (non-critical):', err))
+    caches.open(CACHE_NAME).then(cache => {
+      return cache.addAll(PRECACHE_URLS).catch(err => {
+        console.warn('[SW] Pre-cache partial failure (ok on localhost):', err);
+      });
+    }).then(() => self.skipWaiting())
   );
 });
 
-// Activate event
+/* ── ACTIVATE: clean old caches ── */
 self.addEventListener('activate', event => {
-  console.log('[SW] Activating v2.1-PRO-SITE...');
   event.waitUntil(
-    caches.keys().then(cacheNames => {
-      return Promise.all(
-        cacheNames.map(cacheName => {
-          if (cacheName !== CACHE_NAME && cacheName !== RUNTIME_CACHE) {
-            console.log('[SW] Deleting old cache:', cacheName);
-            return caches.delete(cacheName);
-          }
-        })
+    caches.keys().then(keys =>
+      Promise.all(
+        keys
+          .filter(k => k !== CACHE_NAME && k !== STATIC_CACHE)
+          .map(k => { console.log('[SW] Deleting old cache:', k); return caches.delete(k); })
+      )
+    ).then(() => {
+      self.clients.claim();
+      /* Notify all clients that a new SW is active */
+      self.clients.matchAll().then(clients =>
+        clients.forEach(c => c.postMessage({ type: 'SW_UPDATED' }))
       );
-    }).then(() => self.clients.claim())
+    })
   );
 });
 
-// Fetch event - network-first with cache fallback
+/* ── FETCH: routing strategy ── */
 self.addEventListener('fetch', event => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip Supabase API calls from caching
-  if (url.hostname.includes('supabase.co')) {
-    return event.respondWith(fetch(request));
-  }
+  /* 1. Skip non-GET and chrome-extension requests */
+  if (request.method !== 'GET') return;
+  if (url.protocol === 'chrome-extension:') return;
 
-  // Skip Chrome extension requests
-  if (url.protocol === 'chrome-extension:') {
+  /* 2. Supabase API → Network-only (never cache DB calls) */
+  if (url.hostname.includes(SUPABASE_ORIGIN)) return;
+
+  /* 3. CDN assets (fonts, libraries) → Cache-first, fallback network */
+  if (CDN_ORIGINS.some(o => url.hostname.includes(o))) {
+    event.respondWith(cacheFirst(request, STATIC_CACHE));
     return;
   }
 
-  // Network-first strategy
-  event.respondWith(
-    fetch(request)
-      .then(response => {
-        // Cache successful responses
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseClone = response.clone();
-          caches.open(RUNTIME_CACHE).then(cache => {
-            cache.put(request, responseClone);
-          });
-        }
-        return response;
-      })
-      .catch(() => {
-        // Fallback to cache on network failure
-        return caches.match(request).then(cached => {
-          if (cached) {
-            console.log('[SW] Serving from cache:', request.url);
-            return cached;
-          }
-          // Return offline page if available
-          if (request.mode === 'navigate') {
-            return caches.match('/jbfinance-/index.html');
-          }
-          // Return empty response for other failed requests
-          return new Response('Offline', { status: 503, statusText: 'Service Unavailable' });
-        });
-      })
-  );
-});
-
-// Background Sync event - push queued transactions
-self.addEventListener('sync', event => {
-  console.log('[SW] Sync event triggered:', event.tag);
-  
-  if (event.tag === 'sync-txns') {
-    event.waitUntil(syncTransactions());
+  /* 4. Same-origin app shell (index.html, sw.js, manifest.json, icons)
+        → Network-first with cache fallback (ensures updates land) */
+  if (url.origin === self.location.origin) {
+    event.respondWith(networkFirst(request, CACHE_NAME));
+    return;
   }
+
+  /* 5. Everything else → network (Cloudflare beacon etc.) */
 });
 
-async function syncTransactions() {
-  console.log('[SW] Starting background sync...');
-  
+/* ── STRATEGY: Cache-first ── */
+async function cacheFirst(request, cacheName) {
+  const cached = await caches.match(request);
+  if (cached) return cached;
   try {
-    // Open IndexedDB and get queued items
-    const db = await openIndexedDB();
-    const items = await getAllFromStore(db, 'outbox');
-    
-    if (items.length === 0) {
-      console.log('[SW] No items to sync');
-      return;
+    const response = await fetch(request);
+    if (response && response.status === 200) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
     }
-
-    console.log(`[SW] Found ${items.length} items to sync`);
-    
-    let synced = 0;
-    for (const item of items) {
-      try {
-        // Attempt to push to Supabase
-        const payload = { ...item };
-        delete payload.id;
-        delete payload._queued_at;
-        
-        const response = await fetch('https://ayzlaumbrntpqfemnxao.supabase.co/rest/v1/transactions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5emxhdW1icm50cHFmZW1ueGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjQwNTAsImV4cCI6MjA4OTc0MDA1MH0.VEYId6dpxCvmTArXq-FVZqy5WTgl0QTcLamYMovaqgE',
-            'Prefer': 'return=minimal'
-          },
-          body: JSON.stringify(payload)
-        });
-
-        if (response.ok) {
-          // Successfully synced - remove from outbox
-          await deleteFromStore(db, 'outbox', item.id);
-          synced++;
-          console.log('[SW] Synced item:', item.id);
-        }
-      } catch (err) {
-        console.error('[SW] Failed to sync item:', item.id, err);
-      }
-    }
-
-    // Notify clients
-    const clients = await self.clients.matchAll();
-    clients.forEach(client => {
-      client.postMessage({
-        type: 'SYNC_COMPLETE',
-        count: synced,
-        remaining: items.length - synced
-      });
-    });
-
-    console.log(`[SW] Sync complete: ${synced}/${items.length} items synced`);
-  } catch (err) {
-    console.error('[SW] Sync error:', err);
+    return response;
+  } catch {
+    return cached || new Response('Offline', { status: 503 });
   }
 }
 
-// IndexedDB helpers
-function openIndexedDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open('jbf_offline', 1);
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = e => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('outbox')) {
-        db.createObjectStore('outbox', { keyPath: 'id', autoIncrement: true });
-      }
-    };
-  });
+/* ── STRATEGY: Network-first with cache fallback ── */
+async function networkFirst(request, cacheName) {
+  try {
+    const response = await fetch(request);
+    if (response && response.status === 200) {
+      const cache = await caches.open(cacheName);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    /* If navigating and offline, serve index.html as fallback */
+    if (request.mode === 'navigate') {
+      const fallback = await caches.match('/jbfinance-/index.html')
+                    || await caches.match('/jbfinance-/');
+      if (fallback) return fallback;
+    }
+    return new Response(
+      '<h2 style="font-family:monospace;padding:24px">📵 JB Finance — Offline<br><small>You can still add entries; they will sync when back online.</small></h2>',
+      { status: 503, headers: { 'Content-Type': 'text/html' } }
+    );
+  }
 }
 
-function getAllFromStore(db, storeName) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readonly');
-    const store = tx.objectStore(storeName);
-    const request = store.getAll();
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function deleteFromStore(db, storeName, key) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(storeName, 'readwrite');
-    const store = tx.objectStore(storeName);
-    const request = store.delete(key);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
-// Message handler for manual sync requests
+/* ── MESSAGE: manual skipWaiting from app ── */
 self.addEventListener('message', event => {
-  if (event.data && event.data.type === 'MANUAL_SYNC') {
-    console.log('[SW] Manual sync requested');
-    syncTransactions();
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
   }
 });
-
-console.log('[SW] Service Worker v2.1-PRO-SITE (Complete Edition) loaded');

@@ -140,10 +140,27 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 </style>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-if ('serviceWorker' in navigator && location.hostname === 'jayeshbhagat7.github.io') {
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/jbfinance-/sw.js', { scope: '/jbfinance-/' })
-      .then(reg => console.log('[JBF] SW registered, scope:', reg.scope))
+    /* Works on both GitHub Pages and localhost */
+    const swPath = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      ? '/sw.js'
+      : '/jbfinance-/sw.js';
+    const swScope = location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+      ? '/'
+      : '/jbfinance-/';
+    navigator.serviceWorker.register(swPath, { scope: swScope })
+      .then(reg => {
+        console.log('[JBF] SW registered, scope:', reg.scope);
+        reg.addEventListener('updatefound', () => {
+          const nw = reg.installing;
+          nw.addEventListener('statechange', () => {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              window.dispatchEvent(new CustomEvent('jbf-sw-update'));
+            }
+          });
+        });
+      })
       .catch(err => console.warn('[JBF] SW registration failed:', err));
   });
 }
@@ -422,10 +439,56 @@ function App() {
 
   const showToast = msg => { setToast(msg); setTimeout(()=>setToast(null),2500); };
 
+  /* ── OFFLINE QUEUE ── */
+  const [offlineQueue, setOfflineQueue] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem('jbf_offline_queue') || '[]'); } catch { return []; }
+  });
+  const [isOnline, setIsOnline] = React.useState(() => navigator.onLine);
+
+  useEffect(() => {
+    const goOnline  = () => { setIsOnline(true); };
+    const goOffline = () => { setIsOnline(false); };
+    window.addEventListener('online',  goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
+
+
   useEffect(()=>{
     document.documentElement.setAttribute('data-theme',theme);
     localStorage.setItem('jbf_theme',theme);
   },[theme]);
+
+  /* Flush offline queue when connection is restored */
+  useEffect(() => {
+    if (!isOnline) { showToast('📵 Offline — entries will be queued locally'); return; }
+    const flush = async () => {
+      let q;
+      try { q = JSON.parse(localStorage.getItem('jbf_offline_queue') || '[]'); } catch { q = []; }
+      if (!q.length) return;
+      let failed = [];
+      for (const item of q) {
+        try {
+          const payload = { ...item.txn, user_id: session?.user?.id || null };
+          if (!('party_name' in payload)) payload.party_name = null;
+          if (!('tower'      in payload)) payload.tower      = null;
+          const { error } = await db.from('transactions').insert([payload]);
+          if (error) failed.push(item);
+        } catch { failed.push(item); }
+      }
+      if (failed.length === 0) {
+        localStorage.removeItem('jbf_offline_queue');
+        setOfflineQueue([]);
+        showToast('✅ ' + q.length + ' queued entr' + (q.length === 1 ? 'y' : 'ies') + ' synced!');
+        loadData();
+      } else {
+        localStorage.setItem('jbf_offline_queue', JSON.stringify(failed));
+        setOfflineQueue(failed);
+        showToast('⚠ ' + failed.length + ' entries still failed to sync');
+      }
+    };
+    flush();
+  }, [isOnline]);
 
   const loadData = useCallback(async ()=>{
     setLoading(true);
@@ -497,6 +560,15 @@ function App() {
     /* Ensure party_name & tower are never undefined (causes Supabase column-not-found if col missing) */
     if(!('party_name' in payload))payload.party_name=null;
     if(!('tower' in payload))payload.tower=null;
+    /* ── OFFLINE QUEUE: if no connection, queue locally ── */
+    if (!navigator.onLine) {
+      const item = { txn, queued_at: new Date().toISOString() };
+      const q = [...offlineQueue, item];
+      localStorage.setItem('jbf_offline_queue', JSON.stringify(q));
+      setOfflineQueue(q);
+      showToast('📵 Offline — queued (' + q.length + ' pending)');
+      return;
+    }
     const{error}=await db.from('transactions').insert([payload]);
     if(!error){showToast('✓ '+fmtAmt(txn.amount)+' logged');loadData();}
     else{
@@ -601,7 +673,7 @@ function App() {
       {pinUnlocked&&authLoading&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',fontFamily:'var(--mono)',fontSize:12,color:'var(--text3)'}}>Authenticating…</div>}
       {pinUnlocked&&!authLoading&&!session&&<LoginScreen/>}
       {pinUnlocked&&!authLoading&&session&&<>
-      <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak}/>
+      <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak} isOnline={isOnline} offlineCount={offlineQueue.length}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
         {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
@@ -745,7 +817,7 @@ function computeProvisions(recurring,txns){
 }
 
 /* ── Header ── */
-function Header({liquid,tab,onMenu,streak}){
+function Header({liquid,tab,onMenu,streak,isOnline,offlineCount}){
   const titles={add:'Add Entry',txns:'Transactions',dash:'Dashboard',settings:'Settings',udhari:'Udhari Ledger',checklist:'Monthly Bills',provision:'Envelopes',statement:'Account Statement',site_ledger:'Site Ledger',cc_bill:'CC Bill Reconcile',investments:'Wealth & Portfolio',ai_command:'AI Command'};
   return(
     <div className="header">
@@ -754,6 +826,8 @@ function Header({liquid,tab,onMenu,streak}){
       </button>
       <span className="header-title" style={{flex:1,textAlign:'center'}}>{titles[tab]||'JB Finance'}</span>
       <div style={{display:'flex',alignItems:'center',gap:8}}>
+        {!isOnline&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--red)',padding:'2px 7px',background:'var(--red-bg)',borderRadius:20,border:'1px solid var(--red)'}} title="Offline — entries being queued">📵{offlineCount>0?` ${offlineCount}`:''}</span>}
+        {isOnline&&offlineCount>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}} title="Syncing queued entries">🔄{offlineCount}</span>}
         {streak>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}}>🔥{streak}</span>}
       </div>
     </div>
