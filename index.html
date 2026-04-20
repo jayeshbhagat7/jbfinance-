@@ -70,13 +70,6 @@ html[data-theme="terminal"]{
   --radius:10px;--tab-h:60px;--safe-b:env(safe-area-inset-bottom,0px);
 }
 html,body{height:100%;background:var(--bg3);color:var(--text);font-family:var(--sans);overflow:hidden;}
-#app-splash{position:fixed;inset:0;background:#0a0a0a;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:9999;gap:16px;transition:opacity 0.4s;}
-#app-splash.hidden{opacity:0;pointer-events:none;}
-#app-splash .sp-logo{font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:#00d4aa;letter-spacing:0.08em;}
-#app-splash .sp-sub{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4a6080;letter-spacing:0.1em;}
-#app-splash .sp-bar{width:120px;height:3px;background:#1a2840;border-radius:2px;overflow:hidden;}
-#app-splash .sp-bar-fill{height:100%;width:0%;background:#00d4aa;border-radius:2px;animation:sp-load 1.8s ease-in-out forwards;}
-@keyframes sp-load{0%{width:0%}60%{width:75%}100%{width:100%}}
 #root{display:flex;flex-direction:column;height:100dvh;max-width:600px;margin:0 auto;position:relative;background:var(--bg);border-left:1px solid var(--border);border-right:1px solid var(--border);box-shadow:0 0 20px rgba(0,0,0,0.08);overflow-x:hidden;}
 ::-webkit-scrollbar{width:3px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px;}
 .header{padding:10px 16px 8px;border-bottom:1px solid var(--border);background:var(--bg);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;position:sticky;top:0;z-index:10;}
@@ -145,6 +138,7 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 .swatch{width:28px;height:28px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;flex-shrink:0;}
 .swatch.active{border-color:var(--green);transform:scale(1.1);}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -173,35 +167,13 @@ if ('serviceWorker' in navigator) {
 </script>
 </head>
 <body>
-<style>@keyframes bootBar{0%{width:0%}70%{width:80%}100%{width:100%}}</style>
-<div id="root">
-  <div id="boot-screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100dvh;background:var(--bg);gap:16px;">
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--green);letter-spacing:0.1em;">JB Finance</div>
-    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);letter-spacing:0.12em;">LOADING…</div>
-    <div style="width:120px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;"><div style="height:3px;background:var(--green);border-radius:2px;animation:bootBar 1.8s ease-in-out infinite;"></div></div>
-  </div>
-</div>
-<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js" async></script>
-<script>
-/* PDF.js — lazy load only when needed */
-window.loadPdfJs = function() {
-  return new Promise((resolve) => {
-    if (window['pdfjs-dist/build/pdf']) { resolve(); return; }
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = () => {
-      window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      resolve();
-    };
-    document.head.appendChild(s);
-  });
-};
-</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window['pdfjs-dist/build/pdf'])window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 const { createClient } = supabase;
@@ -437,8 +409,6 @@ function App() {
   const [toast,setToast]                     = useState(null);
   const [menuOpen,setMenuOpen]               = useState(false);
   const [quickAdd,setQuickAdd]               = useState(false);
-  const [checklistAddOpen,setChecklistAddOpen] = useState(false);
-  const [udhariAddOpen,setUdhariAddOpen]       = useState(false);
   const [loading,setLoading]                 = useState(true);
   const [globalSearch,setGlobalSearch]       = useState('');
   const [addPrefill,setAddPrefill]           = useState(null);
@@ -703,7 +673,7 @@ function App() {
       {pinUnlocked&&authLoading&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',fontFamily:'var(--mono)',fontSize:12,color:'var(--text3)'}}>Authenticating…</div>}
       {pinUnlocked&&!authLoading&&!session&&<LoginScreen/>}
       {pinUnlocked&&!authLoading&&session&&<>
-      <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak} isOnline={isOnline} offlineCount={offlineQueue.length} headerAction={tab==='checklist'?{label:'+ Add',onClick:()=>setChecklistAddOpen(true)}:tab==='udhari'?{label:'+ New',onClick:()=>setUdhariAddOpen(true)}:null}/>
+      <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak} isOnline={isOnline} offlineCount={offlineQueue.length}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
         {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
@@ -718,8 +688,8 @@ function App() {
         }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
         {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} onDeleteRecurring={deleteRecurring} onUpdateRecurring={updateRecurring} showToast={showToast} provisionStates={provisionStates}/>}
-        {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}} externalAddOpen={checklistAddOpen} onCloseAdd={()=>setChecklistAddOpen(false)}/>}
-        {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} externalAddOpen={udhariAddOpen} onCloseAdd={()=>setUdhariAddOpen(false)}/>}
+        {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}}/>}
+        {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks}/>}
         {!loading&&tab==='statement'&&<StatementScreen txns={txns} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} opening={opening} balances={balances} setTab={setTab} setTxnFilter={setTxnFilter}/>}
         {!loading&&tab==='site_ledger'&&<SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} opening={opening}/>}
         {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts} setTab={setTab} setTxnFilter={setTxnFilter}/>}
@@ -847,7 +817,7 @@ function computeProvisions(recurring,txns){
 }
 
 /* ── Header ── */
-function Header({liquid,tab,onMenu,streak,isOnline,offlineCount,headerAction}){
+function Header({liquid,tab,onMenu,streak,isOnline,offlineCount}){
   const titles={add:'Add Entry',txns:'Transactions',dash:'Dashboard',settings:'Settings',udhari:'Udhari Ledger',checklist:'Monthly Bills',provision:'Envelopes',statement:'Account Statement',site_ledger:'Site Ledger',cc_bill:'CC Bill Reconcile',investments:'Wealth & Portfolio',ai_command:'AI Command'};
   return(
     <div className="header">
@@ -859,7 +829,6 @@ function Header({liquid,tab,onMenu,streak,isOnline,offlineCount,headerAction}){
         {!isOnline&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--red)',padding:'2px 7px',background:'var(--red-bg)',borderRadius:20,border:'1px solid var(--red)'}} title="Offline — entries being queued">📵{offlineCount>0?` ${offlineCount}`:''}</span>}
         {isOnline&&offlineCount>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}} title="Syncing queued entries">🔄{offlineCount}</span>}
         {streak>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}}>🔥{streak}</span>}
-        {headerAction&&<button onClick={headerAction.onClick} style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'5px 12px',borderRadius:7,border:'none',cursor:'pointer',letterSpacing:'0.04em'}}>{headerAction.label}</button>}
       </div>
     </div>
   );
@@ -1785,26 +1754,58 @@ function AiCommandScreen({investments,setInvestments,showToast}){
   </div>);
 }
 /* ── UdhariScreen — real ledger update + CA audit ── */
-function UdhariScreen({udhari,onAdd,onDelete,allAccounts,allBanks,externalAddOpen,onCloseAdd}){
+function UdhariScreen({udhari,onAdd,onDelete,allAccounts,allBanks}){
   const [view,setView]=useState('list');const [sel,setSel]=useState(null);
   const [form,setForm]=useState({person_name:'',amount:'',direction:'given',mode:'Cash',txn_date:new Date().toISOString().slice(0,10)});
   const [saving,setSaving]=useState(false);
   const todayStr=new Date().toISOString().slice(0,10);
-
-  /* Open add form when triggered from header button */
-  useEffect(()=>{if(externalAddOpen){setForm(f=>({...f,person_name:''}));setView('add');}}, [externalAddOpen]);
-
   const persons={};
   udhari.forEach(u=>{if(!persons[u.person_name])persons[u.person_name]={given:0,received:0,entries:[]};if(u.direction==='given')persons[u.person_name].given+=u.amount;if(u.direction==='received')persons[u.person_name].received+=u.amount;persons[u.person_name].entries.push(u);});
   const personList=Object.entries(persons).map(([name,d])=>({name,outstanding:d.given-d.received,given:d.given,received:d.received,entries:d.entries})).sort((a,b)=>b.outstanding-a.outstanding);
   const totalOut=personList.reduce((s,p)=>s+Math.max(0,p.outstanding),0);
-  const handleAdd=async()=>{if(!form.person_name.trim()||!form.amount||parseFloat(form.amount)<=0)return;setSaving(true);await onAdd({...form,amount:parseFloat(form.amount)});setForm({person_name:'',amount:'',direction:'given',mode:'Cash',txn_date:todayStr});setSaving(false);setView('list');if(onCloseAdd)onCloseAdd();};
+  const handleAdd=async()=>{if(!form.person_name.trim()||!form.amount||parseFloat(form.amount)<=0)return;setSaving(true);await onAdd({...form,amount:parseFloat(form.amount)});setForm({person_name:'',amount:'',direction:'given',mode:'Cash',txn_date:todayStr});setSaving(false);setView('list');};
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,outline:'none',width:'100%'};
 
   if(view==='person'&&sel){
     const p=persons[sel];const entries=(p?.entries||[]).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));const out=(p?.given||0)-(p?.received||0);
     return(<div className="fade-in" style={{paddingBottom:8}}>
       <div style={{display:'flex',alignItems:'center',gap:12,padding:'12px 16px',borderBottom:'1px solid var(--border)'}}>
+        <div onClick={()=>setView('list')} style={{cursor:'pointer',color:'var(--blue)',fontFamily:'var(--mono)',fontSize:12}}>← Back</div>
+        <div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:'var(--text)'}}>{sel}</div><div style={{fontSize:11,color:out>0?'var(--amber)':out<0?'var(--green)':'var(--text3)',fontFamily:'var(--mono)'}}>{out>0?'owes you '+fmtAmt(out):out<0?'you owe '+fmtAmt(Math.abs(out)):'settled ✓'}</div></div>
+        <div onClick={()=>{setForm(f=>({...f,person_name:sel}));setView('add');}} style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'6px 12px',borderRadius:6,cursor:'pointer'}}>+ Entry</div>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+        {[['Given',fmtAmt(p?.given||0),'var(--amber)'],['Received',fmtAmt(p?.received||0),'var(--green)'],['Balance',fmtAmt(Math.abs(out)),out>0?'var(--red)':'var(--green)']].map(([l,v,c])=>(<div key={l} style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 10px',textAlign:'center'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:3}}>{l.toUpperCase()}</div><div style={{fontSize:14,fontWeight:600,fontFamily:'var(--mono)',color:c}}>{v}</div></div>))}
+      </div>
+      {entries.map(e=>(<div key={e.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+        <div><div style={{fontSize:12,color:e.direction==='given'?'var(--amber)':'var(--green)',fontFamily:'var(--mono)',fontWeight:600}}>{e.direction==='given'?'▲ Diya':'▼ Wapas'} — {fmtAmt(e.amount)}</div><div style={{fontSize:11,color:'var(--text3)',marginTop:2}}>{fmtDate(e.created_at)} · {e.mode}{e.notes?' · '+e.notes:''}</div><div style={{fontSize:9,color:e.direction==='given'?'var(--amber)':'var(--green)',fontFamily:'var(--mono)',marginTop:1}}>{e.direction==='given'?'↳ Expense logged to '+e.mode:'↳ Income logged to '+e.mode}</div></div>
+        <button onClick={()=>onDelete(e.id)} style={{background:'none',border:'1px solid var(--border)',borderRadius:6,color:'var(--text3)',padding:'4px 8px',fontSize:10,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button>
+      </div>))}
+      {entries.length===0&&<div className="empty">No entries yet</div>}
+    </div>);
+  }
+
+  if(view==='add'){
+    return(<div className="fade-in" style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{display:'flex',alignItems:'center',gap:12}}><div onClick={()=>setView('list')} style={{cursor:'pointer',color:'var(--blue)',fontFamily:'var(--mono)',fontSize:12}}>← Back</div><span style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>New Udhari Entry</span></div>
+      <div><p className="sec-label" style={{marginBottom:6}}>Direction</p><div className="chip-row"><div className={'chip'+(form.direction==='given'?' sel-amber':'')} onClick={()=>setForm(f=>({...f,direction:'given'}))}>▲ Maine diya</div><div className={'chip'+(form.direction==='received'?' sel':'')} onClick={()=>setForm(f=>({...f,direction:'received'}))}>▼ Wapas mila</div></div></div>
+      <div><p className="sec-label" style={{marginBottom:6}}>Person</p><input style={iS} placeholder="e.g. Rajesh Senghani" value={form.person_name} onChange={e=>setForm(f=>({...f,person_name:e.target.value}))}/></div>
+      <div style={{display:'flex',gap:8}}><div style={{flex:1}}><p className="sec-label" style={{marginBottom:6}}>Amount (₹)</p><input style={iS} type="number" placeholder="0" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))}/></div><div style={{flex:1}}><p className="sec-label" style={{marginBottom:6}}>Date</p><input style={{...iS,color:form.txn_date!==todayStr?'var(--amber)':'var(--text)'}} type="date" value={form.txn_date} max={todayStr} onChange={e=>setForm(f=>({...f,txn_date:e.target.value}))}/></div></div>
+      <div><p className="sec-label" style={{marginBottom:6}}>Mode (account)</p><div className="chip-row">{allBanks.map(a=><div key={a} className={'chip'+(form.mode===a?' sel':'')} onClick={()=>setForm(f=>({...f,mode:a}))}>{a}</div>)}</div></div>
+      <div style={{background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:8,padding:'8px 12px',fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)'}}>Will log: {form.direction==='given'?<span style={{color:'var(--amber)'}}>Expense from <strong>{form.mode}</strong></span>:<span style={{color:'var(--green)'}}>Income to <strong>{form.mode}</strong></span>}</div>
+      <button onClick={handleAdd} disabled={saving||!form.person_name.trim()||!form.amount} style={{background:saving||!form.person_name.trim()||!form.amount?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:saving||!form.person_name.trim()||!form.amount?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:600,padding:14,cursor:'pointer',transition:'all 0.2s'}}>{saving?'Saving...':'Save — '+(form.direction==='given'?'Diya':'Wapas')+' ₹'+(form.amount||0)}</button>
+    </div>);
+  }
+
+  return(<div className="fade-in" style={{paddingBottom:8}}>
+    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid var(--border)'}}><div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Udhari Ledger</div><div style={{fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)',marginTop:2}}>Total outstanding — {fmtAmt(totalOut)}</div></div><div onClick={()=>{setForm(f=>({...f,person_name:''}));setView('add');}} style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',borderRadius:8,cursor:'pointer'}}>+ New</div></div>
+    {personList.length===0&&<div className="empty">Koi udhari nahi hai.<br/>"+ New" dabao pehli entry karne ke liye.</div>}
+    {personList.map(p=>(<div key={p.name} onClick={()=>{setSel(p.name);setView('person');}} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
+      <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{p.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3}}>Diya {fmtAmt(p.given)}{p.received>0&&<span style={{color:'var(--green)'}}> · Wapas {fmtAmt(p.received)}</span>}</div></div>
+      <div style={{textAlign:'right'}}><div style={{fontSize:14,fontWeight:600,fontFamily:'var(--mono)',color:p.outstanding>0?'var(--amber)':p.outstanding<0?'var(--green)':'var(--text3)'}}>{p.outstanding>0?fmtAmt(p.outstanding):p.outstanding<0?'−'+fmtAmt(Math.abs(p.outstanding)):'✓ Settled'}</div><div style={{fontSize:9,color:'var(--text3)',marginTop:2}}>{p.outstanding>0?'owes you':p.outstanding<0?'you owe':'clear'}</div></div>
+    </div>))}
+  </div>);
+}
 /* ── RecItem (lean prefill) ── */
 function RecItem({rec,cl,onPrefill}){
   const isPaid=cl?.status==='paid';const isVar=!rec.amount||parseFloat(rec.amount)===0;
@@ -1823,14 +1824,11 @@ function RecItem({rec,cl,onPrefill}){
 }
 
 /* ── ChecklistScreen (bills only — provisions are separate) ── */
-function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,allBanks,allCC,allCategories,balances,setTab,onPrefill,externalAddOpen,onCloseAdd}){
+function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,allBanks,allCC,allCategories,balances,setTab,onPrefill}){
   const now=new Date();const month=now.getMonth()+1;const year=now.getFullYear();
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const FREQS=[{k:'monthly',l:'Monthly'},{k:'bimonthly',l:'Every 2 months'},{k:'quarterly',l:'Quarterly'},{k:'half_yearly',l:'Half-yearly'},{k:'annual',l:'Annual'}];
   const [addOpen,setAddOpen]=useState(false);
-  /* Sync external trigger from Header button */
-  useEffect(()=>{if(externalAddOpen){setAddOpen(true);}}, [externalAddOpen]);
-  const handleCloseAdd=()=>{setAddOpen(false);if(onCloseAdd)onCloseAdd();};
   const [form,setForm]=useState({name:'',amount:'',frequency:'monthly',due_day:1,due_month:'',due_month2:'',account:'Cash',category:'',notes:'',active:true});
   const [saving,setSaving]=useState(false);
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
@@ -1856,18 +1854,17 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
   const handleAdd=async()=>{
     if(!form.name.trim())return;setSaving(true);
     await onAdd({name:form.name.trim(),amount:parseFloat(form.amount)||0,frequency:form.frequency,due_day:parseInt(form.due_day)||1,due_month:form.due_month?parseInt(form.due_month):null,due_month2:form.due_month2?parseInt(form.due_month2):null,account:form.account,provision_account:null,category:form.category,notes:form.notes,is_provision:false,active:true});
-    setForm({name:'',amount:'',frequency:'monthly',due_day:1,due_month:'',due_month2:'',account:'Cash',category:'',notes:'',active:true});setSaving(false);handleCloseAdd();
+    setForm({name:'',amount:'',frequency:'monthly',due_day:1,due_month:'',due_month2:'',account:'Cash',category:'',notes:'',active:true});setSaving(false);setAddOpen(false);
   };
 
   return(<div className="fade-in" style={{paddingBottom:8}}>
-    {/* Progress strip — no title/button, those are in shared Header */}
-    {activeItems.length>0&&<div style={{padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
-        <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',letterSpacing:'0.06em'}}>{paid.length}/{activeItems.length} DONE</span>
-        <span style={{fontFamily:'var(--mono)',fontSize:10,color:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',fontWeight:600}}>{pct}%</span>
+    <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+        <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{MONTHS[month-1]} {year} — Bills</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{paid.length}/{activeItems.length} done</div></div>
+        <button onClick={()=>setAddOpen(o=>!o)} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>+ Add</button>
       </div>
-      <div style={{background:'var(--bg3)',borderRadius:3,height:5}}><div style={{height:5,borderRadius:3,transition:'width 0.4s',background:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',width:pct+'%'}}/></div>
-    </div>}
+      {activeItems.length>0&&<div><div style={{background:'var(--bg3)',borderRadius:3,height:6}}><div style={{height:6,borderRadius:3,transition:'width 0.3s',background:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',width:pct+'%'}}/></div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3,textAlign:'right'}}>{pct}% complete</div></div>}
+    </div>
 
     {addOpen&&(<div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
       <p style={{fontSize:11,color:'var(--blue)',fontFamily:'var(--mono)',margin:'0 0 10px',fontWeight:600,letterSpacing:'0.06em'}}>ADD RECURRING BILL</p>
@@ -1876,7 +1873,7 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
       <div style={{display:'flex',gap:8,marginBottom:8}}><div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>DUE DAY</div><input style={iS} type="number" min="1" max="31" value={form.due_day} onChange={e=>setForm(f=>({...f,due_day:e.target.value}))}/></div>{['annual','half_yearly','quarterly','bimonthly'].includes(form.frequency)&&<div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>{form.frequency==='half_yearly'?'1ST MONTH':'DUE MONTH'}</div><input style={iS} type="number" min="1" max="12" placeholder="e.g. 10" value={form.due_month} onChange={e=>setForm(f=>({...f,due_month:e.target.value}))}/></div>}{form.frequency==='half_yearly'&&<div style={{flex:1}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:4}}>2ND MONTH</div><input style={iS} type="number" min="1" max="12" placeholder="e.g. 4" value={form.due_month2} onChange={e=>setForm(f=>({...f,due_month2:e.target.value}))}/></div>}</div>
       <div style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginBottom:5}}>DEFAULT ACCOUNT</div><div style={{display:'flex',flexWrap:'wrap'}}>{allAccounts.map(a=><span key={a} style={cS(form.account===a)} onClick={()=>setForm(f=>({...f,account:a}))}>{a}</span>)}</div></div>
       <input style={{...iS,marginBottom:8}} placeholder="Category (optional)" value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}/>
-      <div style={{display:'flex',gap:8}}><button onClick={handleAdd} disabled={saving||!form.name.trim()} style={{flex:1,background:saving||!form.name.trim()?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:saving||!form.name.trim()?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>{saving?'Saving...':'Save'}</button><button onClick={handleCloseAdd} style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,color:'var(--text3)',padding:'12px 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>Cancel</button></div>
+      <div style={{display:'flex',gap:8}}><button onClick={handleAdd} disabled={saving||!form.name.trim()} style={{flex:1,background:saving||!form.name.trim()?'var(--bg3)':'var(--green)',border:'none',borderRadius:8,color:saving||!form.name.trim()?'var(--text3)':'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:12,cursor:'pointer'}}>{saving?'Saving...':'Save'}</button><button onClick={()=>setAddOpen(false)} style={{background:'none',border:'1px solid var(--border2)',borderRadius:8,color:'var(--text3)',padding:'12px 16px',fontFamily:'var(--mono)',fontSize:12,cursor:'pointer'}}>Cancel</button></div>
     </div>)}
 
     {pending.length>0&&<><p className="sec-label" style={{color:'var(--amber)'}}>Pending — {pending.length}</p>{pending.map(r=><RecItem key={r.id} rec={r} cl={getCL(r.id)} onPrefill={onPrefill}/>)}</>}
@@ -3162,8 +3159,9 @@ function PdfImportScreen({allBanks,allCC,onSave,showToast,allCategories}){
     setPdfName(file.name);
     setProgress('Reading PDF…');
     try{
-      await window.loadPdfJs();
       const pdfjsLib=window['pdfjs-dist/build/pdf'];
+      if(pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc=
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       const arrayBuf=await file.arrayBuffer();
       const pdf=await pdfjsLib.getDocument({data:arrayBuf}).promise;
       let fullText='';
@@ -3646,10 +3644,7 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
   </div>);
 }
 /* ── RENDER ── */
-const rootEl = document.getElementById('root');
-const bootScreen = document.getElementById('boot-screen');
-if(bootScreen) bootScreen.remove();
-const root = ReactDOM.createRoot(rootEl);
+const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
