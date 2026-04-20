@@ -138,7 +138,6 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 .swatch{width:28px;height:28px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;flex-shrink:0;}
 .swatch.active{border-color:var(--green);transform:scale(1.1);}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -167,13 +166,35 @@ if ('serviceWorker' in navigator) {
 </script>
 </head>
 <body>
-<div id="root"></div>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>@keyframes bootBar{0%{width:0%}70%{width:80%}100%{width:100%}}</style>
+<div id="root">
+  <div id="boot-screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100dvh;background:var(--bg);gap:16px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--green);letter-spacing:0.1em;">JB Finance</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);letter-spacing:0.12em;">LOADING…</div>
+    <div style="width:120px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;"><div style="height:3px;background:var(--green);border-radius:2px;animation:bootBar 1.8s ease-in-out infinite;"></div></div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>if(window['pdfjs-dist/build/pdf'])window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+/* PDF.js — lazy load only when needed */
+window.loadPdfJs = function() {
+  return new Promise((resolve) => {
+    if (window['pdfjs-dist/build/pdf']) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
+      window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve();
+    };
+    document.head.appendChild(s);
+  });
+};
+</script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 const { createClient } = supabase;
@@ -3159,9 +3180,8 @@ function PdfImportScreen({allBanks,allCC,onSave,showToast,allCategories}){
     setPdfName(file.name);
     setProgress('Reading PDF…');
     try{
+      await window.loadPdfJs();
       const pdfjsLib=window['pdfjs-dist/build/pdf'];
-      if(pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc=
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       const arrayBuf=await file.arrayBuffer();
       const pdf=await pdfjsLib.getDocument({data:arrayBuf}).promise;
       let fullText='';
@@ -3644,7 +3664,10 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
   </div>);
 }
 /* ── RENDER ── */
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const rootEl = document.getElementById('root');
+const bootScreen = document.getElementById('boot-screen');
+if(bootScreen) bootScreen.remove();
+const root = ReactDOM.createRoot(rootEl);
 root.render(<App />);
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
