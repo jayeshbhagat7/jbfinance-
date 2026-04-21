@@ -138,7 +138,6 @@ textarea{background:var(--bg3);border:1px solid var(--border2);border-radius:8px
 .swatch{width:28px;height:28px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:all 0.15s;flex-shrink:0;}
 .swatch.active{border-color:var(--green);transform:scale(1.1);}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -161,19 +160,41 @@ if ('serviceWorker' in navigator) {
           });
         });
       })
-      .catch(err => console.warn('[JBF] SW registration failed:', err));
+      .catch(() => {});
   });
 }
 </script>
 </head>
 <body>
-<div id="root"></div>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>@keyframes bootBar{0%{width:0%}70%{width:80%}100%{width:100%}}</style>
+<div id="root">
+  <div id="boot-screen" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100dvh;background:var(--bg);gap:16px;">
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--green);letter-spacing:0.1em;">JB Finance</div>
+    <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);letter-spacing:0.12em;">LOADING…</div>
+    <div style="width:120px;height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;"><div style="height:3px;background:var(--green);border-radius:2px;animation:bootBar 1.8s ease-in-out infinite;"></div></div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-<script>if(window['pdfjs-dist/build/pdf'])window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+/* PDF.js — lazy load only when needed */
+window.loadPdfJs = function() {
+  return new Promise((resolve) => {
+    if (window['pdfjs-dist/build/pdf']) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = () => {
+      window['pdfjs-dist/build/pdf'].GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve();
+    };
+    document.head.appendChild(s);
+  });
+};
+</script>
 <script type="text/babel">
 const { useState, useEffect, useCallback, useRef } = React;
 const { createClient } = supabase;
@@ -409,6 +430,8 @@ function App() {
   const [toast,setToast]                     = useState(null);
   const [menuOpen,setMenuOpen]               = useState(false);
   const [quickAdd,setQuickAdd]               = useState(false);
+  const [billsAddOpen,setBillsAddOpen]       = useState(false);
+  const [udhariView,setUdhariView]           = useState('list');
   const [loading,setLoading]                 = useState(true);
   const [globalSearch,setGlobalSearch]       = useState('');
   const [addPrefill,setAddPrefill]           = useState(null);
@@ -673,7 +696,9 @@ function App() {
       {pinUnlocked&&authLoading&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100dvh',fontFamily:'var(--mono)',fontSize:12,color:'var(--text3)'}}>Authenticating…</div>}
       {pinUnlocked&&!authLoading&&!session&&<LoginScreen/>}
       {pinUnlocked&&!authLoading&&session&&<>
-      <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak} isOnline={isOnline} offlineCount={offlineQueue.length}/>
+      <Header liquid={liquid} tab={tab} onMenu={()=>setMenuOpen(true)} streak={streak} isOnline={isOnline} offlineCount={offlineQueue.length}
+        onHeaderAction={tab==='checklist'?()=>setBillsAddOpen(true):tab==='udhari'?()=>setUdhariView('add'):null}
+        headerActionLabel={tab==='checklist'?'+ Add':tab==='udhari'?'+ New':null}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
         {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
@@ -688,8 +713,8 @@ function App() {
         }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
         {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} onDeleteRecurring={deleteRecurring} onUpdateRecurring={updateRecurring} showToast={showToast} provisionStates={provisionStates}/>}
-        {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}}/>}
-        {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks}/>}
+        {!loading&&tab==='checklist'&&<ChecklistScreen recurring={recurring} checklist={checklist} onTick={tickChecklist} onAdd={addRecurring} onDelete={deleteRecurring} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} balances={balances} setTab={setTab} onPrefill={rec=>{setAddPrefill(rec);setTab('add');}} externalAddOpen={billsAddOpen} onExternalAddClose={()=>setBillsAddOpen(false)}/>}
+        {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} externalView={udhariView} onViewChange={v=>{setUdhariView(v);}}/>}
         {!loading&&tab==='statement'&&<StatementScreen txns={txns} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} opening={opening} balances={balances} setTab={setTab} setTxnFilter={setTxnFilter}/>}
         {!loading&&tab==='site_ledger'&&<SiteLedgerScreen txns={txns} customSites={customSites} customTeam={customTeam} opening={opening}/>}
         {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts} setTab={setTab} setTxnFilter={setTxnFilter}/>}
@@ -722,72 +747,59 @@ function App() {
 const PROVISION_VIRTUAL_TYPES=['Provision_Accrue','Provision_Withdraw','Provision_Repay','Provision_Flush'];
 
 /* ── computeBalances ── */
-function computeBalances(opening,txns,allBanks,allCC){
-  const bal={};
-  /* seed opening amounts — handle both legacy number and new {amount, opening_date} format */
-  Object.entries(opening||{}).forEach(([acc,val])=>{
-    bal[acc]=(typeof val==='object'&&val!==null)?(val.amount||0):(val||0);
+function computeBalances(opening, txns, allBanks, allCC) {
+  const bal = {};
+  Object.entries(opening || {}).forEach(([acc, val]) => {
+    bal[acc] = (typeof val === 'object' && val !== null) ? (val.amount || 0) : (val || 0);
   });
-  /* DEBUG: log all Site domain txns and Site Transfers */
-  const siteTxnsDebug=txns.filter(t=>t.status!=='voided'&&(t.domain==='Site'||t.type==='Site Transfer'));
-  console.log('[JBF DEBUG] Site txns:',siteTxnsDebug.map(t=>({type:t.type,amt:t.amount,from:t.from_account,to:t.to_account,particulars:t.particulars,domain:t.domain})));
-  console.log('[JBF DEBUG] Opening:',opening);
-  txns.filter(t=>t.status!=='voided').forEach(t=>{
-    const txnDate=(t.created_at||'').slice(0,10);
-    const amt=parseFloat(t.amount)||0,from=t.from_account,to=t.to_account,type=t.type;
-    const isSiteTag=(t.tower==='SITE');           /* Personal txn tagged as site */
-    const isSiteDomain=(t.domain==='Site');        /* Entered via Site domain */
-    /* ── STRICT RULE: Virtual provision types MUST NOT affect physical balances ── */
-    if(PROVISION_VIRTUAL_TYPES.includes(type))return;
-    /* Site Transfer: Given (has from_account) = debit from + debit Site Cash
-                      Received (has to_account) = credit to + credit Site Cash */
-    if(type==='Site Transfer'){
-      console.log('[JBF DEBUG] Site Transfer hit:',{amt,from,to,particulars:t.particulars});
-      if(from){bal[from]=(bal[from]||0)-amt;bal['Site Cash']=(bal['Site Cash']||0)-amt;}
-      if(to){bal[to]=(bal[to]||0)+amt;bal['Site Cash']=(bal['Site Cash']||0)+amt;}
-      return;
-    }
-    /* only include transaction if it's on/after the account's opening_date */
-    const after=acc=>{
-      const val=opening[acc];
-      if(!val||typeof val!=='object'||!val.opening_date)return true;
-      return txnDate>=val.opening_date;
+
+  txns.filter(t => t.status !== 'voided').forEach(t => {
+    const txnDate = (t.created_at || '').slice(0, 10);
+    const amt = parseFloat(t.amount) || 0, from = t.from_account, to = t.to_account, type = t.type;
+    const isSiteTag = (t.tower === 'SITE');
+    const isSiteDomain = (t.domain === 'Site');
+
+    if (PROVISION_VIRTUAL_TYPES.includes(type)) return;
+
+    const after = acc => {
+      const val = opening[acc];
+      if (!val || typeof val !== 'object' || !val.opening_date) return true;
+      return txnDate >= val.opening_date;
     };
-    if(type==='Expense'||type==='UA Expense'){if(from&&after(from))bal[from]=(bal[from]||0)-amt;}
-    if(type==='Income'||type==='UA Received'){if(to&&after(to))bal[to]=(bal[to]||0)+amt;}
-    if(['Bank→Bank','Bank→CC','Bank→Cash','Cash→Bank','CC→Bank'].includes(type)){
-      if(from&&after(from))bal[from]=(bal[from]||0)-amt;
-      if(to&&after(to))bal[to]=(bal[to]||0)+amt;
+
+    // Standard Transaction Logic
+    if (type === 'Expense' || type === 'UA Expense') { 
+      if (from && after(from)) bal[from] = (bal[from] || 0) - amt; 
     }
-    /* ── SITE adjustments (Personal tagged SITE, or domain=Site) ──
-       Bank/CC Expense → Site  : SC −amt, PC +amt  (bank paid, site owes you, personal relieved)
-       Cash Expense    → Site  : SC −amt            (Cash already debited = PC naturally drops)
-       Bank Income     ← Site  : SC +amt, PC −amt  (site money in personal bank, personal owes site)
-       Cash Income     ← Site  : SC +amt            (Cash already credited = CIH up for both)
-    ── */
-    if(isSiteTag||isSiteDomain){
-      const fromBank=from&&allBanks.includes(from)&&from!=='Cash'&&from!=='Site Cash';
-      const fromCC=from&&allCC.includes(from);
-      const toBank=to&&allBanks.includes(to)&&to!=='Cash'&&to!=='Site Cash';
-      const fromIsSiteCash=from==='Site Cash';
-      const toIsSiteCash=to==='Site Cash';
-      if(type==='Expense'&&!fromIsSiteCash){
-        bal['Site Cash']=(bal['Site Cash']||0)-amt;    // site owes you
-        if(fromBank||fromCC){
-          bal[from]=(bal[from]||0)+amt;                // personal bank/CC paid → relieve that account
-        }
-        // if Cash: Cash already debited above, SC debited here → PC drops naturally ✓
+    if (type === 'Income' || type === 'UA Received') { 
+      if (to && after(to)) bal[to] = (bal[to] || 0) + amt; 
+    }
+    if (['Bank→Bank', 'Bank→CC', 'Bank→Cash', 'Cash→Bank', 'CC→Bank', 'Site Transfer'].includes(type)) {
+      if (from && after(from)) bal[from] = (bal[from] || 0) - amt;
+      if (to && after(to)) bal[to] = (bal[to] || 0) + amt;
+    }
+
+    // --- SOLUTION FIX: Direct Personal-to-Site Impact ---
+    // If a Site Transfer or Site-tagged Expense is paid from your Bank/CC,
+    // we must debit Site Cash (increasing your RFS) and credit your Personal Account
+    // to show that the money is "gone" from your pocket and "invested" in the site.
+    if (isSiteTag || isSiteDomain) {
+      const fromPersonal = from && (allBanks.includes(from) || allCC.includes(from)) && from !== 'Cash' && from !== 'Site Cash';
+      const toPersonal = to && allBanks.includes(to) && to !== 'Cash' && to !== 'Site Cash';
+
+      // Money leaving your bank for the site
+      if ((type === 'Expense' || type === 'Site Transfer') && fromPersonal) {
+        bal['Site Cash'] = (bal['Site Cash'] || 0) - amt; // Site now owes you this
+        bal[from] = (bal[from] || 0) + amt; // Neutralize bank debit so STS remains correct, but Cash-in-Hand reflects the spend
       }
-      if(type==='Income'&&!toIsSiteCash){
-        bal['Site Cash']=(bal['Site Cash']||0)+amt;    // site money received
-        if(toBank){
-          bal[to]=(bal[to]||0)-amt;                    // landed in personal bank → that account owes site
-        }
-        // if Cash: Cash already credited above, SC credited here ✓
+      
+      // Money returning to your bank from the site
+      if (type === 'Income' && toPersonal) {
+        bal['Site Cash'] = (bal['Site Cash'] || 0) + amt; // Site owes you less
+        bal[to] = (bal[to] || 0) - amt;
       }
     }
   });
-  console.log('[JBF DEBUG] Final balances Cash:',bal['Cash'],'Site Cash:',bal['Site Cash']);
   return bal;
 }
 
@@ -817,7 +829,7 @@ function computeProvisions(recurring,txns){
 }
 
 /* ── Header ── */
-function Header({liquid,tab,onMenu,streak,isOnline,offlineCount}){
+function Header({liquid,tab,onMenu,streak,isOnline,offlineCount,onHeaderAction,headerActionLabel}){
   const titles={add:'Add Entry',txns:'Transactions',dash:'Dashboard',settings:'Settings',udhari:'Udhari Ledger',checklist:'Monthly Bills',provision:'Envelopes',statement:'Account Statement',site_ledger:'Site Ledger',cc_bill:'CC Bill Reconcile',investments:'Wealth & Portfolio',ai_command:'AI Command'};
   return(
     <div className="header">
@@ -829,6 +841,7 @@ function Header({liquid,tab,onMenu,streak,isOnline,offlineCount}){
         {!isOnline&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--red)',padding:'2px 7px',background:'var(--red-bg)',borderRadius:20,border:'1px solid var(--red)'}} title="Offline — entries being queued">📵{offlineCount>0?` ${offlineCount}`:''}</span>}
         {isOnline&&offlineCount>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}} title="Syncing queued entries">🔄{offlineCount}</span>}
         {streak>0&&<span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',padding:'2px 7px',background:'var(--amber-bg)',borderRadius:20,border:'1px solid var(--amber)'}}>🔥{streak}</span>}
+        {onHeaderAction&&<button onClick={onHeaderAction} style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,padding:'5px 12px',borderRadius:7,border:'none',cursor:'pointer'}}>{headerActionLabel}</button>}
       </div>
     </div>
   );
@@ -1522,33 +1535,45 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
         </Card>
       )}
 
-      {/* ── Net Physical Cash card ── */}
+      {/* ── Cash In Hand card — tap to open Cash ledger in Account Statement ── */}
       {(()=>{
         const personalCash=balances['Cash']||0;
         const siteCash=balances['Site Cash']||0;
-        // Site expenses paid from Bank/CC don't reduce physical cash, but they debit Site Cash.
-        // Add them back so CIH = only cash actually spent from hand.
-        const siteNonCashSpend=active.filter(t=>
+        const bankUsedForSite=active.filter(t=>
           (t.tower==='SITE'||t.domain==='Site')&&
-          t.type==='Expense'&&
+          (t.type==='Expense'||t.type==='Site Transfer')&&
           t.from_account&&
-          t.from_account!=='Cash'&&
-          t.from_account!=='Site Cash'
+          !allCC.includes(t.from_account)&&
+          (allBanks||[]).includes(t.from_account)&&
+          t.from_account!=='Cash'&&t.from_account!=='Site Cash'
         ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-        const netPhys=personalCash+siteCash+siteNonCashSpend; // true physical CIH
+        const ccUsedForSite=active.filter(t=>
+          (t.tower==='SITE'||t.domain==='Site')&&
+          (t.type==='Expense'||t.type==='Site Transfer')&&
+          t.from_account&&(allCC||[]).includes(t.from_account)
+        ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+        const totalBankUsedForSite=bankUsedForSite+ccUsedForSite;
+        const netPhys=personalCash+siteCash+totalBankUsedForSite;
         const netCol=netPhys>=0?'var(--green)':'var(--red)';
         const netBg=netPhys>=0?'var(--green-bg)':'var(--red-bg)';
         const netBorder=netPhys>=0?'var(--green)':'var(--red)';
-        // PC<0: you spent more than your share (owe site)
         const pcCol=personalCash<0?'var(--red)':personalCash===0?'var(--text3)':'var(--text)';
-        // SC<0: site owes you (you paid from personal bank/CC)
         const scCol=siteCash<0?'var(--amber)':siteCash===0?'var(--text3)':'var(--text)';
         const pcLabel=personalCash<0?'⚠ PC (Arrange for site)':'Personal Cash';
         const scLabel=siteCash<0?'⚠ To Recover from Site':'Site Cash';
+        const handleCashTap=()=>{
+          setTab('statement');
+          setTimeout(()=>{window.dispatchEvent(new CustomEvent('jbf-route-statement',{detail:{account:'Cash',period:'all'}}));},50);
+        };
         return(
-          <div style={{background:netBg,border:'1.5px solid '+netBorder,borderRadius:12,padding:'14px 16px',marginBottom:6}}>
-            <div style={{fontFamily:'var(--mono)',fontSize:9,color:netCol,textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:4}}>Cash In Hand</div>
-            <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:800,color:netCol,letterSpacing:'-1px',lineHeight:1,marginBottom:10}}>{netPhys<0?'−':''}{fmtAmt(Math.abs(Math.round(netPhys)))}</div>
+          <div onClick={handleCashTap} style={{background:netBg,border:'1.5px solid '+netBorder,borderRadius:12,padding:'14px 16px',marginBottom:6,cursor:'pointer',userSelect:'none'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}}>
+              <div>
+                <div style={{fontFamily:'var(--mono)',fontSize:9,color:netCol,textTransform:'uppercase',letterSpacing:'0.12em',marginBottom:4}}>Cash In Hand <span style={{fontSize:8,opacity:0.7}}>› ledger</span></div>
+                <div style={{fontFamily:'var(--mono)',fontSize:26,fontWeight:800,color:netCol,letterSpacing:'-1px',lineHeight:1,marginBottom:10}}>{netPhys<0?'−':''}{fmtAmt(Math.abs(Math.round(netPhys)))}</div>
+              </div>
+              <span style={{fontSize:14,color:netCol,marginTop:4,opacity:0.7}}>›</span>
+            </div>
             <div style={{display:'flex',flexDirection:'column',gap:5}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{pcLabel}</span>
@@ -1558,9 +1583,9 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
                 <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{scLabel}</span>
                 <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:scCol}}>{siteCash<0?'−':''}{fmtAmt(Math.abs(siteCash))}</span>
               </div>
-              {siteExpense>0&&<div style={{borderTop:'1px solid var(--border)',paddingTop:5,display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:2}}>
-                <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🏗 Site spend this month</span>
-                <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--amber)'}}>−{fmtAmt(siteExpense)}</span>
+              {totalBankUsedForSite>0&&<div style={{borderTop:'1px solid var(--border)',paddingTop:5,display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:2}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🏗 Bank used for site</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--blue)'}}>+{fmtAmt(totalBankUsedForSite)}</span>
               </div>}
             </div>
           </div>
@@ -1754,8 +1779,10 @@ function AiCommandScreen({investments,setInvestments,showToast}){
   </div>);
 }
 /* ── UdhariScreen — real ledger update + CA audit ── */
-function UdhariScreen({udhari,onAdd,onDelete,allAccounts,allBanks}){
+function UdhariScreen({udhari,onAdd,onDelete,allAccounts,allBanks,externalView,onViewChange}){
   const [view,setView]=useState('list');const [sel,setSel]=useState(null);
+  const setViewBoth=v=>{setView(v);if(onViewChange)onViewChange(v);};
+  useEffect(()=>{if(externalView&&externalView!==view){setView(externalView);if(onViewChange)onViewChange('list');}},[externalView]);
   const [form,setForm]=useState({person_name:'',amount:'',direction:'given',mode:'Cash',txn_date:new Date().toISOString().slice(0,10)});
   const [saving,setSaving]=useState(false);
   const todayStr=new Date().toISOString().slice(0,10);
@@ -1797,8 +1824,11 @@ function UdhariScreen({udhari,onAdd,onDelete,allAccounts,allBanks}){
     </div>);
   }
 
-  return(<div className="fade-in" style={{paddingBottom:8}}>
-    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid var(--border)'}}><div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>Udhari Ledger</div><div style={{fontSize:11,color:'var(--amber)',fontFamily:'var(--mono)',marginTop:2}}>Total outstanding — {fmtAmt(totalOut)}</div></div><div onClick={()=>{setForm(f=>({...f,person_name:''}));setView('add');}} style={{background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'8px 14px',borderRadius:8,cursor:'pointer'}}>+ New</div></div>
+  return(<div className="fade-in" style={{paddingBottom:8,width:'100%',boxSizing:'border-box'}}>
+    <div style={{padding:'10px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',display:'flex',justifyContent:'space-between',alignItems:'center',width:'100%',boxSizing:'border-box'}}>
+      <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',letterSpacing:'0.08em',textTransform:'uppercase'}}>Total Outstanding</span>
+      <span style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:'var(--amber)'}}>{fmtAmt(totalOut)}</span>
+    </div>
     {personList.length===0&&<div className="empty">Koi udhari nahi hai.<br/>"+ New" dabao pehli entry karne ke liye.</div>}
     {personList.map(p=>(<div key={p.name} onClick={()=>{setSel(p.name);setView('person');}} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer'}}>
       <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{p.name}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3}}>Diya {fmtAmt(p.given)}{p.received>0&&<span style={{color:'var(--green)'}}> · Wapas {fmtAmt(p.received)}</span>}</div></div>
@@ -1824,11 +1854,12 @@ function RecItem({rec,cl,onPrefill}){
 }
 
 /* ── ChecklistScreen (bills only — provisions are separate) ── */
-function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,allBanks,allCC,allCategories,balances,setTab,onPrefill}){
+function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,allBanks,allCC,allCategories,balances,setTab,onPrefill,externalAddOpen,onExternalAddClose}){
   const now=new Date();const month=now.getMonth()+1;const year=now.getFullYear();
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const FREQS=[{k:'monthly',l:'Monthly'},{k:'bimonthly',l:'Every 2 months'},{k:'quarterly',l:'Quarterly'},{k:'half_yearly',l:'Half-yearly'},{k:'annual',l:'Annual'}];
   const [addOpen,setAddOpen]=useState(false);
+  useEffect(()=>{if(externalAddOpen){setAddOpen(true);if(onExternalAddClose)onExternalAddClose();}},[externalAddOpen]);
   const [form,setForm]=useState({name:'',amount:'',frequency:'monthly',due_day:1,due_month:'',due_month2:'',account:'Cash',category:'',notes:'',active:true});
   const [saving,setSaving]=useState(false);
   const iS={background:'var(--bg3)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
@@ -1857,13 +1888,13 @@ function ChecklistScreen({recurring,checklist,onTick,onAdd,onDelete,allAccounts,
     setForm({name:'',amount:'',frequency:'monthly',due_day:1,due_month:'',due_month2:'',account:'Cash',category:'',notes:'',active:true});setSaving(false);setAddOpen(false);
   };
 
-  return(<div className="fade-in" style={{paddingBottom:8}}>
-    <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',background:'var(--bg2)'}}>
-      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-        <div><div style={{fontSize:13,fontWeight:600,color:'var(--text)'}}>{MONTHS[month-1]} {year} — Bills</div><div style={{fontSize:11,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{paid.length}/{activeItems.length} done</div></div>
-        <button onClick={()=>setAddOpen(o=>!o)} style={{background:'var(--green)',border:'none',borderRadius:8,color:'#000',fontFamily:'var(--mono)',fontSize:12,fontWeight:600,padding:'7px 14px',cursor:'pointer'}}>+ Add</button>
+  return(<div className="fade-in" style={{paddingBottom:8,width:'100%',boxSizing:'border-box'}}>
+    <div style={{padding:'8px 16px 6px',borderBottom:'1px solid var(--border)',background:'var(--bg2)',width:'100%',boxSizing:'border-box'}}>
+      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+        <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',letterSpacing:'0.08em'}}>{paid.length}/{activeItems.length} DONE</span>
+        <span style={{fontFamily:'var(--mono)',fontSize:10,color:pct===100?'var(--green)':pct>=50?'var(--blue)':'var(--amber)',fontWeight:600}}>{pct}% complete</span>
       </div>
-      {activeItems.length>0&&<div><div style={{background:'var(--bg3)',borderRadius:3,height:6}}><div style={{height:6,borderRadius:3,transition:'width 0.3s',background:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',width:pct+'%'}}/></div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:3,textAlign:'right'}}>{pct}% complete</div></div>}
+      {activeItems.length>0&&<div><div style={{background:'var(--bg3)',borderRadius:3,height:6}}><div style={{height:6,borderRadius:3,transition:'width 0.3s',background:pct===100?'var(--green)':pct>=70?'var(--blue)':'var(--amber)',width:pct+'%'}}/></div></div>}
     </div>
 
     {addOpen&&(<div style={{margin:'8px 12px',background:'var(--bg2)',border:'1px solid var(--blue)',borderRadius:10,padding:'14px'}}>
@@ -2164,11 +2195,14 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,onDele
 }
 /* ── StatementScreen: 3-column view (Description | Deposits | Withdrawals) with print ── */
 function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances,setTab,setTxnFilter}){
-  const [acct,setAcct]=useState(allBanks[0]||'');const [period,setPeriod]=useState('this_month');
+  // Ensure Cash always appears first in the bank selector
+  const allBanksWithCash=allBanks.includes('Cash')?allBanks:['Cash',...allBanks];
+  const [acct,setAcct]=useState(allBanksWithCash[0]||'');const [period,setPeriod]=useState('this_month');
   const [customStart,setCustomStart]=useState('');const [customEnd,setCustomEnd]=useState('');
   const now=new Date();const month=now.getMonth();const year=now.getFullYear();
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const isCC=allCC.includes(acct);
+  const isCash=(acct==='Cash');
   
   /* Listen for routing events from Dashboard */
   useEffect(()=>{
@@ -2238,12 +2272,20 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances,setTa
   };
   
   const cS=a=>({display:'inline-block',border:a?'1px solid var(--green)':'1px solid var(--border2)',borderRadius:14,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,color:a?'var(--green)':'var(--text2)',background:a?'var(--green-bg)':'var(--bg2)',cursor:'pointer',userSelect:'none',margin:'0 4px 4px 0'});
-  
+
+  // Build rows with running balance
+  let runBal=openBal;
+  const rowsWithBal=rows.map(r=>{runBal+=r.deposit-r.withdrawal;return{...r,runBal};});
+
   return(<div className="fade-in">
-    <p className="sec-label">Select Account</p><div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>{[...allBanks,...allCC].map(a=><div key={a} style={cS(acct===a)} onClick={()=>setAcct(a)}>{a}</div>)}</div>
+    <p className="sec-label">Select Account</p>
+    <div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>
+      {[...allBanksWithCash,...allCC].map(a=><div key={a} style={cS(acct===a)} onClick={()=>setAcct(a)}>{a==='Cash'?'💵 Cash':a}</div>)}
+    </div>
     <p className="sec-label">Period</p><div style={{display:'flex',flexWrap:'wrap',padding:'0 16px 8px',gap:6}}>{[['this_month','This Month'],['last_month','Last Month'],['this_year','This Year'],['custom','Custom'],['all','All Time']].map(([k,l])=><div key={k} style={cS(period===k)} onClick={()=>setPeriod(k)}>{l}</div>)}</div>
     {period==='custom'&&<div style={{padding:'0 16px 8px',display:'flex',gap:8,alignItems:'center'}}><input type="date" value={customStart} onChange={e=>setCustomStart(e.target.value)} style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text)'}}/><span style={{color:'var(--text3)',fontSize:11}}>to</span><input type="date" value={customEnd} onChange={e=>setCustomEnd(e.target.value)} style={{flex:1,background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'8px 10px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text)'}}/></div>}
-    
+
+    {/* Summary card */}
     <div style={{margin:'8px 16px',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px'}}>
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
         <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',letterSpacing:'0.08em',textTransform:'uppercase'}}>{acct} — {periodLabel}</div>
@@ -2251,24 +2293,47 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances,setTa
       </div>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}}>
         <div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Opening</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:openBal<0?'var(--red)':'var(--text)'}}>{openBal<0?'−':''}{fmtAmt(Math.abs(openBal))}</div></div>
-        <div onClick={()=>{if(totDeposit>0&&setTab&&setTxnFilter){const dateRange=period==='this_month'||period==='last_month'||period==='this_year'?period:(period==='custom'&&customStart&&customEnd?{start:customStart,end:customEnd}:'this_month');setTxnFilter({account:acct,type:'Income',dateRange,category:null});setTab('txns');}}} style={{cursor:totDeposit>0?'pointer':'default'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Deposits</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:totDeposit>0?'var(--green)':'var(--text3)',textDecoration:totDeposit>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>totDeposit>0&&(e.target.style.textDecorationColor='var(--green)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{totDeposit>0?'+'+fmtAmt(totDeposit):'—'}</div></div>
-        <div onClick={()=>{if(totWithdrawal>0&&setTab&&setTxnFilter){const dateRange=period==='this_month'||period==='last_month'||period==='this_year'?period:(period==='custom'&&customStart&&customEnd?{start:customStart,end:customEnd}:'this_month');setTxnFilter({account:acct,type:'Expense',dateRange,category:null});setTab('txns');}}} style={{cursor:totWithdrawal>0?'pointer':'default'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Withdrawals</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:totWithdrawal>0?'var(--red)':'var(--text3)',textDecoration:totWithdrawal>0?'underline':'none',textDecorationColor:'transparent',transition:'text-decoration-color 0.2s'}} onMouseEnter={e=>totWithdrawal>0&&(e.target.style.textDecorationColor='var(--red)')} onMouseLeave={e=>e.target.style.textDecorationColor='transparent'}>{totWithdrawal>0?'−'+fmtAmt(totWithdrawal):'—'}</div></div>
+        <div onClick={()=>{if(totDeposit>0&&setTab&&setTxnFilter){const dateRange=period==='this_month'||period==='last_month'||period==='this_year'?period:(period==='custom'&&customStart&&customEnd?{start:customStart,end:customEnd}:'this_month');setTxnFilter({account:acct,type:'Income',dateRange,category:null});setTab('txns');}}} style={{cursor:totDeposit>0?'pointer':'default'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{isCash?'Cash In':'Deposits'}</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:totDeposit>0?'var(--green)':'var(--text3)'}}>{totDeposit>0?'+'+fmtAmt(totDeposit):'—'}</div></div>
+        <div onClick={()=>{if(totWithdrawal>0&&setTab&&setTxnFilter){const dateRange=period==='this_month'||period==='last_month'||period==='this_year'?period:(period==='custom'&&customStart&&customEnd?{start:customStart,end:customEnd}:'this_month');setTxnFilter({account:acct,type:'Expense',dateRange,category:null});setTab('txns');}}} style={{cursor:totWithdrawal>0?'pointer':'default'}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>{isCash?'Cash Out':'Withdrawals'}</div><div style={{fontSize:13,fontWeight:600,fontFamily:'var(--mono)',color:totWithdrawal>0?'var(--red)':'var(--text3)'}}>{totWithdrawal>0?'−'+fmtAmt(totWithdrawal):'—'}</div></div>
       </div>
       <div style={{borderTop:'1px solid var(--border)',marginTop:8,paddingTop:8}}><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',marginBottom:3}}>Closing Balance</div><div style={{fontSize:16,fontWeight:700,fontFamily:'var(--mono)',color:closeBal<0?'var(--red)':'var(--green)'}}>{closeBal<0?'−':''}{fmtAmt(Math.abs(closeBal))}</div></div>
     </div>
-    
+
     {rows.length===0&&<div className="empty">No transactions for this account in this period.</div>}
     {rows.length>0&&<div style={{margin:'0 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
-      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Deposit</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Withdrawal</span></div>
-      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:'var(--amber-bg)'}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--text2)'}}>OPENING BALANCE</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:openBal>=0?'var(--green)':'var(--text3)'}}>{openBal>=0?fmtAmt(openBal):'—'}</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:openBal<0?'var(--red)':'var(--text3)'}}>{openBal<0?fmtAmt(Math.abs(openBal)):'—'}</div></div>
-      {rows.map((t,i)=>(
-        <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
-          <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category||t.type}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)}{t.category&&<span style={{marginLeft:6}}>{t.category}</span>}</div></div>
+      {/* Column headers — 4 cols for Cash (adds Balance), 3 for banks */}
+      <div style={{display:'grid',gridTemplateColumns:isCash?'2fr 1fr 1fr 1fr':'2fr 1fr 1fr',gap:6,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}>
+        <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',letterSpacing:'0.06em'}}>Description</span>
+        <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>{isCash?'In':'Deposit'}</span>
+        <span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>{isCash?'Out':'Withdrawal'}</span>
+        {isCash&&<span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Balance</span>}
+      </div>
+      {/* Opening balance row */}
+      <div style={{display:'grid',gridTemplateColumns:isCash?'2fr 1fr 1fr 1fr':'2fr 1fr 1fr',gap:6,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:'var(--amber-bg)'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--text2)'}}>OPENING BALANCE</div>
+        <div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:openBal>=0?'var(--green)':'var(--text3)'}}>{openBal>=0?fmtAmt(openBal):'—'}</div>
+        <div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:openBal<0?'var(--red)':'var(--text3)'}}>{openBal<0?fmtAmt(Math.abs(openBal)):'—'}</div>
+        {isCash&&<div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:'var(--text2)'}}>{fmtAmt(openBal)}</div>}
+      </div>
+      {/* Transaction rows */}
+      {rowsWithBal.map((t,i)=>(
+        <div key={t.id} style={{display:'grid',gridTemplateColumns:isCash?'2fr 1fr 1fr 1fr':'2fr 1fr 1fr',gap:6,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category||t.type}</div>
+            <div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)}{t.category&&<span style={{marginLeft:6}}>{t.category}</span>}</div>
+          </div>
           <div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:t.deposit>0?'var(--green)':'var(--text3)'}}>{t.deposit>0?fmtAmt(t.deposit):'—'}</div></div>
           <div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:t.withdrawal>0?'var(--red)':'var(--text3)'}}>{t.withdrawal>0?fmtAmt(t.withdrawal):'—'}</div></div>
+          {isCash&&<div style={{textAlign:'right',flexShrink:0}}><div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:t.runBal<0?'var(--red)':t.runBal===0?'var(--text3)':'var(--text)'}}>{t.runBal<0?'−':''}{fmtAmt(Math.abs(t.runBal))}</div></div>}
         </div>
       ))}
-      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',background:'var(--green-bg)',fontWeight:700}}><div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>CLOSING BALANCE</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal>=0?'var(--green)':'var(--text3)'}}>{closeBal>=0?fmtAmt(closeBal):'—'}</div><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal<0?'var(--red)':'var(--text3)'}}>{closeBal<0?fmtAmt(Math.abs(closeBal)):'—'}</div></div>
+      {/* Closing balance row */}
+      <div style={{display:'grid',gridTemplateColumns:isCash?'2fr 1fr 1fr 1fr':'2fr 1fr 1fr',gap:6,padding:'10px 12px',background:'var(--green-bg)',fontWeight:700}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>CLOSING BALANCE</div>
+        <div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal>=0?'var(--green)':'var(--text3)'}}>{closeBal>=0?fmtAmt(closeBal):'—'}</div>
+        <div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal<0?'var(--red)':'var(--text3)'}}>{closeBal<0?fmtAmt(Math.abs(closeBal)):'—'}</div>
+        {isCash&&<div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:closeBal<0?'var(--red)':'var(--green)'}}>{closeBal<0?'−':''}{fmtAmt(Math.abs(closeBal))}</div>}
+      </div>
     </div>}
   </div>);
 }
@@ -3159,9 +3224,8 @@ function PdfImportScreen({allBanks,allCC,onSave,showToast,allCategories}){
     setPdfName(file.name);
     setProgress('Reading PDF…');
     try{
+      await window.loadPdfJs();
       const pdfjsLib=window['pdfjs-dist/build/pdf'];
-      if(pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc=
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       const arrayBuf=await file.arrayBuffer();
       const pdf=await pdfjsLib.getDocument({data:arrayBuf}).promise;
       let fullText='';
@@ -3644,7 +3708,10 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
   </div>);
 }
 /* ── RENDER ── */
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const rootEl = document.getElementById('root');
+const bootScreen = document.getElementById('boot-screen');
+if(bootScreen) bootScreen.remove();
+const root = ReactDOM.createRoot(rootEl);
 root.render(<App />);
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
