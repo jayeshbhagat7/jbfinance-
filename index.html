@@ -787,16 +787,14 @@ function computeBalances(opening, txns, allBanks, allCC) {
       const fromPersonal = from && (allBanks.includes(from) || allCC.includes(from)) && from !== 'Cash' && from !== 'Site Cash';
       const toPersonal = to && allBanks.includes(to) && to !== 'Cash' && to !== 'Site Cash';
 
-      // Money leaving your bank for the site
+      // Money leaving your bank for the site — bank already debited above, just track in Site Cash
       if ((type === 'Expense' || type === 'Site Transfer') && fromPersonal) {
         bal['Site Cash'] = (bal['Site Cash'] || 0) - amt; // Site now owes you this
-        bal[from] = (bal[from] || 0) + amt; // Neutralize bank debit so STS remains correct, but Cash-in-Hand reflects the spend
       }
       
-      // Money returning to your bank from the site
+      // Money returning to your bank from the site — bank already credited above, just track in Site Cash
       if (type === 'Income' && toPersonal) {
         bal['Site Cash'] = (bal['Site Cash'] || 0) + amt; // Site owes you less
-        bal[to] = (bal[to] || 0) - amt;
       }
     }
   });
@@ -2246,12 +2244,8 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances,setTa
   });
   
   const rawOpen=opening[acct];const openingAmt=typeof rawOpen==='object'&&rawOpen!==null?(rawOpen.amount||0):(rawOpen||0);
-  const _isSiteT=t=>(t.tower==='SITE'||t.domain==='Site');
-  const _isPersonalBank=acc=>acc&&allBanks.includes(acc)&&acc!=='Cash'&&acc!=='Site Cash';
   const openBal=openingAmt+beforePeriod.reduce((s,t)=>{
     const a=parseFloat(t.amount)||0;
-    if(_isSiteT(t)&&(t.type==='Expense'||t.type==='Site Transfer')&&_isPersonalBank(t.from_account))return s;
-    if(_isSiteT(t)&&t.type==='Income'&&_isPersonalBank(t.to_account))return s;
     if(t.type==='Expense'||t.type==='UA Expense')return t.from_account===acct?s-a:s;
     if(t.type==='Income'||t.type==='UA Received')return t.to_account===acct?s+a:s;
     let e=0;if(t.from_account===acct)e-=a;if(t.to_account===acct)e+=a;return s+e;
@@ -2261,8 +2255,6 @@ function StatementScreen({txns,allAccounts,allBanks,allCC,opening,balances,setTa
   const rows=acctTxns.map(t=>{
     const a=parseFloat(t.amount)||0;
     let deposit=0,withdrawal=0;
-    if(_isSiteT(t)&&(t.type==='Expense'||t.type==='Site Transfer')&&_isPersonalBank(t.from_account))return{...t,deposit:0,withdrawal:0,_siteNeutralized:true};
-    if(_isSiteT(t)&&t.type==='Income'&&_isPersonalBank(t.to_account))return{...t,deposit:0,withdrawal:0,_siteNeutralized:true};
     if(t.type==='Income'||t.type==='UA Received'){if(t.to_account===acct)deposit=a;}
     else if(t.type==='Expense'||t.type==='UA Expense'){if(t.from_account===acct)withdrawal=a;}
     else{if(t.to_account===acct)deposit=a;if(t.from_account===acct)withdrawal=a;}
