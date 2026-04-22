@@ -1196,15 +1196,86 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
   });
   
   const filteredTotal=filtered.reduce((s,t)=>s+(Number(t.amount)||0),0);
-  const amtColor=t=>{if(t.status==='voided')return'';if(t.type==='Income'||t.type==='UA Received')return'in';if(t.type==='UA Expense')return'ua';if(t.type==='Bank→Bank'||t.type==='Bank→CC')return'';return'out';};
-  const amtSign=t=>(t.type==='Income'||t.type==='UA Received')?'+':'−';
+  const amtColor=t=>{
+    if(t.status==='voided')return'';
+    if(t.type==='Income'||t.type==='UA Received')return'in';
+    if(t.type==='UA Expense')return'ua';
+    if(t.type==='Site Transfer'||t.type==='Bank→Bank'||t.type==='Bank→CC'||t.type==='Bank→Cash'||t.type==='Cash→Bank'||t.type==='CC→Bank')return'ua';
+    return'out';
+  };
+  const amtSign=t=>{
+    if(t.type==='Income'||t.type==='UA Received')return'+';
+    if(t.type==='Expense'||t.type==='UA Expense')return'−';
+    if(t.type==='Site Transfer')return'↔';
+    if(t.type&&t.type.includes('→'))return'→';
+    return'−';
+  };
   const typeLabel=t=>{if(t.type==='Income')return'Income';if(t.type==='UA Received')return'UA Received ↑';if(t.type==='UA Expense')return'UA Expense';if(t.type==='Expense')return'Expense';return t.type;};
   const handleEdit=t=>{setEditMode(t);setCorrAmt(String(t.amount));setCorrDesc(t.particulars||'');setCorrCat(t.category||'');setCorrDate(new Date(t.created_at).toISOString().slice(0,10));setCorrFrom(t.from_account||'');setCorrTo(t.to_account||'');setCorrType(t.type||'');};
   const handleSaveCorr=async()=>{if(!editMode||!corrAmt||saving)return;setSaving(true);await onVoidAndCorrect(editMode,{amount:parseFloat(corrAmt),particulars:corrDesc||editMode.particulars,category:corrCat||editMode.category,from_account:corrFrom||editMode.from_account,to_account:corrTo||editMode.to_account,created_at:corrDate?corrDate+'T06:30:00.000Z':editMode.created_at});setEditMode(null);setSelected(null);setSaving(false);};
   
   const handlePrint=()=>{
     const periodLabel=(()=>{if(dateFilter==='This Month')return`${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][curMonth]} ${curYear}`;if(dateFilter==='Last Month'){const lm=curMonth===0?11:curMonth-1,ly=curMonth===0?curYear-1:curYear;return`${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][lm]} ${ly}`;}if(dateFilter==='This Year')return`FY ${curYear}`;if(dateFilter==='Custom'&&customStart&&customEnd)return`${customStart} to ${customEnd}`;return'All Time';})();
-    const html=`<!DOCTYPE html><html><head><title>Transactions ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;font-variant-numeric:tabular-nums;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}.summary{margin-top:16px;padding:10px;background:#e8f5e9;border:1px solid #4caf50;border-radius:6px;text-align:center;}.summary .label{font-size:8px;text-transform:uppercase;color:#666;margin-bottom:3px;}.summary .value{font-size:14px;font-weight:700;color:#2e7d32;}</style></head><body><h1>Transaction Log</h1><h2>${periodLabel}${search?' · Filtered by "'+search+'"':''}</h2><table><thead><tr><th style="width:12%;">Date</th><th style="width:15%;">Type</th><th style="width:35%;">Description</th><th style="width:18%;">Account</th><th style="width:20%;">Amount (₹)</th></tr></thead><tbody>${filtered.map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td>${typeLabel(t)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.from_account||t.to_account}</td><td class="amt">${amtSign(t)}${fmtAmt(t.amount)}</td></tr>`).join('')}</tbody></table><div class="summary"><div class="label">Total Amount (${filtered.length} transactions)</div><div class="value">₹${fmtAmt(filteredTotal)}</div></div><div style="margin-top:16px;font-size:9px;color:#999;">Generated ${new Date().toLocaleString('en-IN')} · JB Finance v1.9.2</div></body></html>`;
+    const isSiteTxn=t=>t.domain==='Site'||t.tower==='SITE';
+    const isIncome=t=>t.type==='Income'||t.type==='UA Received';
+    const isExpense=t=>t.type==='Expense'||t.type==='UA Expense'||t.type==='Site Transfer'||(t.type&&t.type.includes('\u2192'));
+    const fmtR=v=>v>0?'\u20b9'+v.toLocaleString('en-IN',{minimumFractionDigits:2}):'\u2014';
+    const buildRows=(list)=>list.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>{
+      const inc=isIncome(t)?parseFloat(t.amount)||0:0;
+      const exp=isExpense(t)?parseFloat(t.amount)||0:0;
+      const acct=t.from_account&&t.to_account?t.from_account+'→'+t.to_account:(t.from_account||t.to_account||'—');
+      return `<tr><td>${fmtDate(t.created_at)}</td><td>${typeLabel(t)}</td><td class="desc">${t.particulars||t.category||'—'}</td><td>${t.category&&t.category!==t.type?t.category:'—'}</td><td>${acct}</td><td class="amt cr">${fmtR(inc)}</td><td class="amt dr">${fmtR(exp)}</td></tr>`;
+    }).join('');
+    const buildSection=(label,color,list)=>{
+      if(list.length===0)return'';
+      const inc=list.filter(isIncome);const exp=list.filter(t=>!isIncome(t));
+      const totInc=inc.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+      const totExp=exp.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+      const net=totInc-totExp;
+      return `<div style="margin-bottom:24px;">
+        <div style="background:${color};color:#fff;padding:6px 10px;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:4px 4px 0 0;">${label} — ${list.length} transactions</div>
+        <table><thead><tr><th style="width:10%;">Date</th><th style="width:12%;">Type</th><th style="width:28%;">Description</th><th style="width:14%;">Category</th><th style="width:14%;">Account</th><th class="amt" style="width:11%;">Income (₹)</th><th class="amt" style="width:11%;">Expense (₹)</th></tr></thead>
+        <tbody>
+        ${inc.length>0?'<tr class="sec-hdr"><td colspan="7">▲ INCOME / RECEIPTS</td></tr>':''}
+        ${buildRows(inc)}
+        ${exp.length>0?'<tr class="sec-hdr"><td colspan="7">▼ EXPENSE / PAYMENTS</td></tr>':''}
+        ${buildRows(exp)}
+        <tr class="tot"><td colspan="5" style="font-weight:700;">SUBTOTAL</td><td class="amt cr" style="font-weight:700;">${fmtR(totInc)}</td><td class="amt dr" style="font-weight:700;">${fmtR(totExp)}</td></tr>
+        <tr class="tot"><td colspan="5" style="font-weight:700;">NET</td><td class="amt" colspan="2" style="font-weight:800;color:${net>=0?'#27ae60':'#c0392b'};text-align:right;">${net>=0?'+':'−'}\u20b9${Math.abs(net).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>
+        </tbody></table></div>`;
+    };
+    const personal=filtered.filter(t=>!isSiteTxn(t));
+    const site=filtered.filter(t=>isSiteTxn(t));
+    const grandInc=filtered.filter(isIncome).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const grandExp=filtered.filter(t=>!isIncome(t)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+    const html=`<!DOCTYPE html><html><head><title>Transaction Log ${periodLabel}</title><style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'IBM Plex Mono',monospace;font-size:9px;padding:16px;color:#111;}
+h1{font-size:14px;margin-bottom:3px;}h2{font-size:10px;color:#555;margin-bottom:14px;}
+table{width:100%;border-collapse:collapse;margin-top:0;}
+th,td{border:1px solid #ddd;padding:5px 7px;text-align:left;vertical-align:top;}
+th{background:#f0f0f0;font-size:8px;text-transform:uppercase;letter-spacing:.05em;}
+td{font-size:9px;}
+.amt{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;}
+.cr{color:#27ae60;}.dr{color:#c0392b;}
+.desc{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.sec-hdr td{background:#f8f8f8;font-weight:700;font-size:8px;color:#555;padding:4px 7px;letter-spacing:.06em;}
+.tot td{background:#fffde7;font-size:9px;}
+.grand{background:#e8f5e9;border:1px solid #4caf50;border-radius:4px;padding:10px 14px;margin-top:16px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;}
+.grand .gl{font-size:7px;text-transform:uppercase;color:#666;margin-bottom:3px;}
+.grand .gv{font-size:13px;font-weight:800;}
+@media print{body{padding:8px;}}
+</style></head><body>
+<h1>Transaction Log</h1>
+<h2>${periodLabel}${search?' · Filter: "'+search+'"':''} · Generated ${new Date().toLocaleString('en-IN')} · JB Finance</h2>
+${buildSection('🏠 Personal Transactions','#2c5f8a',personal)}
+${buildSection('🏗 Site Transactions','#b8860b',site)}
+<div class="grand">
+  <div><div class="gl">Total Income</div><div class="gv cr">+\u20b9${grandInc.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+  <div><div class="gl">Total Expense</div><div class="gv dr">\u2212\u20b9${grandExp.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+  <div><div class="gl">Net</div><div class="gv" style="color:${grandInc-grandExp>=0?'#27ae60':'#c0392b'}">${grandInc-grandExp>=0?'+':'\u2212'}\u20b9${Math.abs(grandInc-grandExp).toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div>
+</div>
+</body></html>`;
     const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
   };
   
@@ -1232,11 +1303,27 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
         {filtered.length>0?<div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 16px'}}><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>{filtered.length} txn{filtered.length!==1?'s':''}{search&&<span style={{color:'var(--blue)',marginLeft:4}}>· "{search}"</span>}</span><div style={{display:'flex',alignItems:'baseline',gap:4}}><span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>Total</span><span style={{fontFamily:'var(--mono)',fontSize:17,fontWeight:700,color:'var(--text)',letterSpacing:'-0.3px'}}>₹{filteredTotal.toLocaleString('en-IN')}</span></div></div>:<div className="empty">{search?`No results for "${search}"`:'No transactions found.'}</div>}
       </div>
       <div style={{marginTop:8}}>
-        {filtered.map(t=>(
+        {(()=>{
+          const isSite=t=>t.domain==='Site'||t.tower==='SITE';
+          const isInc=t=>t.type==='Income'||t.type==='UA Received';
+          const personal=filtered.filter(t=>!isSite(t));
+          const site=filtered.filter(t=>isSite(t));
+          const SectionHdr=({label,color,count,total})=>count===0?null:(
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 16px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',borderTop:'1px solid var(--border)'}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:700,color,letterSpacing:'0.08em',textTransform:'uppercase'}}>{label} <span style={{fontWeight:400,opacity:0.7}}>· {count} txn{count!==1?'s':''}</span></span>
+              <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color}}>₹{fmtAmt(total)}</span>
+            </div>
+          );
+          const SubHdr=({label,color})=>(
+            <div style={{padding:'4px 16px',background:color,borderBottom:'1px solid var(--border)'}}>
+              <span style={{fontFamily:'var(--mono)',fontSize:9,fontWeight:600,color:'var(--text3)',letterSpacing:'0.1em',textTransform:'uppercase'}}>{label}</span>
+            </div>
+          );
+          const renderGroup=(list)=>list.map(t=>(
           <div key={t.id}>
             <div className="txn-row" style={t.status==='voided'?{opacity:0.45}:{}} onClick={()=>{setSelected(selected===t.id?null:t.id);setEditMode(null);}}>
               <div className="txn-left">
-                <div className="txn-cat">{typeLabel(t)}{(t.tower==='SITE'||t.domain==='Site')?<span style={{marginLeft:6,fontSize:9,color:'var(--amber)',fontFamily:'var(--mono)',background:'var(--amber-bg)',padding:'1px 5px',borderRadius:4}}>🏗 SITE</span>:(t.tower?' · '+t.tower:'')}{t.status==='voided'&&<span style={{marginLeft:6,fontSize:9,color:'var(--red)',fontFamily:'var(--mono)'}}>VOIDED</span>}{t.correction_of&&<span style={{marginLeft:6,fontSize:9,color:'var(--green)',fontFamily:'var(--mono)'}}>CORRECTION</span>}</div>
+                <div className="txn-cat">{typeLabel(t)}{(t.tower==='SITE'||t.domain==='Site')?<span style={{marginLeft:6,fontSize:9,color:'var(--amber)',fontFamily:'var(--mono)',background:'var(--amber-bg)',padding:'1px 5px',borderRadius:4,fontWeight:600}}>🏗 SITE</span>:<span style={{marginLeft:6,fontSize:9,color:'var(--blue)',fontFamily:'var(--mono)',background:'var(--blue-bg)',padding:'1px 5px',borderRadius:4,fontWeight:600}}>🏠 PERSONAL</span>}{t.tower&&t.tower!=='SITE'&&<span style={{marginLeft:4,fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)'}}>{t.tower}</span>}{t.status==='voided'&&<span style={{marginLeft:6,fontSize:9,color:'var(--red)',fontFamily:'var(--mono)'}}>VOIDED</span>}{t.correction_of&&<span style={{marginLeft:6,fontSize:9,color:'var(--green)',fontFamily:'var(--mono)'}}>CORRECTION</span>}</div>
                 <div className="txn-desc" style={t.status==='voided'?{textDecoration:'line-through'}:{}}>{t.particulars||t.category}</div>
                 <div className="txn-meta">{fmtDate(t.created_at)} {fmtTime(t.created_at)}{t.category&&t.category!==t.type&&<span style={{color:'var(--text3)',marginLeft:6}}>{t.category}</span>}{t.it_section&&<span style={{color:'var(--green)',marginLeft:6}}>{t.it_section}</span>}</div>
                 {selected===t.id&&t.status!=='voided'&&<div style={{marginTop:8,display:'flex',gap:8,flexWrap:'wrap'}}><button onClick={e=>{e.stopPropagation();handleEdit(t);}} style={bS('var(--blue)')}>Edit</button><button onClick={e=>{e.stopPropagation();onDelete(t.id);setSelected(null);}} style={bS('var(--red)')}>Void</button></div>}
@@ -1326,7 +1413,41 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
               );
             })()}
           </div>
-        ))}
+          ));
+          const pInc=personal.filter(t=>t.type==='Income'||t.type==='UA Received');
+          const pExp=personal.filter(t=>t.type!=='Income'&&t.type!=='UA Received');
+          const sInc=site.filter(t=>t.type==='Income'||t.type==='UA Received');
+          const sExp=site.filter(t=>t.type!=='Income'&&t.type!=='UA Received');
+          const pIncTotal=pInc.reduce((s,t)=>s+(+t.amount||0),0);
+          const pExpTotal=pExp.reduce((s,t)=>s+(+t.amount||0),0);
+          const sIncTotal=sInc.reduce((s,t)=>s+(+t.amount||0),0);
+          const sExpTotal=sExp.reduce((s,t)=>s+(+t.amount||0),0);
+          return(<>
+            {personal.length>0&&<>
+              <SectionHdr label="🏠 Personal" color="var(--blue)" count={personal.length} total={pIncTotal+pExpTotal}/>
+              {pInc.length>0&&<SubHdr label="▲ Income / Receipts" color="var(--green-bg)"/>}
+              {renderGroup([...pInc].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))}
+              {pExp.length>0&&<SubHdr label="▼ Expense / Payments" color="var(--red-bg)"/>}
+              {renderGroup([...pExp].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))}
+              <div style={{display:'flex',justifyContent:'space-between',padding:'7px 16px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',fontSize:11,fontFamily:'var(--mono)'}}>
+                <span style={{color:'var(--text3)',fontSize:10,textTransform:'uppercase',letterSpacing:'0.06em'}}>Personal Net</span>
+                <span style={{fontWeight:700,color:pIncTotal-pExpTotal>=0?'var(--green)':'var(--red)'}}>{pIncTotal-pExpTotal>=0?'+':'−'}{fmtAmt(Math.abs(pIncTotal-pExpTotal))}</span>
+              </div>
+            </>}
+            {site.length>0&&<>
+              <SectionHdr label="🏗 Site" color="var(--amber)" count={site.length} total={sIncTotal+sExpTotal}/>
+              {sInc.length>0&&<SubHdr label="▲ Income / Receipts" color="var(--green-bg)"/>}
+              {renderGroup([...sInc].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))}
+              {sExp.length>0&&<SubHdr label="▼ Expense / Payments" color="var(--red-bg)"/>}
+              {renderGroup([...sExp].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))}
+              <div style={{display:'flex',justifyContent:'space-between',padding:'7px 16px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',fontSize:11,fontFamily:'var(--mono)'}}>
+                <span style={{color:'var(--text3)',fontSize:10,textTransform:'uppercase',letterSpacing:'0.06em'}}>Site Net</span>
+                <span style={{fontWeight:700,color:sIncTotal-sExpTotal>=0?'var(--green)':'var(--red)'}}>{sIncTotal-sExpTotal>=0?'+':'−'}{fmtAmt(Math.abs(sIncTotal-sExpTotal))}</span>
+              </div>
+            </>}
+            {filtered.length===0&&<div className="empty">{search?`No results for "${search}"`:'No transactions found.'}</div>}
+          </>);
+        })()}
       </div>
     </div>
   );
@@ -2700,7 +2821,7 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
     runBal=runBal-debit+credit;
     const party=t.party_name||t.site_user;
     const desc=t.particulars||(party?(t.type==='Income'?'Received from '+party:'Given to '+party):null)||t.category||t.type;
-    const acct=t.from_account&&t.from_account!=='Site Cash'?t.from_account:(t.to_account&&t.to_account!=='Site Cash'?t.to_account:t.from_account||t.to_account||'—');
+    const acct=t.type==='Site Transfer'?(t.from_account||t.to_account||'—'):(t.from_account&&t.from_account!=='Site Cash'?t.from_account:(t.to_account&&t.to_account!=='Site Cash'?t.to_account:t.from_account||t.to_account||'—'));
     return{...t,debit,credit,runBal,desc,acct};
   });
 
@@ -2724,8 +2845,97 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
 
   const handlePrint=()=>{
     const periodLabel=periodFilter==='this_month'?`${MONTHS[curMonth]} ${curYear}`:periodFilter==='last_month'?`${MONTHS[curMonth===0?11:curMonth-1]} ${curMonth===0?curYear-1:curYear}`:periodFilter==='this_year'?`FY ${curYear}`:'All Time';
-    const html=`<!DOCTYPE html><html><head><title>Site Ledger ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:9px;padding:16px;color:#111;}h1{font-size:13px;margin-bottom:2px;}h2{font-size:10px;color:#555;margin-bottom:12px;}table{width:100%;border-collapse:collapse;margin-top:8px;}th{background:#1a1a2e;color:#fff;padding:6px 8px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;}td{padding:6px 8px;border-bottom:1px solid #e0e0e0;}.amt{text-align:right;white-space:nowrap;}.dr{color:#c0392b;}.cr{color:#27ae60;}.balp{color:#27ae60;font-weight:700;}.baln{color:#c0392b;font-weight:700;}.op{background:#f5f5f5;font-weight:600;}.cl{background:#e8f5e9;font-weight:700;}.sumg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}.sb{border:1px solid #ddd;padding:8px;border-radius:4px;}.sl{font-size:7px;text-transform:uppercase;color:#888;margin-bottom:3px;}.sv{font-size:12px;font-weight:700;}@media print{body{padding:8px;}}</style></head><body><h1>Site Ledger — ${selSite==='ALL'?'All Sites':selSite}</h1><h2>${periodLabel} · ${rows.length} txns · ${new Date().toLocaleString('en-IN')}</h2><div class="sumg"><div class="sb"><div class="sl">Opening</div><div class="sv ${openingBal<0?'baln':'balp'}">${openingBal<0?'−':''}&#8377;${Math.abs(openingBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div><div class="sb"><div class="sl">Expense</div><div class="sv dr">&#8377;${totDebit.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div><div class="sb"><div class="sl">Income</div><div class="sv cr">&#8377;${totCredit.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div></div><table><thead><tr><th width="9%">Date</th><th width="28%">Description</th><th width="13%">Category</th><th width="12%">Account</th><th width="12%" class="amt">Expense</th><th width="12%" class="amt">Income</th><th width="14%" class="amt">Balance</th></tr></thead><tbody><tr class="op"><td colspan="4">OPENING BALANCE</td><td class="amt">—</td><td class="amt">—</td><td class="amt ${openingBal<0?'baln':'balp'}">${openingBal<0?'−':''}&#8377;${Math.abs(openingBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>${rows.map(r=>`<tr><td>${fmtDate(r.created_at)}</td><td>${r.desc||'—'}</td><td>${r.category||'—'}</td><td>${r.acct}</td><td class="amt dr">${r.debit>0?'&#8377;'+r.debit.toLocaleString('en-IN',{minimumFractionDigits:2}):'—'}</td><td class="amt cr">${r.credit>0?'&#8377;'+r.credit.toLocaleString('en-IN',{minimumFractionDigits:2}):'—'}</td><td class="amt ${r.runBal<0?'baln':'balp'}">${r.runBal<0?'−':''}&#8377;${Math.abs(r.runBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')}<tr class="cl"><td colspan="4">CLOSING BALANCE</td><td class="amt dr">&#8377;${totDebit.toLocaleString('en-IN',{minimumFractionDigits:2})}</td><td class="amt cr">&#8377;${totCredit.toLocaleString('en-IN',{minimumFractionDigits:2})}</td><td class="amt ${closeBal<0?'baln':'balp'}">${closeBal<0?'−':''}&#8377;${Math.abs(closeBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr></tbody></table></body></html>`;
+    const html=`<!DOCTYPE html><html><head><title>Site Ledger ${periodLabel}</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:9px;padding:16px;color:#111;}h1{font-size:13px;margin-bottom:2px;}h2{font-size:10px;color:#555;margin-bottom:12px;}table{width:100%;border-collapse:collapse;margin-top:8px;}th{background:#1a1a2e;color:#fff;padding:6px 8px;text-align:left;font-size:8px;text-transform:uppercase;letter-spacing:.06em;}td{padding:6px 8px;border-bottom:1px solid #e0e0e0;}.amt{text-align:right;white-space:nowrap;}.dr{color:#c0392b;}.cr{color:#27ae60;}.balp{color:#27ae60;font-weight:700;}.baln{color:#c0392b;font-weight:700;}.op{background:#f5f5f5;font-weight:600;}.cl{background:#e8f5e9;font-weight:700;}.sumg{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px;}.sb{border:1px solid #ddd;padding:8px;border-radius:4px;}.sl{font-size:7px;text-transform:uppercase;color:#888;margin-bottom:3px;}.sv{font-size:12px;font-weight:700;}@media print{body{padding:8px;}}</style></head><body><h1>Site Ledger — ${selSite==='ALL'?'All Sites':selSite}</h1><h2>${periodLabel} · ${rows.length} txns · ${new Date().toLocaleString('en-IN')}</h2><div class="sumg"><div class="sb"><div class="sl">Opening</div><div class="sv ${openingBal<0?'baln':'balp'}">${openingBal<0?'−':''}&#8377;${Math.abs(openingBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div><div class="sb"><div class="sl">Expense</div><div class="sv dr">&#8377;${totDebit.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div><div class="sb"><div class="sl">Income</div><div class="sv cr">&#8377;${totCredit.toLocaleString('en-IN',{minimumFractionDigits:2})}</div></div></div><table><thead><tr><th width="9%">Date</th><th width="28%">Description</th><th width="13%">Category</th><th width="12%">Account</th><th width="12%" class="amt">Income</th><th width="12%" class="amt">Expense</th><th width="14%" class="amt">Balance</th></tr></thead><tbody><tr class="op"><td colspan="4">OPENING BALANCE</td><td class="amt">—</td><td class="amt">—</td><td class="amt ${openingBal<0?'baln':'balp'}">${openingBal<0?'−':''}&#8377;${Math.abs(openingBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>${rows.map(r=>`<tr><td>${fmtDate(r.created_at)}</td><td>${r.desc||'—'}</td><td>${r.type==='Site Transfer'?'Site Transfer':(r.category||'—')}</td><td>${r.acct}</td><td class="amt cr">${r.credit>0?'&#8377;'+r.credit.toLocaleString('en-IN',{minimumFractionDigits:2}):'—'}</td><td class="amt dr">${r.debit>0?'&#8377;'+r.debit.toLocaleString('en-IN',{minimumFractionDigits:2}):'—'}</td><td class="amt ${r.runBal<0?'baln':'balp'}">${r.runBal<0?'−':''}&#8377;${Math.abs(r.runBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr>`).join('')}<tr class="cl"><td colspan="4">CLOSING BALANCE</td><td class="amt cr">&#8377;${totCredit.toLocaleString('en-IN',{minimumFractionDigits:2})}</td><td class="amt dr">&#8377;${totDebit.toLocaleString('en-IN',{minimumFractionDigits:2})}</td><td class="amt ${closeBal<0?'baln':'balp'}">${closeBal<0?'−':''}&#8377;${Math.abs(closeBal).toLocaleString('en-IN',{minimumFractionDigits:2})}</td></tr></tbody></table></body></html>`;
     const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+  };
+
+  /* ── BACKUP: CSV export + Google Drive upload ── */
+  const buildCSV=()=>{
+    const periodLabel=periodFilter==='this_month'?`${MONTHS[curMonth]} ${curYear}`:periodFilter==='last_month'?`${MONTHS[curMonth===0?11:curMonth-1]} ${curMonth===0?curYear-1:curYear}`:periodFilter==='this_year'?`FY ${curYear}`:'All Time';
+    const headers=['Date','Description','Type','Category','Mode / Account','Party','Site','Income (INR)','Expense (INR)','Balance (INR)'];
+    let bal=openingBal;
+    const dataRows=rows.map(r=>{
+      const income=r.credit>0?r.credit.toFixed(2):'';
+      const expense=r.debit>0?r.debit.toFixed(2):'';
+      bal=bal-r.debit+r.credit;
+      const cat=r.type==='Site Transfer'?'Site Transfer':(r.category||'');
+      return [fmtDate(r.created_at),r.desc||'',r.type,cat,r.acct||'',r.party_name||r.site_user||'',r.site_name||'',income,expense,bal.toFixed(2)].map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',');
+    });
+    return [
+      `"Site Ledger — ${selSite==='ALL'?'All Sites':selSite} — ${periodLabel}"`,
+      '',
+      headers.map(h=>`"${h}"`).join(','),
+      ...dataRows,
+      '',
+      `"Opening Balance","","","","","","","","","${openingBal.toFixed(2)}"`,
+      `"Closing Balance","","","","","","","","","${closeBal.toFixed(2)}"`,
+      `"Total Income","","","","","","","${totCredit.toFixed(2)}","",""`,
+      `"Total Expense","","","","","","","","${totDebit.toFixed(2)}",""`,
+    ].join('\n');
+  };
+
+  const handleDownloadCSV=()=>{
+    const csv=buildCSV();
+    const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const periodLabel=periodFilter==='this_month'?`${MONTHS[curMonth]}_${curYear}`:periodFilter==='last_month'?`${MONTHS[curMonth===0?11:curMonth-1]}_${curMonth===0?curYear-1:curYear}`:periodFilter==='this_year'?`FY${curYear}`:'All';
+    a.href=url;a.download=`SiteLedger_${selSite==='ALL'?'All':selSite}_${periodLabel}.csv`;
+    document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);
+    showToastSL('CSV downloaded — open in Google Sheets or Excel');
+  };
+
+  const [driveStatus,setDriveStatus]=useState('');
+  const [driveUploading,setDriveUploading]=useState(false);
+  const DRIVE_CLIENT_ID=localStorage.getItem('jbf_drive_client_id')||'';
+
+  const handleDriveBackup=async()=>{
+    if(!DRIVE_CLIENT_ID){
+      const id=window.prompt('Enter your Google OAuth Client ID (one-time setup):\n\nGet it from console.cloud.google.com → APIs → Credentials\nScope needed: drive.file');
+      if(!id)return;
+      localStorage.setItem('jbf_drive_client_id',id.trim());
+      window.location.reload();return;
+    }
+    setDriveUploading(true);setDriveStatus('Connecting to Google...');
+    try{
+      if(!window.google?.accounts?.oauth2){
+        await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://accounts.google.com/gsi/client';s.onload=res;s.onerror=rej;document.head.appendChild(s);});
+      }
+      const accessToken=await new Promise((resolve,reject)=>{
+        const client=window.google.accounts.oauth2.initTokenClient({
+          client_id:DRIVE_CLIENT_ID,
+          scope:'https://www.googleapis.com/auth/drive.file',
+          callback:(resp)=>{if(resp.error){reject(new Error(resp.error));}else{resolve(resp.access_token);}}
+        });
+        client.requestAccessToken();
+      });
+      setDriveStatus('Uploading...');
+      const csv=buildCSV();
+      const periodLabel=periodFilter==='this_month'?`${MONTHS[curMonth]}_${curYear}`:periodFilter==='last_month'?`${MONTHS[curMonth===0?11:curMonth-1]}_${curMonth===0?curYear-1:curYear}`:periodFilter==='this_year'?`FY${curYear}`:'All';
+      const filename=`SiteLedger_${selSite==='ALL'?'All':selSite}_${periodLabel}_${new Date().toISOString().slice(0,10)}.csv`;
+      const boundary='jbf_bnd';
+      const meta=JSON.stringify({name:filename,mimeType:'application/vnd.google-apps.spreadsheet'});
+      const body=`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: text/csv\r\n\r\n${csv}\r\n--${boundary}--`;
+      const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+        method:'POST',
+        headers:{'Authorization':'Bearer '+accessToken,'Content-Type':`multipart/related; boundary=${boundary}`},
+        body
+      });
+      if(!resp.ok)throw new Error('Upload failed '+resp.status);
+      const result=await resp.json();
+      setDriveStatus(`Saved: ${filename}`);
+      showToastSL('Backed up to Google Drive as Spreadsheet!');
+    }catch(e){
+      setDriveStatus('Error: '+e.message);
+    }
+    setDriveUploading(false);
+  };
+
+  const showToastSL=msg=>{
+    const el=document.createElement('div');
+    el.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:var(--bg4,#1a1a2e);color:var(--text,#e8ecf4);padding:10px 18px;border-radius:10px;font-family:monospace;font-size:12px;z-index:999;white-space:nowrap;border:1px solid var(--border2,#243655);';
+    el.textContent=msg;document.body.appendChild(el);
+    setTimeout(()=>{if(document.body.contains(el))document.body.removeChild(el);},3500);
   };
 
   /* ── MEMBER DRILL-DOWN ── */
@@ -2790,7 +3000,12 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
       {[['this_month','This Mo'],['last_month','Last Mo'],['this_year','This Yr'],['all','All']].map(([k,l])=>(
         <span key={k} style={chipS(periodFilter===k)} onClick={()=>setPeriodFilter(k)}>{l}</span>
       ))}
-      <button onClick={handlePrint} style={{marginLeft:'auto',background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'5px 12px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>
+      <div style={{marginLeft:'auto',display:'flex',gap:5}}>
+        <button onClick={handlePrint} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'5px 10px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer'}}>🖨</button>
+        <button onClick={handleDownloadCSV} title="Download CSV (opens in Excel/Sheets)" style={{background:'var(--green)',color:'#000',border:'none',borderRadius:6,padding:'5px 10px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer'}}>⬇ CSV</button>
+        <button onClick={handleDriveBackup} disabled={driveUploading} title="Backup to Google Drive as Spreadsheet" style={{background:driveUploading?'var(--bg3)':'#ea4335',color:driveUploading?'var(--text3)':'#fff',border:'none',borderRadius:6,padding:'5px 10px',fontFamily:'var(--mono)',fontSize:10,fontWeight:600,cursor:'pointer',minWidth:50}}>{driveUploading?'..':'☁ Drive'}</button>
+      </div>
+      {driveStatus&&<div style={{width:'100%',fontFamily:'var(--mono)',fontSize:9,color:driveStatus.startsWith('Error')?'var(--red)':driveStatus.startsWith('Saved')||driveStatus.includes('Backed')?'var(--green)':'var(--text3)',padding:'4px 0',marginTop:2}}>{driveStatus}</div>}
     </div>
 
     {/* Site filter */}
@@ -2819,8 +3034,9 @@ function SiteLedgerScreen({txns,customSites,customTeam,opening}){
             <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:r.runBal<0?'var(--amber)':'var(--green)',textAlign:'right',whiteSpace:'nowrap'}}>{r.runBal<0?'−':''}{fmtAmt(Math.abs(r.runBal))}</span>
           </div>
           <div style={{display:'flex',gap:4,flexWrap:'wrap',paddingLeft:52}}>
-            {r.category&&<span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',background:'var(--bg3)',padding:'1px 5px',borderRadius:4}}>{r.category}</span>}
-            {r.acct&&r.acct!=='—'&&<span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--blue)',background:'var(--blue-bg)',padding:'1px 5px',borderRadius:4}}>{r.acct}</span>}
+            {r.type==='Site Transfer'
+              ?<span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--blue)',background:'var(--blue-bg)',padding:'1px 5px',borderRadius:4}}>↔ {r.acct}</span>
+              :<>{r.category&&<span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',background:'var(--bg3)',padding:'1px 5px',borderRadius:4}}>{r.category}</span>}{r.acct&&r.acct!=='—'&&<span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--blue)',background:'var(--blue-bg)',padding:'1px 5px',borderRadius:4}}>{r.acct}</span>}</>}
             {r.site_name&&<span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--amber)',background:'var(--amber-bg)',padding:'1px 5px',borderRadius:4}}>{r.site_name}</span>}
           </div>
         </div>
