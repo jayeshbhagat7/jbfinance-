@@ -968,9 +968,92 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
           autoParticulars=`Given to ${transferUser}`;
         } else {
           /* Team member pays TO logged-in user, received IN transferPayFrom */
-          sF=null;sT=transferPayFrom;
-          txnType='Site Transfer';txnCat='Site Transfer';partyName=transferUser;
-          autoParticulars=`Received from ${transferUser}`;
+          /* SMART SETTLEMENT LOGIC */
+          const amtNum=parseFloat(amt)||0;
+          
+          // Calculate how much is pending recovery from bank usage
+          const bankUsedForSite=active.filter(t=>
+            (t.tower==='SITE'||t.domain==='Site')&&
+            (t.type==='Expense'||t.type==='Site Transfer')&&
+            t.from_account&&
+            !allCC.includes(t.from_account)&&
+            (allBanks||[]).includes(t.from_account)&&
+            t.from_account!=='Cash'&&t.from_account!=='Site Cash'
+          ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+          
+          const ccUsedForSite=active.filter(t=>
+            (t.tower==='SITE'||t.domain==='Site')&&
+            (t.type==='Expense'||t.type==='Site Transfer')&&
+            t.from_account&&(allCC||[]).includes(t.from_account)
+          ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+          
+          const totalRecoveryDue=bankUsedForSite+ccUsedForSite;
+          
+          if(transferPayFrom==='Site Cash'){
+            /* CASH RECEIVED - settles recovery first, excess to Site Cash */
+            if(totalRecoveryDue>0){
+              const settlementAmt=Math.min(amtNum,totalRecoveryDue);
+              const excessCash=Math.max(0,amtNum-totalRecoveryDue);
+              
+              if(settlementAmt>0){
+                // Create settlement transaction to Cash (personal recovery)
+                const settleTxn={
+                  domain:'Site',
+                  type:'Site Transfer',
+                  amount:settlementAmt,
+                  category:'Site Settlement',
+                  from_account:null,
+                  to_account:'Cash',
+                  particulars:`Settlement from ${transferUser} (Bank recovery)`,
+                  site_name:siteName,
+                  site_user:transferUser,
+                  party_name:transferUser,
+                  status:'complete',
+                  source:'app',
+                  created_at
+                };
+                await onSave(settleTxn);
+              }
+              
+              if(excessCash>0){
+                // Excess goes to Site Cash
+                sF=null;sT='Site Cash';
+                txnType='Site Transfer';txnCat='Site Transfer';partyName=transferUser;
+                autoParticulars=`Received from ${transferUser} (Excess after settlement)`;
+                // Update amount to only excess
+                txn={domain:'Site',type:txnType,amount:excessCash,category:txnCat,
+                     from_account:sF||null,to_account:sT||null,
+                     particulars:desc||autoParticulars,
+                     site_name:siteName,
+                     site_user:partyName,
+                     party_name:partyName,
+                     status:'complete',source:'app',created_at};
+                await onSave(txn);
+              }
+              
+              // Clear form and exit
+              setAmt('');setDesc('');setSiteName('');setTransferUser(customTeam?.[0]||'');setSaving(false);
+              return;
+            } else {
+              // No recovery due, all goes to Site Cash
+              sF=null;sT='Site Cash';
+              txnType='Site Transfer';txnCat='Site Transfer';partyName=transferUser;
+              autoParticulars=`Received from ${transferUser}`;
+            }
+          } else {
+            /* BANK TRANSFER RECEIVED - goes to bank, settles recovery, track excess */
+            sF=null;sT=transferPayFrom;
+            txnType='Site Transfer';txnCat='Site Transfer';partyName=transferUser;
+            
+            if(totalRecoveryDue>0&&amtNum>totalRecoveryDue){
+              const excessAmt=amtNum-totalRecoveryDue;
+              autoParticulars=`Received from ${transferUser} (₹${fmt(totalRecoveryDue)} settlement + ₹${fmt(excessAmt)} site funds in ${transferPayFrom})`;
+            } else if(totalRecoveryDue>0&&amtNum<=totalRecoveryDue){
+              autoParticulars=`Received from ${transferUser} (Partial settlement ₹${fmt(amtNum)} of ₹${fmt(totalRecoveryDue)})`;
+            } else {
+              autoParticulars=`Received from ${transferUser} (Site funds in ${transferPayFrom})`;
+            }
+          }
         }
       } else if(siteType==='Expense'){
         sF=sitePayFrom;sT=null;
@@ -1667,7 +1750,9 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
       {/* ── Cash In Hand card — tap to open Cash ledger in Account Statement ── */}
       {(()=>{
         const personalCash=balances['Cash']||0;
-        const siteCash=balances['Site Cash']||0;
+        const siteCashPhysical=balances['Site Cash']||0;
+        
+        // Calculate bank recovery due and site cash in banks
         const bankUsedForSite=active.filter(t=>
           (t.tower==='SITE'||t.domain==='Site')&&
           (t.type==='Expense'||t.type==='Site Transfer')&&
@@ -1676,20 +1761,37 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
           (allBanks||[]).includes(t.from_account)&&
           t.from_account!=='Cash'&&t.from_account!=='Site Cash'
         ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+        
         const ccUsedForSite=active.filter(t=>
           (t.tower==='SITE'||t.domain==='Site')&&
           (t.type==='Expense'||t.type==='Site Transfer')&&
           t.from_account&&(allCC||[]).includes(t.from_account)
         ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-        const totalBankUsedForSite=bankUsedForSite+ccUsedForSite;
-        const netPhys=personalCash+siteCash+totalBankUsedForSite;
+        
+        // Calculate site cash received in banks (settlement excess)
+        const siteCashInBanks=active.filter(t=>
+          (t.tower==='SITE'||t.domain==='Site')&&
+          t.type==='Site Transfer'&&
+          t.to_account&&
+          t.to_account!=='Cash'&&t.to_account!=='Site Cash'&&
+          allBanks.includes(t.to_account)
+        ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+        
+        const totalRecoveryDue=bankUsedForSite+ccUsedForSite;
+        const settledAmount=Math.min(siteCashInBanks,totalRecoveryDue);
+        const siteCashInBankNet=siteCashInBanks-settledAmount;
+        const bankRecoveryNet=totalRecoveryDue-settledAmount;
+        
+        const totalSiteCash=siteCashPhysical+siteCashInBankNet;
+        const netPhys=personalCash+totalSiteCash+bankRecoveryNet;
+        
         const netCol=netPhys>=0?'var(--green)':'var(--red)';
         const netBg=netPhys>=0?'var(--green-bg)':'var(--red-bg)';
         const netBorder=netPhys>=0?'var(--green)':'var(--red)';
         const pcCol=personalCash<0?'var(--red)':personalCash===0?'var(--text3)':'var(--text)';
-        const scCol=siteCash<0?'var(--amber)':siteCash===0?'var(--text3)':'var(--text)';
+        const scCol=totalSiteCash<0?'var(--amber)':totalSiteCash===0?'var(--text3)':'var(--text)';
         const pcLabel=personalCash<0?'⚠ PC (Arrange for site)':'Personal Cash';
-        const scLabel=siteCash<0?'⚠ To Recover from Site':'Site Cash';
+        const scLabel=totalSiteCash<0?'⚠ To Recover from Site':siteCashInBankNet>0?`Site Cash (₹${fmt(siteCashPhysical)} phys + ₹${fmt(siteCashInBankNet)} in bank)`:'Site Cash';
         const handleCashTap=()=>{
           setTab('statement');
           setTimeout(()=>{window.dispatchEvent(new CustomEvent('jbf-route-statement',{detail:{account:'Cash',period:'all'}}));},50);
@@ -1710,11 +1812,11 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,trueSp
               </div>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                 <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>{scLabel}</span>
-                <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:scCol}}>{siteCash<0?'−':''}{fmtAmt(Math.abs(siteCash))}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:scCol}}>{totalSiteCash<0?'−':''}{fmtAmt(Math.abs(totalSiteCash))}</span>
               </div>
-              {totalBankUsedForSite>0&&<div style={{borderTop:'1px solid var(--border)',paddingTop:5,display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:2}}>
-                <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🏗 Bank used for site</span>
-                <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--blue)'}}>+{fmtAmt(totalBankUsedForSite)}</span>
+              {bankRecoveryNet>0&&<div style={{borderTop:'1px solid var(--border)',paddingTop:5,display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:2}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>🏗 Bank recovery due</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:'var(--blue)'}}>+{fmtAmt(bankRecoveryNet)}</span>
               </div>}
             </div>
           </div>
@@ -3852,26 +3954,33 @@ function PinSettingsPanel(){
   );
 }
 
-/* ── DataBackupPanel — Export to Excel with Google Drive integration ── */
+/* ── DataBackupPanel — Export to Excel with Google Drive integration & Restore ── */
 function DataBackupPanel(){
   const [loading,setLoading]=useState(false);
   const [status,setStatus]=useState('');
   const [showDriveAuth,setShowDriveAuth]=useState(false);
+  const [restoreMode,setRestoreMode]=useState(false);
+  const [restoring,setRestoring]=useState(false);
   
   const exportToExcel=async()=>{
     setLoading(true);
     setStatus('📦 Preparing data...');
     
     try {
-      // Fetch all data from Supabase
-      const {data:txns}=await supabase.from('transactions').select('*').order('created_at',{ascending:false});
-      const {data:invs}=await supabase.from('investments').select('*').order('created_at',{ascending:false});
-      const {data:provs}=await supabase.from('provisions').select('*').order('created_at',{ascending:false});
-      const {data:sites}=await supabase.from('site_transactions').select('*').order('created_at',{ascending:false});
-      const {data:opening}=await supabase.from('opening_balances').select('*');
-      const {data:accounts}=await supabase.from('custom_accounts').select('*');
-      const {data:cats}=await supabase.from('custom_categories').select('*');
-      const {data:budgets}=await supabase.from('budgets').select('*');
+      // Fetch all data from database using db instead of supabase
+      const {data:txns}=await db.from('transactions').select('*').order('created_at',{ascending:false});
+      const {data:invs}=await db.from('investments').select('*').order('created_at',{ascending:false});
+      const {data:provs}=await db.from('provisions').select('*').order('created_at',{ascending:false});
+      const {data:sites}=await db.from('site_transactions').select('*').order('created_at',{ascending:false});
+      const {data:settingsRows}=await db.from('settings').select('*');
+      
+      // Parse settings
+      const settings={};
+      (settingsRows||[]).forEach(s=>settings[s.key]=s.value);
+      const opening=settings.opening_balances?JSON.parse(settings.opening_balances):{};
+      const accounts=settings.custom_accounts?JSON.parse(settings.custom_accounts):[];
+      const cats=settings.custom_categories?JSON.parse(settings.custom_categories):[];
+      const budgets=settings.budgets?JSON.parse(settings.budgets):{};
       
       setStatus('📝 Creating Excel file...');
       
@@ -3889,6 +3998,9 @@ function DataBackupPanel(){
           Category:t.category||'',
           Particulars:t.particulars||'',
           Bill:t.bill_no||'',
+          Tower:t.tower||'',
+          Domain:t.domain||'',
+          Status:t.status||'complete',
           Archived:t.archived?'Yes':'No'
         }));
         const ws=XLSX.utils.json_to_sheet(txData);
@@ -3943,12 +4055,12 @@ function DataBackupPanel(){
       }
       
       // Opening Balances sheet
-      if(opening&&opening.length>0){
-        const obData=opening.map(o=>({
-          Account:o.account_name,
-          Amount:o.amount,
-          OpeningDate:o.opening_date||''
-        }));
+      const obData=Object.entries(opening).map(([acc,val])=>({
+        Account:acc,
+        Amount:typeof val==='object'?val.amount:val,
+        OpeningDate:typeof val==='object'?val.opening_date||'':''
+      }));
+      if(obData.length>0){
         const ws=XLSX.utils.json_to_sheet(obData);
         XLSX.utils.book_append_sheet(wb,ws,'Opening Balances');
       }
@@ -3977,13 +4089,11 @@ function DataBackupPanel(){
       }
       
       // Budgets sheet
-      if(budgets&&budgets.length>0){
-        const bgData=budgets.map(b=>({
-          Month:b.month,
-          Year:b.year,
-          Category:b.category,
-          Limit:b.limit
-        }));
+      const bgData=Object.entries(budgets).map(([cat,limit])=>({
+        Category:cat,
+        Limit:limit
+      }));
+      if(bgData.length>0){
         const ws=XLSX.utils.json_to_sheet(bgData);
         XLSX.utils.book_append_sheet(wb,ws,'Budgets');
       }
@@ -4017,74 +4127,308 @@ function DataBackupPanel(){
   
   const uploadToDrive=()=>{
     setStatus('🔐 Opening Google Drive...');
-    // Google Drive file picker
     window.open('https://drive.google.com/drive/my-drive','_blank');
     setStatus('💡 Upload the downloaded Excel file manually to Google Drive');
   };
   
+  const handleFileSelect=async(e)=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    
+    setRestoring(true);
+    setStatus('📖 Reading backup file...');
+    
+    try {
+      const data=await file.arrayBuffer();
+      const wb=XLSX.read(data);
+      
+      let imported=0;
+      
+      // Import transactions
+      if(wb.SheetNames.includes('Transactions')){
+        const sheet=wb.Sheets['Transactions'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        setStatus(`📥 Importing ${rows.length} transactions...`);
+        
+        for(const row of rows){
+          if(row.Status==='voided')continue; // Skip voided
+          const txn={
+            created_at:row.Date,
+            type:row.Type,
+            from_account:row.From||null,
+            to_account:row.To||null,
+            amount:parseFloat(row.Amount)||0,
+            category:row.Category||null,
+            particulars:row.Particulars||null,
+            bill_no:row.Bill||null,
+            tower:row.Tower||null,
+            domain:row.Domain||null,
+            status:row.Status||'complete',
+            archived:row.Archived==='Yes'
+          };
+          await db.from('transactions').insert([txn]);
+          imported++;
+        }
+      }
+      
+      // Import investments
+      if(wb.SheetNames.includes('Investments')){
+        const sheet=wb.Sheets['Investments'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        setStatus(`📥 Importing ${rows.length} investments...`);
+        
+        for(const row of rows){
+          const inv={
+            invested_at:row.Date,
+            type:row.Type,
+            account_name:row.Account,
+            amount:parseFloat(row.Amount)||0,
+            units:parseFloat(row.Units)||null,
+            nav:parseFloat(row.NAV)||null,
+            current_value:parseFloat(row.CurrentValue)||null,
+            archived:row.Archived==='Yes'
+          };
+          await db.from('investments').insert([inv]);
+          imported++;
+        }
+      }
+      
+      // Import provisions
+      if(wb.SheetNames.includes('Provisions')){
+        const sheet=wb.Sheets['Provisions'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        setStatus(`📥 Importing ${rows.length} provisions...`);
+        
+        for(const row of rows){
+          const prov={
+            created_at:row.Date,
+            type:row.Type,
+            envelope_name:row.Envelope,
+            amount:parseFloat(row.Amount)||0,
+            notes:row.Notes||null
+          };
+          await db.from('provisions').insert([prov]);
+          imported++;
+        }
+      }
+      
+      // Import site transactions
+      if(wb.SheetNames.includes('Site Transactions')){
+        const sheet=wb.Sheets['Site Transactions'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        setStatus(`📥 Importing ${rows.length} site transactions...`);
+        
+        for(const row of rows){
+          const site={
+            created_at:row.Date,
+            site_name:row.Site,
+            type:row.Type,
+            amount:parseFloat(row.Amount)||0,
+            category:row.Category||null,
+            party_name:row.Party||null,
+            site_user:row.SiteUser||null,
+            from_account:row.From||null,
+            to_account:row.To||null,
+            description:row.Description||null
+          };
+          await db.from('site_transactions').insert([site]);
+          imported++;
+        }
+      }
+      
+      // Import settings (opening balances, accounts, categories, budgets)
+      if(wb.SheetNames.includes('Opening Balances')){
+        const sheet=wb.Sheets['Opening Balances'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        const ob={};
+        rows.forEach(r=>{
+          ob[r.Account]=r.OpeningDate?{amount:parseFloat(r.Amount)||0,opening_date:r.OpeningDate}:parseFloat(r.Amount)||0;
+        });
+        await db.from('settings').upsert({key:'opening_balances',value:JSON.stringify(ob)});
+      }
+      
+      if(wb.SheetNames.includes('Accounts')){
+        const sheet=wb.Sheets['Accounts'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        const accounts=rows.map(r=>({name:r.Name,type:r.Type,archived:r.Archived==='Yes'}));
+        await db.from('settings').upsert({key:'custom_accounts',value:JSON.stringify(accounts)});
+      }
+      
+      if(wb.SheetNames.includes('Categories')){
+        const sheet=wb.Sheets['Categories'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        const cats=rows.map(r=>({name:r.Name,emoji:r.Emoji,it:r.ITSection||'',archived:r.Archived==='Yes'}));
+        await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(cats)});
+      }
+      
+      if(wb.SheetNames.includes('Budgets')){
+        const sheet=wb.Sheets['Budgets'];
+        const rows=XLSX.utils.sheet_to_json(sheet);
+        const bg={};
+        rows.forEach(r=>bg[r.Category]=parseFloat(r.Limit)||0);
+        await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)});
+      }
+      
+      setStatus(`✅ Restore complete! Imported ${imported} records. Reload app.`);
+      setRestoring(false);
+      
+      // Reload after 2 seconds
+      setTimeout(()=>window.location.reload(),2000);
+      
+    } catch(err){
+      console.error(err);
+      setStatus('❌ Restore failed: '+err.message);
+      setRestoring(false);
+    }
+  };
+  
   return(
     <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:12}}>
-      <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:1.6}}>
-        Export all your financial data to Excel format. Includes transactions, investments, provisions, site data, accounts, categories, and budgets.
-      </div>
-      
-      <button 
-        onClick={exportToExcel} 
-        disabled={loading}
-        style={{
-          background:loading?'var(--bg3)':'var(--green)',
-          border:'none',
-          borderRadius:8,
-          color:loading?'var(--text3)':'#000',
-          fontFamily:'var(--mono)',
-          fontSize:13,
-          fontWeight:700,
-          padding:'14px',
-          cursor:loading?'not-allowed':'pointer',
-          transition:'all 0.2s'
-        }}>
-        {loading?status:'💾 Export to Excel'}
-      </button>
-      
-      {status&&!loading&&(
-        <div style={{
-          fontFamily:'var(--mono)',
-          fontSize:11,
-          color:status.startsWith('✅')?'var(--green)':status.startsWith('❌')?'var(--red)':'var(--amber)',
-          textAlign:'center',
-          padding:'8px',
-          background:'var(--bg3)',
-          borderRadius:6
-        }}>
-          {status}
-        </div>
+      {!restoreMode&&(
+        <>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:1.6}}>
+            Export all your financial data to Excel format. Includes transactions, investments, provisions, site data, accounts, categories, and budgets.
+          </div>
+          
+          <button 
+            onClick={exportToExcel} 
+            disabled={loading}
+            style={{
+              background:loading?'var(--bg3)':'var(--green)',
+              border:'none',
+              borderRadius:8,
+              color:loading?'var(--text3)':'#000',
+              fontFamily:'var(--mono)',
+              fontSize:13,
+              fontWeight:700,
+              padding:'14px',
+              cursor:loading?'not-allowed':'pointer',
+              transition:'all 0.2s'
+            }}>
+            {loading?status:'💾 Export to Excel'}
+          </button>
+          
+          {status&&!loading&&(
+            <div style={{
+              fontFamily:'var(--mono)',
+              fontSize:11,
+              color:status.startsWith('✅')?'var(--green)':status.startsWith('❌')?'var(--red)':'var(--amber)',
+              textAlign:'center',
+              padding:'8px',
+              background:'var(--bg3)',
+              borderRadius:6
+            }}>
+              {status}
+            </div>
+          )}
+          
+          {showDriveAuth&&(
+            <div style={{padding:'12px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginBottom:8}}>
+                📁 Want to save to Google Drive?
+              </div>
+              <button 
+                onClick={uploadToDrive}
+                style={{
+                  width:'100%',
+                  background:'var(--blue)',
+                  border:'none',
+                  borderRadius:6,
+                  color:'#fff',
+                  fontFamily:'var(--mono)',
+                  fontSize:12,
+                  fontWeight:600,
+                  padding:'10px',
+                  cursor:'pointer'
+                }}>
+                🔗 Open Google Drive
+              </button>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:6,textAlign:'center'}}>
+                Manually upload the downloaded Excel file
+              </div>
+            </div>
+          )}
+          
+          <div style={{borderTop:'1px dashed var(--border)',paddingTop:12,marginTop:4}}>
+            <button 
+              onClick={()=>setRestoreMode(true)}
+              style={{
+                width:'100%',
+                background:'var(--bg3)',
+                border:'1px solid var(--blue)',
+                borderRadius:8,
+                color:'var(--blue)',
+                fontFamily:'var(--mono)',
+                fontSize:12,
+                fontWeight:600,
+                padding:'12px',
+                cursor:'pointer'
+              }}>
+              📥 Restore from Backup
+            </button>
+          </div>
+        </>
       )}
       
-      {showDriveAuth&&(
-        <div style={{padding:'12px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
-          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginBottom:8}}>
-            📁 Want to save to Google Drive?
+      {restoreMode&&(
+        <>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--amber)',lineHeight:1.6,padding:'10px',background:'var(--amber-bg)',borderRadius:6,border:'1px solid var(--amber)'}}>
+            ⚠️ <strong>Warning:</strong> This will ADD data from your backup file to the current database. It does NOT delete existing data. Use this to recover lost data or merge backups.
           </div>
+          
+          <label style={{
+            display:'block',
+            background:'var(--blue)',
+            border:'none',
+            borderRadius:8,
+            color:'#fff',
+            fontFamily:'var(--mono)',
+            fontSize:13,
+            fontWeight:700,
+            padding:'14px',
+            cursor:restoring?'not-allowed':'pointer',
+            textAlign:'center'
+          }}>
+            {restoring?status:'📂 Select Excel Backup File'}
+            <input 
+              type="file" 
+              accept=".xlsx,.xls" 
+              onChange={handleFileSelect}
+              disabled={restoring}
+              style={{display:'none'}}
+            />
+          </label>
+          
+          {status&&restoring&&(
+            <div style={{
+              fontFamily:'var(--mono)',
+              fontSize:11,
+              color:status.startsWith('✅')?'var(--green)':status.startsWith('❌')?'var(--red)':'var(--amber)',
+              textAlign:'center',
+              padding:'8px',
+              background:'var(--bg3)',
+              borderRadius:6
+            }}>
+              {status}
+            </div>
+          )}
+          
           <button 
-            onClick={uploadToDrive}
+            onClick={()=>{setRestoreMode(false);setStatus('');}}
             style={{
               width:'100%',
-              background:'var(--blue)',
-              border:'none',
+              background:'none',
+              border:'1px solid var(--border)',
               borderRadius:6,
-              color:'#fff',
+              color:'var(--text3)',
               fontFamily:'var(--mono)',
-              fontSize:12,
-              fontWeight:600,
+              fontSize:11,
               padding:'10px',
               cursor:'pointer'
             }}>
-            🔗 Open Google Drive
+            ← Back to Backup
           </button>
-          <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:6,textAlign:'center'}}>
-            Manually upload the downloaded Excel file
-          </div>
-        </div>
+        </>
       )}
       
       <div style={{padding:'10px',background:'var(--bg2)',borderRadius:6,border:'1px dashed var(--border)'}}>
