@@ -909,7 +909,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const [transferPayFrom,setTransferPayFrom]=useState('Site Cash');
   const [depositTo,setDepositTo]=useState('Site Cash');
   const [siteTo,setSiteTo]=useState('');
-  const [sitePayFrom,setSitePayFrom]=useState('Cash');
+  const [sitePayFrom,setSitePayFrom]=useState('Site Cash');
   /* v1.7: team member for Expense (Given To) and Received (From Member) */
   const SITE_MEMBERS_DEFAULT=['PH','Milton','PP','Sohail','Anjar','Sikhu'];
   const allSiteMembers=[...new Set([...SITE_MEMBERS_DEFAULT,...(customTeam||[])])];
@@ -1013,7 +1013,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     ];
     const selectSiteType=t=>{
       setSiteType(t);
-      if(t==='Expense'){setSitePayFrom('Cash');}
+      if(t==='Expense'){setSitePayFrom('Site Cash');}
       else if(t==='Income'){setDepositTo('Site Cash');}
       else if(t==='Site Transfer'){setTransferPayFrom('Site Cash');setTransferDir('Given');}
       else if(t==='Bank-CC'){setSitePayFrom(allBanks.filter(a=>a!=='Cash')[0]||'');setSiteTo(allCC[0]||'');}
@@ -1067,10 +1067,10 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
         </div>
         <div><p className="sec-label" style={{padding:'0 0 6px'}}>Paid From</p>
           <select value={sitePayFrom} onChange={e=>setSitePayFrom(e.target.value)} style={selS}>
-            {['Cash',...allBanks.filter(a=>a!=='Cash'),...allCC].map(a=><option key={a}>{a}</option>)}
+            {['Site Cash',...allBanks.filter(a=>a!=='Cash' && a!=='Site Cash'),...allCC].map(a=><option key={a}>{a}</option>)}
           </select>
           {sitePayFrom&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',marginTop:5}}>
-            ⚡ {allCC.includes(sitePayFrom)?'CC charge':'Personal account'} — auto-tagged as {sitePayFrom}
+            ⚡ {sitePayFrom==='Site Cash'?'Paid from site funds':allCC.includes(sitePayFrom)?'CC charge':'Personal bank'} — auto-tagged as {sitePayFrom}
           </div>}
         </div>
       </>)}
