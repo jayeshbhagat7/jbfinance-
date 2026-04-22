@@ -11,6 +11,7 @@
 <link rel="manifest" href="/jbfinance-/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
 <script>(function(){var t=localStorage.getItem('jbf_theme')||'autumn';document.documentElement.setAttribute('data-theme',t);})();</script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -3851,6 +3852,250 @@ function PinSettingsPanel(){
   );
 }
 
+/* ── DataBackupPanel — Export to Excel with Google Drive integration ── */
+function DataBackupPanel(){
+  const [loading,setLoading]=useState(false);
+  const [status,setStatus]=useState('');
+  const [showDriveAuth,setShowDriveAuth]=useState(false);
+  
+  const exportToExcel=async()=>{
+    setLoading(true);
+    setStatus('📦 Preparing data...');
+    
+    try {
+      // Fetch all data from Supabase
+      const {data:txns}=await supabase.from('transactions').select('*').order('created_at',{ascending:false});
+      const {data:invs}=await supabase.from('investments').select('*').order('created_at',{ascending:false});
+      const {data:provs}=await supabase.from('provisions').select('*').order('created_at',{ascending:false});
+      const {data:sites}=await supabase.from('site_transactions').select('*').order('created_at',{ascending:false});
+      const {data:opening}=await supabase.from('opening_balances').select('*');
+      const {data:accounts}=await supabase.from('custom_accounts').select('*');
+      const {data:cats}=await supabase.from('custom_categories').select('*');
+      const {data:budgets}=await supabase.from('budgets').select('*');
+      
+      setStatus('📝 Creating Excel file...');
+      
+      // Create workbook with SheetJS
+      const wb=XLSX.utils.book_new();
+      
+      // Transactions sheet
+      if(txns&&txns.length>0){
+        const txData=txns.map(t=>({
+          Date:t.created_at,
+          Type:t.type,
+          From:t.from_account||'',
+          To:t.to_account||'',
+          Amount:t.amount,
+          Category:t.category||'',
+          Particulars:t.particulars||'',
+          Bill:t.bill_no||'',
+          Archived:t.archived?'Yes':'No'
+        }));
+        const ws=XLSX.utils.json_to_sheet(txData);
+        XLSX.utils.book_append_sheet(wb,ws,'Transactions');
+      }
+      
+      // Investments sheet
+      if(invs&&invs.length>0){
+        const invData=invs.map(i=>({
+          Date:i.invested_at,
+          Type:i.type,
+          Account:i.account_name,
+          Amount:i.amount,
+          Units:i.units||'',
+          NAV:i.nav||'',
+          CurrentValue:i.current_value||'',
+          Archived:i.archived?'Yes':'No'
+        }));
+        const ws=XLSX.utils.json_to_sheet(invData);
+        XLSX.utils.book_append_sheet(wb,ws,'Investments');
+      }
+      
+      // Provisions sheet
+      if(provs&&provs.length>0){
+        const provData=provs.map(p=>({
+          Date:p.created_at,
+          Type:p.type,
+          Envelope:p.envelope_name,
+          Amount:p.amount,
+          Notes:p.notes||''
+        }));
+        const ws=XLSX.utils.json_to_sheet(provData);
+        XLSX.utils.book_append_sheet(wb,ws,'Provisions');
+      }
+      
+      // Site Transactions sheet
+      if(sites&&sites.length>0){
+        const siteData=sites.map(s=>({
+          Date:s.created_at,
+          Site:s.site_name,
+          Type:s.type,
+          Amount:s.amount,
+          Category:s.category||'',
+          Party:s.party_name||'',
+          SiteUser:s.site_user||'',
+          From:s.from_account||'',
+          To:s.to_account||'',
+          Description:s.description||''
+        }));
+        const ws=XLSX.utils.json_to_sheet(siteData);
+        XLSX.utils.book_append_sheet(wb,ws,'Site Transactions');
+      }
+      
+      // Opening Balances sheet
+      if(opening&&opening.length>0){
+        const obData=opening.map(o=>({
+          Account:o.account_name,
+          Amount:o.amount,
+          OpeningDate:o.opening_date||''
+        }));
+        const ws=XLSX.utils.json_to_sheet(obData);
+        XLSX.utils.book_append_sheet(wb,ws,'Opening Balances');
+      }
+      
+      // Accounts sheet
+      if(accounts&&accounts.length>0){
+        const accData=accounts.map(a=>({
+          Name:a.name,
+          Type:a.type,
+          Archived:a.archived?'Yes':'No'
+        }));
+        const ws=XLSX.utils.json_to_sheet(accData);
+        XLSX.utils.book_append_sheet(wb,ws,'Accounts');
+      }
+      
+      // Categories sheet
+      if(cats&&cats.length>0){
+        const catData=cats.map(c=>({
+          Name:c.name,
+          Emoji:c.emoji,
+          ITSection:c.it||'',
+          Archived:c.archived?'Yes':'No'
+        }));
+        const ws=XLSX.utils.json_to_sheet(catData);
+        XLSX.utils.book_append_sheet(wb,ws,'Categories');
+      }
+      
+      // Budgets sheet
+      if(budgets&&budgets.length>0){
+        const bgData=budgets.map(b=>({
+          Month:b.month,
+          Year:b.year,
+          Category:b.category,
+          Limit:b.limit
+        }));
+        const ws=XLSX.utils.json_to_sheet(bgData);
+        XLSX.utils.book_append_sheet(wb,ws,'Budgets');
+      }
+      
+      // Generate file
+      const wbout=XLSX.write(wb,{bookType:'xlsx',type:'array'});
+      const blob=new Blob([wbout],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const timestamp=new Date().toISOString().split('T')[0];
+      const filename=`JB_Finance_Backup_${timestamp}.xlsx`;
+      
+      // Download locally
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url;
+      a.download=filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      
+      setStatus('✅ Backup downloaded successfully!');
+      setLoading(false);
+      
+      // Show Google Drive option
+      setTimeout(()=>setShowDriveAuth(true),500);
+      
+    } catch(err){
+      console.error(err);
+      setStatus('❌ Backup failed: '+err.message);
+      setLoading(false);
+    }
+  };
+  
+  const uploadToDrive=()=>{
+    setStatus('🔐 Opening Google Drive...');
+    // Google Drive file picker
+    window.open('https://drive.google.com/drive/my-drive','_blank');
+    setStatus('💡 Upload the downloaded Excel file manually to Google Drive');
+  };
+  
+  return(
+    <div style={{padding:'12px 16px',display:'flex',flexDirection:'column',gap:12}}>
+      <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:1.6}}>
+        Export all your financial data to Excel format. Includes transactions, investments, provisions, site data, accounts, categories, and budgets.
+      </div>
+      
+      <button 
+        onClick={exportToExcel} 
+        disabled={loading}
+        style={{
+          background:loading?'var(--bg3)':'var(--green)',
+          border:'none',
+          borderRadius:8,
+          color:loading?'var(--text3)':'#000',
+          fontFamily:'var(--mono)',
+          fontSize:13,
+          fontWeight:700,
+          padding:'14px',
+          cursor:loading?'not-allowed':'pointer',
+          transition:'all 0.2s'
+        }}>
+        {loading?status:'💾 Export to Excel'}
+      </button>
+      
+      {status&&!loading&&(
+        <div style={{
+          fontFamily:'var(--mono)',
+          fontSize:11,
+          color:status.startsWith('✅')?'var(--green)':status.startsWith('❌')?'var(--red)':'var(--amber)',
+          textAlign:'center',
+          padding:'8px',
+          background:'var(--bg3)',
+          borderRadius:6
+        }}>
+          {status}
+        </div>
+      )}
+      
+      {showDriveAuth&&(
+        <div style={{padding:'12px',background:'var(--bg3)',borderRadius:8,border:'1px solid var(--border)'}}>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginBottom:8}}>
+            📁 Want to save to Google Drive?
+          </div>
+          <button 
+            onClick={uploadToDrive}
+            style={{
+              width:'100%',
+              background:'var(--blue)',
+              border:'none',
+              borderRadius:6,
+              color:'#fff',
+              fontFamily:'var(--mono)',
+              fontSize:12,
+              fontWeight:600,
+              padding:'10px',
+              cursor:'pointer'
+            }}>
+            🔗 Open Google Drive
+          </button>
+          <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',marginTop:6,textAlign:'center'}}>
+            Manually upload the downloaded Excel file
+          </div>
+        </div>
+      )}
+      
+      <div style={{padding:'10px',background:'var(--bg2)',borderRadius:6,border:'1px dashed var(--border)'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',lineHeight:1.5}}>
+          💡 <strong>Tip:</strong> Schedule regular backups (weekly/monthly) and store them in Google Drive or Dropbox for safekeeping.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── SettingsScreen — Accordion + Archive soft-delete + Theme picker ── */
 function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccounts,customCategories,onSaveCategories,budgets,onSaveBudgets,customSites,onSaveSites,customTeam,onSaveTeam,theme,onSaveTheme,customSiteCats,onSaveSiteCats}){
   /* Normalize opening — support both legacy number and new {amount, opening_date} */
@@ -3899,6 +4144,11 @@ function SettingsScreen({opening,onSave,allAccountsH,customAccounts,onSaveAccoun
     {/* PIN Lock */}
     <Acc id="pin" title="PIN Lock" emoji="🔒">
       <PinSettingsPanel/>
+    </Acc>
+
+    {/* Data Backup */}
+    <Acc id="backup" title="Data Backup" emoji="💾">
+      <DataBackupPanel/>
     </Acc>
 
     {/* Theme Picker */}
