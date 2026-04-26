@@ -703,7 +703,7 @@ function App() {
         headerActionLabel={tab==='checklist'?'+ Add':tab==='udhari'?'+ New':null}/>
       <div className="main">
         {loading&&<div className="empty">Loading...</div>}
-        {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/>}
+        {!loading&&tab==='add'&&<AddScreen onSave={addTxn} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} customSiteCats={customSiteCats} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)} txns={txns}/>}
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch} txnFilter={txnFilter} setTxnFilter={setTxnFilter}/>}
         {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} totalNetBlocked={totalNetBlocked} recurring={recurring} checklist={checklist} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} onAuditSync={async(real)=>{
           const diff=real-liquid;
@@ -730,7 +730,7 @@ function App() {
       {!quickAdd&&tab!=='add'&&<button onClick={()=>setQuickAdd(true)} style={{position:'fixed',bottom:'calc(var(--tab-h) + var(--safe-b) + 20px)',right:20,width:52,height:52,borderRadius:'50%',background:'var(--green)',border:'none',color:'#000',fontSize:28,fontWeight:300,cursor:'pointer',zIndex:150,boxShadow:'0 4px 16px rgba(0,0,0,0.3)',display:'flex',alignItems:'center',justifyContent:'center'}}>+</button>}
 
       {/* Quick Add Modal */}
-      {quickAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setQuickAdd(false)}><div style={{background:'var(--bg)',borderRadius:'16px 16px 0 0',border:'1px solid var(--border)',maxHeight:'90vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 16px',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,letterSpacing:'0.08em',color:'var(--text2)'}}>ADD ENTRY</span><button onClick={()=>setQuickAdd(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕ Close</button></div><AddScreen onSave={async txn=>{await addTxn(txn);setQuickAdd(false);}} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)}/></div></div>}
+      {quickAdd&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:100,display:'flex',flexDirection:'column',justifyContent:'flex-end'}} onClick={e=>e.target===e.currentTarget&&setQuickAdd(false)}><div style={{background:'var(--bg)',borderRadius:'16px 16px 0 0',border:'1px solid var(--border)',maxHeight:'90vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'14px 16px',borderBottom:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,letterSpacing:'0.08em',color:'var(--text2)'}}>ADD ENTRY</span><button onClick={()=>setQuickAdd(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕ Close</button></div><AddScreen onSave={async txn=>{await addTxn(txn);setQuickAdd(false);}} showToast={showToast} allAccounts={allAccounts} allBanks={allBanks} allCC={allCC} allCategories={activeCats} onAddCategory={addCustomCategory} customSites={customSites} customTeam={customTeam} prefill={addPrefill} onClearPrefill={()=>setAddPrefill(null)} txns={txns}/></div></div>}
 
       {/* Menu */}
       {menuOpen&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-start'}} onClick={e=>e.target===e.currentTarget&&setMenuOpen(false)}><div style={{background:'var(--bg)',borderRadius:'0 0 16px 16px',border:'1px solid var(--border)',padding:'16px',maxHeight:'80vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text2)',letterSpacing:'0.08em'}}>MENU</span><button onClick={()=>setMenuOpen(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div>
@@ -900,7 +900,7 @@ function CategoryPicker({allCategories,value,onChange,onAddNew}){
   );
 }
 /* ── AddScreen ── */
-function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,onAddCategory,customSites,customTeam,customSiteCats,prefill,onClearPrefill}){
+function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,onAddCategory,customSites,customTeam,customSiteCats,prefill,onClearPrefill,txns}){
   const today=new Date().toISOString().slice(0,10);
   const [domain,setDomain]=useState('Personal');
   const [amt,setAmt]=useState('');const [desc,setDesc]=useState('');const [date,setDate]=useState(today);const [saving,setSaving]=useState(false);
@@ -973,7 +973,8 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
           const amtNum=parseFloat(amt)||0;
           
           // Calculate how much is pending recovery from bank usage
-          const bankUsedForSite=active.filter(t=>
+          const _activeTxns=(txns||[]).filter(t=>t.status!=='voided');
+          const bankUsedForSite=_activeTxns.filter(t=>
             (t.tower==='SITE'||t.domain==='Site')&&
             (t.type==='Expense'||t.type==='Site Transfer')&&
             t.from_account&&
@@ -982,7 +983,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
             t.from_account!=='Cash'&&t.from_account!=='Site Cash'
           ).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
           
-          const ccUsedForSite=active.filter(t=>
+          const ccUsedForSite=_activeTxns.filter(t=>
             (t.tower==='SITE'||t.domain==='Site')&&
             (t.type==='Expense'||t.type==='Site Transfer')&&
             t.from_account&&(allCC||[]).includes(t.from_account)
