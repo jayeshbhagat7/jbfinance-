@@ -229,6 +229,18 @@ const CATEGORIES = [
   {id:'Suspense (Uncategorized)',emoji:'🔍',color:'amber',parent:null},
 ];
 
+const INCOME_CATEGORIES = [
+  {id:'Salary',emoji:'💼',color:'green',parent:null},
+  {id:'Dividend',emoji:'📊',color:'green',parent:null},
+  {id:'Interest',emoji:'🏦',color:'green',parent:null},
+  {id:'UDHARI Return',emoji:'↩',color:'amber',parent:null},
+  {id:'LPG Collection',emoji:'🔴',color:'amber',parent:null},
+  {id:'Rewards / Cashback',emoji:'🎁',color:'green',parent:null},
+  {id:'UA Received',emoji:'🏗',color:'amber',parent:null},
+  {id:'Rental Income',emoji:'🏠',color:'green',parent:null},
+  {id:'Other Income',emoji:'💰',color:'green',parent:null},
+];
+
 const fmt    = n => parseFloat(Math.abs(n)).toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtAmt = n => '₹' + fmt(n);
 const fmtDate= d => new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
@@ -929,13 +941,13 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
   const DEFAULT_SITE_CATS=['Misc','Transportation','Labour Salary','Kharchi','Medical','Hardware','Maintenance','Food','Udhari','Stationary','Fuel','Travelling'];
   const SITE_CATS=[...DEFAULT_SITE_CATS,...(customSiteCats||[]).filter(c=>!DEFAULT_SITE_CATS.includes(c))];
   const catInfo=allCategories.find(c=>c.id===cat);
-  const needCat=type==='Expense';
+  const needCat=type==='Expense'||type==='Income'||type==='UA Received';
   const needFrom=['Expense','UA Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(type);
   const needTo=['Income','UA Received','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank','Bank-Cash'].includes(type);
   const firstBank=allBanks.find(a=>a!=='Cash')||allBanks[1]||allBanks[0]||'';
   const fromList=()=>{if(type==='Bank-CC'||type==='Bank-Bank'||type==='Bank-Cash')return allBanks.filter(a=>a!=='Cash');if(type==='CC-Bank')return allCC;if(type==='Cash-Bank')return['Cash'];return allAccounts;};
   const toList=()=>{if(type==='Bank-CC')return allCC;if(type==='Bank-Bank'||type==='Cash-Bank'||type==='CC-Bank')return allBanks.filter(a=>a!=='Cash');if(type==='Bank-Cash')return['Cash'];return allBanks;};
-  const canSaveP=parseFloat(amt)>0&&(type==='Expense'?(cat&&from):type==='UA Expense'?from:type==='Income'?to:type==='UA Received'?to:(from&&to));
+  const canSaveP=parseFloat(amt)>0&&(type==='Expense'?(cat&&from):type==='UA Expense'?from:type==='Income'?(cat&&to):type==='UA Received'?(cat&&to):(from&&to));
   const siteNeedFrom=['Expense','Bank-CC','Bank-Bank','Bank-Cash','CC-Bank'].includes(siteType);
   const siteNeedTo=['Income','Bank-CC','Bank-Bank','Cash-Bank','CC-Bank','Bank-Cash'].includes(siteType);
   const canSaveS=parseFloat(amt)>0&&siteName&&(siteType==='Site Transfer'?transferUser:siteType==='Expense'?!!sitePayFrom:siteType==='Income'?true:(siteNeedFrom?sitePayFrom:true)&&(siteNeedTo?siteTo:true));
@@ -1235,7 +1247,7 @@ function AddScreen({onSave,showToast,allAccounts,allBanks,allCC,allCategories,on
     <input type="text" placeholder="Description (optional)" value={desc} onChange={e=>setDesc(e.target.value)} style={iS}/>
     <input type="date" value={date} max={today} onChange={e=>setDate(e.target.value)} style={{...iS,color:date!==today?'var(--amber)':'var(--text)',borderColor:date!==today?'var(--amber)':'var(--border2)'}}/>
     {date!==today&&<span style={{fontSize:10,color:'var(--amber)',fontFamily:'var(--mono)'}}>⚠ Backdated entry</span>}
-    {needCat&&<CategoryPicker allCategories={allCategories} value={cat} onChange={setCat} onAddNew={onAddCategory}/>}
+    {needCat&&<CategoryPicker allCategories={type==='Income'||type==='UA Received'?INCOME_CATEGORIES:allCategories} value={cat} onChange={setCat} onAddNew={onAddCategory}/>}
     {needFrom&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>PAID FROM</p><div style={{display:'flex',flexWrap:'wrap',gap:6}}>{fromList().map(a=><span key={a} style={cs(from===a)} onClick={()=>setFrom(a)}>{a}</span>)}</div></div>}
     {needTo&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>{type==='Income'||type==='UA Received'?'TO ACCOUNT':'TO'}</p><div style={{display:'flex',flexWrap:'wrap',gap:6}}>{toList().map(a=><span key={a} style={cs(to===a)} onClick={()=>setTo(a)}>{a}</span>)}</div></div>}
     {(type==='UA Expense'||type==='UA Received')&&<div><p className="sec-label" style={{padding:'0 0 6px'}}>TOWER / SITE</p><div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['D5','E2','C3','Common'].map(t=><span key={t} style={cs(tower===t)} onClick={()=>setTower(tower===t?'':t)}>{t}</span>)}</div></div>}
@@ -1281,7 +1293,10 @@ function TxnsScreen({txns,onDelete,onVoidAndCorrect,allAccounts,allBanks,allCC,a
     return true;
   });
   
-  const filteredTotal=filtered.reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const filteredTotal=filtered.filter(t=>t.type!=='Bank→CC').reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const filteredCC=filtered.filter(t=>t.type==='Bank→CC');
+  const ccPayTotal=filteredCC.reduce((s,t)=>s+(Number(t.amount)||0),0);
+  const filteredMain=filtered.filter(t=>t.type!=='Bank→CC');
   const amtColor=t=>{
     if(t.status==='voided')return'';
     if(t.type==='Income'||t.type==='UA Received')return'in';
@@ -1501,16 +1516,17 @@ ${buildSection('🏗 Site Transactions','#b8860b',site)}
           </div>
           ));
           const pInc=personal.filter(t=>t.type==='Income'||t.type==='UA Received');
-          const pExp=personal.filter(t=>t.type!=='Income'&&t.type!=='UA Received');
+          const pExp=personal.filter(t=>t.type!=='Income'&&t.type!=='UA Received'&&t.type!=='Bank→CC');
           const sInc=site.filter(t=>t.type==='Income'||t.type==='UA Received');
           const sExp=site.filter(t=>t.type!=='Income'&&t.type!=='UA Received');
+          const ccPmts=filteredMain.filter(t=>t.type==='Bank→CC');
           const pIncTotal=pInc.reduce((s,t)=>s+(+t.amount||0),0);
           const pExpTotal=pExp.reduce((s,t)=>s+(+t.amount||0),0);
           const sIncTotal=sInc.reduce((s,t)=>s+(+t.amount||0),0);
           const sExpTotal=sExp.reduce((s,t)=>s+(+t.amount||0),0);
           return(<>
             {personal.length>0&&<>
-              <SectionHdr label="🏠 Personal" color="var(--blue)" count={personal.length} total={pIncTotal+pExpTotal}/>
+              <SectionHdr label="🏠 Personal" color="var(--blue)" count={personal.length-ccPmts.length} total={pIncTotal+pExpTotal}/>
               {pInc.length>0&&<SubHdr label="▲ Income / Receipts" color="var(--green-bg)"/>}
               {renderGroup([...pInc].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))}
               {pExp.length>0&&<SubHdr label="▼ Expense / Payments" color="var(--red-bg)"/>}
@@ -1531,7 +1547,15 @@ ${buildSection('🏗 Site Transactions','#b8860b',site)}
                 <span style={{fontWeight:700,color:sIncTotal-sExpTotal>=0?'var(--green)':'var(--red)'}}>{sIncTotal-sExpTotal>=0?'+':'−'}{fmtAmt(Math.abs(sIncTotal-sExpTotal))}</span>
               </div>
             </>}
-            {filtered.length===0&&<div className="empty">{search?`No results for "${search}"`:'No transactions found.'}</div>}
+            {filteredCC.length>0&&<>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 16px',background:'var(--blue)',borderBottom:'1px solid var(--border)'}}>
+                <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:'#fff',letterSpacing:'0.06em',textTransform:'uppercase'}}>💳 CC Bill Payments · {filteredCC.length} txn{filteredCC.length!==1?'s':''}</span>
+                <span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color:'#fff'}}>{fmtAmt(ccPayTotal)}</span>
+              </div>
+              <div style={{background:'var(--blue-bg)',borderBottom:'1px solid var(--border)',padding:'7px 16px'}}><span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--blue)'}}>ℹ These payments reduce CC outstanding — not counted in expense total above</span></div>
+              {renderGroup([...filteredCC].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)))}
+            </>}
+            {filteredMain.length===0&&filteredCC.length===0&&<div className="empty">{search?`No results for "${search}"`:'No transactions found.'}</div>}
           </>);
         })()}
       </div>
