@@ -729,7 +729,7 @@ function App() {
       try{
         const uid2=session?.user?.id||null;
         if(uid2){
-          const{data:cbRows}=await db.from('cc_bills').select('*').eq('user_id',uid2).order('bill_end',{ascending:true});
+          const{data:cbRows}=await db.from('cc_bills').select('*').order('bill_end',{ascending:true});
           if(cbRows){
             const grouped={};
             cbRows.forEach(r=>{
@@ -1376,20 +1376,23 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter,session}){
   const fetchBills=async cc=>{
     if(!uid)return[];
     try{
-      const{data,error}=await db.from('cc_bills').select('*').eq('user_id',uid).eq('cc_name',cc).order('bill_end',{ascending:true});
+      const{data,error}=await db.from('cc_bills').select('*').eq('cc_name',cc).order('bill_end',{ascending:true});
       if(error||!data)return[];
       return data.map(r=>({billStart:r.bill_start,billEnd:r.bill_end,bankAmt:r.bank_amt,appAmt:r.app_amt,diff:r.diff,dueDate:r.due_date||'',reconciledAt:r.reconciled_at,txnCount:r.txn_count,_id:r.id}));
     }catch{return[];}
   };
   const insertBill=async(cc,entry)=>{
     if(!uid)return;
+    // Check duplicate: same cc_name + bill_end already saved?
+    const{data:existing}=await db.from('cc_bills').select('id').eq('cc_name',cc).eq('bill_end',entry.billEnd).limit(1);
+    if(existing&&existing.length>0){console.warn('cc_bills: duplicate bill_end, skipping insert');return;}
     await db.from('cc_bills').insert([{user_id:uid,cc_name:cc,bill_start:entry.billStart,bill_end:entry.billEnd,bank_amt:entry.bankAmt,app_amt:entry.appAmt,diff:entry.diff,due_date:entry.dueDate||null,reconciled_at:entry.reconciledAt,txn_count:entry.txnCount}]);
   };
   const fetchStmtDay=async cc=>{
     if(!uid)return 1;
     try{
-      const{data}=await db.from('cc_stmt_days').select('stmt_day').eq('user_id',uid).eq('cc_name',cc).single();
-      return data?.stmt_day||1;
+      const{data}=await db.from('cc_stmt_days').select('stmt_day').eq('cc_name',cc).limit(1);
+      return (data&&data[0]?.stmt_day)||1;
     }catch{return 1;}
   };
   const saveStmtDayDB=async(cc,day)=>{
