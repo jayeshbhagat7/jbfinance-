@@ -614,6 +614,7 @@ function App() {
   const [budgets,setBudgets]                 = useState({});
   const [udhari,setUdhari]                   = useState([]);
   const [recurring,setRecurring]             = useState([]);
+  const [ccBillsData,setCCBillsData]         = useState({});  // {ccName:[bills...]}
   const [customSites,setCustomSites]         = useState([]);
   const [customTeam,setCustomTeam]           = useState([]);
   const [customSiteCats,setCustomSiteCats]   = useState([]);
@@ -725,6 +726,20 @@ function App() {
       try{const{data:inv}=await db.from('investments').select('*').order('created_at',{ascending:false});setInvestments(inv||[]);}catch(e){setInvestments([]);}
       try{const{data:ud}=await db.from('udhari').select('*').order('created_at',{ascending:false});setUdhari(ud||[]);}catch(e){setUdhari([]);}
       try{const{data:rec}=await db.from('recurring').select('*').order('due_day',{ascending:true});setRecurring(rec||[]);}catch(e){setRecurring([]);}
+      try{
+        const uid2=session?.user?.id||null;
+        if(uid2){
+          const{data:cbRows}=await db.from('cc_bills').select('*').eq('user_id',uid2).order('bill_end',{ascending:true});
+          if(cbRows){
+            const grouped={};
+            cbRows.forEach(r=>{
+              if(!grouped[r.cc_name])grouped[r.cc_name]=[];
+              grouped[r.cc_name].push({billStart:r.bill_start,billEnd:r.bill_end,bankAmt:r.bank_amt,appAmt:r.app_amt,diff:r.diff,dueDate:r.due_date||'',reconciledAt:r.reconciled_at,txnCount:r.txn_count});
+            });
+            setCCBillsData(grouped);
+          }
+        }
+      }catch(e){setCCBillsData({});}
       const{data:s}=await db.from('settings').select('*');
       if(s){
         const g=(k)=>s.find(r=>r.key===k);
@@ -942,7 +957,7 @@ function App() {
         {!loading&&tab==='txns'&&<TxnsScreen txns={txns} onDelete={deleteTxn} onVoidAndCorrect={voidAndCorrect} allAccounts={allAccountsH} allBanks={allBanksH} allCC={allCCH} allCategories={allCatsH} globalSearch={globalSearch} setGlobalSearch={setGlobalSearch} txnFilter={txnFilter} setTxnFilter={setTxnFilter}/>}
         {!loading&&tab==='dash'&&<DashScreen balances={balances} txns={txns} liquid={liquid} allBanks={allBanks} 
   allCC={allCC} allCCAll={allCCH} budgets={budgets} trueSpendable={trueSpendable} opening={opening} 
-  totalNetBlocked={totalNetBlocked} recurring={recurring} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} onAuditSync={async(real)=>{
+  totalNetBlocked={totalNetBlocked} recurring={recurring} setGlobalSearch={setGlobalSearch} setTab={setTab} setTxnFilter={setTxnFilter} investments={investments} ccBillsData={ccBillsData} onAuditSync={async(real)=>{
           const diff=real-liquid;
           if(Math.abs(diff)<1){showToast('✓ Balances match perfectly!');return;}
           const isIncome=diff>0;
@@ -951,7 +966,7 @@ function App() {
           showToast((isIncome?'↑ Income':'↓ Expense')+' ₹'+fmt(Math.abs(diff))+' — Suspense entry created');
         }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
-        {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts} setTab={setTab} setTxnFilter={setTxnFilter}/> }
+        {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts} setTab={setTab} setTxnFilter={setTxnFilter} session={session}/>}
         {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} onDeleteRecurring={deleteRecurring} onUpdateRecurring={updateRecurring} showToast={showToast} provisionStates={provisionStates}/>}
         {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} externalView={udhariView} onViewChange={v=>{setUdhariView(v);}}/>}
         {!loading&&(tab==='statement'||tab==='site_ledger')&&<LedgerStatementScreen txns={txns} allBanks={allBanksH} allCC={allCCH} allCatsH={allCatsH} opening={opening} showToast={showToast} initLedger={tab==='site_ledger'?'Site Cash':null}/>}
@@ -1348,125 +1363,112 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,onDele
 }
 
 
-/* ── CCBillScreen v2.0 ─────────────────────────────────────────
-   Storage: jbf_cc_bills  → { [cc]: [ { billStart, billEnd, bankAmt, appAmt, diff, dueDate, reconciledAt, txnCount } ] }
-   A bill is "paid" when a CC→Bank payment exists AFTER billEnd.
-   Unbilled = spends AFTER the most recent saved billEnd (or last stmt date).
-──────────────────────────────────────────────────────────────── */
-function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
+/* ── CCBillScreen v3.0 — Supabase-backed ──────────────────────
+   Tables: cc_bills, cc_stmt_days
+   All data synced via Supabase — works across devices
+────────────────────────────────────────────────────────────── */
+function CCBillScreen({txns,customAccounts,setTab,setTxnFilter,session}){
   const ccAccounts=[...SEED_CC,...(customAccounts||[]).filter(a=>a.type==='cc').map(a=>a.name)];
   const today=new Date();const todayStr=today.toISOString().slice(0,10);
+  const uid=session?.user?.id||null;
 
-  /* ── Storage helpers: bills history array ── */
-  const getBills=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');return v[cc]||[];}catch{return[];}};
-  const saveBills=(cc,arr)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');v[cc]=arr;localStorage.setItem('jbf_cc_bills',JSON.stringify(v));}catch{}};
-  const getStmtDay=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');return parseInt(v[cc]||'1');}catch{return 1;}};
-  const saveStmtDay=(cc,day)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');v[cc]=day;localStorage.setItem('jbf_cc_stmt_days',JSON.stringify(v));}catch{}};
-
-  /* ── Legacy migration: if old jbf_cc_reconciled exists, import it ── */
-  React.useEffect(()=>{
+  /* ── Supabase helpers ── */
+  const fetchBills=async cc=>{
+    if(!uid)return[];
     try{
-      const old=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');
-      const newStore=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');
-      Object.entries(old).forEach(([cc,r])=>{
-        if(!newStore[cc]&&r&&r.billEnd){
-          newStore[cc]=[{billStart:r.billStart||r.billEnd,billEnd:r.billEnd,bankAmt:r.bankAmt||0,appAmt:r.appAmt||0,diff:r.diff||0,dueDate:'',reconciledAt:r.reconciledAt||'',txnCount:r.txnCount||0}];
-          localStorage.setItem('jbf_cc_bills',JSON.stringify(newStore));
-        }
-      });
-    }catch{}
-  },[]);
+      const{data,error}=await db.from('cc_bills').select('*').eq('user_id',uid).eq('cc_name',cc).order('bill_end',{ascending:true});
+      if(error||!data)return[];
+      return data.map(r=>({billStart:r.bill_start,billEnd:r.bill_end,bankAmt:r.bank_amt,appAmt:r.app_amt,diff:r.diff,dueDate:r.due_date||'',reconciledAt:r.reconciled_at,txnCount:r.txn_count,_id:r.id}));
+    }catch{return[];}
+  };
+  const insertBill=async(cc,entry)=>{
+    if(!uid)return;
+    await db.from('cc_bills').insert([{user_id:uid,cc_name:cc,bill_start:entry.billStart,bill_end:entry.billEnd,bank_amt:entry.bankAmt,app_amt:entry.appAmt,diff:entry.diff,due_date:entry.dueDate||null,reconciled_at:entry.reconciledAt,txn_count:entry.txnCount}]);
+  };
+  const fetchStmtDay=async cc=>{
+    if(!uid)return 1;
+    try{
+      const{data}=await db.from('cc_stmt_days').select('stmt_day').eq('user_id',uid).eq('cc_name',cc).single();
+      return data?.stmt_day||1;
+    }catch{return 1;}
+  };
+  const saveStmtDayDB=async(cc,day)=>{
+    if(!uid)return;
+    await db.from('cc_stmt_days').upsert({user_id:uid,cc_name:cc,stmt_day:day},{onConflict:'user_id,cc_name'});
+  };
 
   const [selCC,setSelCC]=useState(ccAccounts[0]||'');
   const [ccTab,setCCTab]=useState('unbilled');
-  const [stmtDayStr,setStmtDayStr]=useState(()=>String(getStmtDay(ccAccounts[0]||'')));
+  const [stmtDayStr,setStmtDayStr]=useState('1');
   const [stmtAmt,setStmtAmt]=useState('');
   const [dueDate,setDueDate]=useState('');
   const [reconSaved,setReconSaved]=useState(false);
+  const [bills,setBillsState]=useState([]);
+  const [loadingBills,setLoadingBills]=useState(true);
+  const [billStart,setBillStart]=useState('');
+  const [billEnd,setBillEnd]=useState('');
+
   const stmtDay=Math.max(1,Math.min(28,parseInt(stmtDayStr)||1));
 
-  /* ── Derive bill period defaults from stmt day ── */
-  const getLastStmtDate=()=>{const d=new Date(today.getFullYear(),today.getMonth(),stmtDay);if(d>today)return new Date(today.getFullYear(),today.getMonth()-1,stmtDay);return d;};
-  const lastStmt=getLastStmtDate();
-  const lastStmtStr=lastStmt.toISOString().slice(0,10);
-  const nextStmt=new Date(lastStmt.getFullYear(),lastStmt.getMonth()+1,stmtDay);
-  const stmtGenerated=lastStmt.getMonth()===today.getMonth()&&lastStmt.getFullYear()===today.getFullYear();
-  const prevBillStart=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,stmtDay);
-  const prevBillStartStr=prevBillStart.toISOString().slice(0,10);
+  const getLastStmtDate=sd=>{const d=new Date(today.getFullYear(),today.getMonth(),sd);if(d>today)return new Date(today.getFullYear(),today.getMonth()-1,sd);return d;};
 
-  /* bills = saved history for selCC; latestBill = most recent saved bill */
-  const [bills,setBillsState]=useState(()=>getBills(ccAccounts[0]||''));
-  const latestBill=bills.length>0?bills[bills.length-1]:null;
-
-  /* Bill period for the NEW bill being reconciled = starts from last saved billEnd */
-  const defaultBillStart=latestBill?latestBill.billEnd:prevBillStartStr;
-  const defaultBillEnd=latestBill
-    ?(()=>{const le=new Date(latestBill.billEnd);return new Date(le.getFullYear(),le.getMonth()+1,stmtDay).toISOString().slice(0,10);})()
-    :lastStmtStr;
-
-  const [billStart,setBillStart]=useState(defaultBillStart);
-  const [billEnd,setBillEnd]=useState(defaultBillEnd);
-
-  /* Refresh state when CC changes */
-  const handleSelCC=cc=>{
-    setSelCC(cc);
-    setStmtDayStr(String(getStmtDay(cc)));
-    setStmtAmt('');setDueDate('');setReconSaved(false);
-    const b=getBills(cc);
+  const loadCC=async cc=>{
+    setLoadingBills(true);
+    const [b,sd]=await Promise.all([fetchBills(cc),fetchStmtDay(cc)]);
     setBillsState(b);
+    setStmtDayStr(String(sd));
+    const ls=getLastStmtDate(sd);
     const lb=b.length>0?b[b.length-1]:null;
-    const sd=getStmtDay(cc);
-    const gs=()=>{const d=new Date(today.getFullYear(),today.getMonth(),sd);if(d>today)return new Date(today.getFullYear(),today.getMonth()-1,sd);return d;};
-    const ls=gs();
     if(lb){
       const le=new Date(lb.billEnd);
       setBillStart(lb.billEnd);
       setBillEnd(new Date(le.getFullYear(),le.getMonth()+1,sd).toISOString().slice(0,10));
-    } else {
+    }else{
       const pb=new Date(ls.getFullYear(),ls.getMonth()-1,sd);
       setBillStart(pb.toISOString().slice(0,10));
       setBillEnd(ls.toISOString().slice(0,10));
     }
+    setLoadingBills(false);
   };
-  const handleStmtDaySave=()=>saveStmtDay(selCC,stmtDay);
+
+  React.useEffect(()=>{if(ccAccounts.length>0)loadCC(ccAccounts[0]);},[uid]);
+
+  const handleSelCC=async cc=>{
+    setSelCC(cc);setStmtAmt('');setDueDate('');setReconSaved(false);setBillsState([]);
+    await loadCC(cc);
+  };
+  const handleStmtDaySave=async()=>{
+    await saveStmtDayDB(selCC,stmtDay);
+    await loadCC(selCC);
+  };
+
+  const latestBill=bills.length>0?bills[bills.length-1]:null;
+  const lastStmt=getLastStmtDate(stmtDay);
+  const nextStmt=new Date(lastStmt.getFullYear(),lastStmt.getMonth()+1,stmtDay);
+  const stmtGenerated=lastStmt.getMonth()===today.getMonth()&&lastStmt.getFullYear()===today.getFullYear();
 
   /* ── CC spends ── */
   const ccSpends=txns.filter(t=>t.status!=='voided'&&t.from_account===selCC&&(t.type==='Expense'||t.type==='UA Expense'));
-
-  /* ── UNBILLED: spends AFTER latest saved bill's end (locked) ── */
-  const unbilledFrom=latestBill?latestBill.billEnd:lastStmtStr;
+  const unbilledFrom=latestBill?latestBill.billEnd:lastStmt.toISOString().slice(0,10);
   const unbilled=ccSpends.filter(t=>t.created_at.slice(0,10)>unbilledFrom);
   const unbilledTotal=unbilled.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-
-  /* ── BILLED (new period being reconciled) ── */
-  const billedTxns=ccSpends.filter(t=>{const d=t.created_at.slice(0,10);return d>billStart&&d<=billEnd;});
+  const billedTxns=billStart&&billEnd?ccSpends.filter(t=>{const d=t.created_at.slice(0,10);return d>billStart&&d<=billEnd;}):[];
   const billedTotal=billedTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
   const sa=parseFloat(stmtAmt)||0;const diff=sa-billedTotal;const hasStmt=stmtAmt!==''&&sa>0;
 
-  /* ── Is the latest saved bill already paid? ──
-     Paid = a CC→Bank or Bank→CC payment exists dated AFTER the bill's billEnd */
   const latestBillPaid=latestBill?(()=>{
-    const payAfter=txns.filter(t=>
-      t.status!=='voided'&&
-      (t.type==='CC→Bank'||t.type==='Bank→CC'||t.type==='Bank→Bank')&&
-      (t.from_account===selCC||t.to_account===selCC)&&
-      t.created_at.slice(0,10)>latestBill.billEnd
-    );
-    return payAfter.length>0;
+    return txns.filter(t=>t.status!=='voided'&&(t.type==='CC→Bank'||t.type==='Bank→CC'||t.type==='Bank→Bank')&&(t.from_account===selCC||t.to_account===selCC)&&t.created_at.slice(0,10)>latestBill.billEnd).length>0;
   })():false;
 
   /* ── Save new reconciliation ── */
-  const handleSaveRecon=()=>{
+  const handleSaveRecon=async()=>{
     if(!hasStmt)return;
     const entry={billStart,billEnd,bankAmt:sa,appAmt:billedTotal,diff,dueDate,reconciledAt:new Date().toISOString(),txnCount:billedTxns.length};
+    await insertBill(selCC,entry);
     const updated=[...bills,entry];
-    saveBills(selCC,updated);
     setBillsState(updated);
-    /* Also save to legacy key so dashboard still works */
-    try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');v[selCC]={billStart,billEnd,bankAmt:sa,appAmt:billedTotal,diff,reconciledAt:entry.reconciledAt,txnCount:billedTxns.length};localStorage.setItem('jbf_cc_reconciled',JSON.stringify(v));}catch{}
     setReconSaved(true);
     setStmtAmt('');setDueDate('');
-    /* Advance period for next bill */
     const le=new Date(billEnd);
     setBillStart(billEnd);
     setBillEnd(new Date(le.getFullYear(),le.getMonth()+1,stmtDay).toISOString().slice(0,10));
@@ -1475,6 +1477,8 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
   const iS={background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
   const tabSel=active=>({flex:1,padding:'9px 0',fontFamily:'var(--mono)',fontSize:11,fontWeight:active?700:400,letterSpacing:'0.06em',textTransform:'uppercase',border:'none',borderBottom:active?'2px solid var(--green)':'2px solid transparent',background:'none',color:active?'var(--green)':'var(--text3)',cursor:'pointer'});
   const ord=n=>n===1?'st':n===2?'nd':n===3?'rd':'th';
+
+  if(loadingBills)return(<div className="empty">Loading bills...</div>);
 
   return(<div className="fade-in">
     {/* CC Selector */}
@@ -1547,24 +1551,17 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
         :<div className="empty">No unbilled charges since {fmtDate(unbilledFrom)}. 🎉</div>}
     </div>)}
 
-    {/* ── BILLS TAB — history of reconciled bills ── */}
+    {/* ── BILLS TAB ── */}
     {ccTab==='bills'&&(<div>
       {bills.length===0&&<div className="empty">No reconciled bills yet for {selCC}.<br/>Use the Reconcile tab to add your first bill.</div>}
       {[...bills].reverse().map((b,i)=>{
-        const isPaid=txns.filter(t=>
-          t.status!=='voided'&&
-          (t.type==='CC→Bank'||t.type==='Bank→CC'||t.type==='Bank→Bank')&&
-          (t.from_account===selCC||t.to_account===selCC)&&
-          t.created_at.slice(0,10)>b.billEnd
-        ).length>0;
+        const isPaid=txns.filter(t=>t.status!=='voided'&&(t.type==='CC→Bank'||t.type==='Bank→CC'||t.type==='Bank→Bank')&&(t.from_account===selCC||t.to_account===selCC)&&t.created_at.slice(0,10)>b.billEnd).length>0;
         const billTxns=txns.filter(t=>t.status!=='voided'&&t.from_account===selCC&&(t.type==='Expense'||t.type==='UA Expense')&&t.created_at.slice(0,10)>b.billStart&&t.created_at.slice(0,10)<=b.billEnd);
         return(<div key={i} style={{margin:'12px 16px',border:'1px solid '+(isPaid?'var(--border)':'var(--red)'),borderRadius:10,overflow:'hidden'}}>
-          {/* Bill header */}
           <div style={{padding:'10px 14px',background:isPaid?'var(--bg3)':'var(--red-bg)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
               <div style={{fontFamily:'var(--mono)',fontSize:9,color:isPaid?'var(--green)':'var(--red)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{isPaid?'✓ Paid':'⚠ Outstanding'}</div>
               <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginTop:2}}>{fmtDate(b.billStart)} → {fmtDate(b.billEnd)}</div>
-              {b.dueDate&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:isPaid?'var(--text3)':'var(--red)',marginTop:1}}>Due: {fmtDate(b.dueDate)}</div>}
             </div>
             <div style={{textAlign:'right'}}>
               <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',marginBottom:2}}>Bill Amount</div>
@@ -1572,7 +1569,6 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
               {b.diff!==0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:b.diff>0?'var(--red)':'var(--green)'}}>{b.diff>0?'▲':'▼'} {fmtAmt(Math.abs(b.diff))} diff</div>}
             </div>
           </div>
-          {/* Transactions in this bill */}
           {billTxns.length>0&&<>
             <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'6px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
             {[...billTxns].sort((a,bT)=>new Date(bT.created_at)-new Date(a.created_at)).map((t,ti)=>(
@@ -1603,13 +1599,12 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
 
       <p className="sec-label" style={{marginTop:8}}>Payment Due Date</p>
       <div style={{padding:'0 16px'}}>
-        <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} style={iS} placeholder="Optional — when bill is due"/>
+        <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} style={iS}/>
       </div>
 
       <p className="sec-label" style={{marginTop:8}}>Bank Statement Amount (₹)</p>
       <div style={{padding:'0 16px'}}><input type="number" inputMode="decimal" placeholder="Enter total bill amount from bank" value={stmtAmt} onChange={e=>{setStmtAmt(e.target.value);setReconSaved(false);}} style={{...iS,fontSize:16,fontWeight:600}}/></div>
 
-      {/* Reconciliation summary */}
       <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
         <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
           <span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · {billedTxns.length} txns in period</span>
@@ -1621,7 +1616,6 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
         {!hasStmt&&<div style={{padding:'14px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>Enter bank statement amount above to see reconciliation.</div>}
       </div>
 
-      {/* Save button */}
       {hasStmt&&<div style={{padding:'12px 16px 0'}}>
         {reconSaved
           ?<div style={{background:'var(--green-bg)',border:'1px solid var(--green)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--green)',textAlign:'center',fontWeight:600}}>
@@ -1632,7 +1626,6 @@ function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
           </button>}
       </div>}
 
-      {/* Bill period transactions preview */}
       {billedTxns.length>0&&<div style={{margin:'16px 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
         <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
         {[...billedTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>(
@@ -2334,7 +2327,7 @@ ${buildSection('🏗 Site Transactions','#b8860b',site)}
 /* ── DashScreen — Waterfall Hero + Audit Sync + Collapsed Cards + Clickable Chart ── */
 function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,
   trueSpendable,totalNetBlocked,recurring,opening,
-  setGlobalSearch,setTab,setTxnFilter,onAuditSync,...rest}){
+  setGlobalSearch,setTab,setTxnFilter,onAuditSync,ccBillsData,...rest}){
   budgets=budgets||{};
 
   const [auditLoading,setAuditLoading]=useState(false);
@@ -2470,7 +2463,7 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,
                   const due=Math.max(0,-(balances[a]||0));
                   if(due===0)return null;
                   // Use bill history for billed; only show billed if latest bill not yet paid
-                  const bills=(()=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');return v[a]||[];}catch{return[];}})();
+                  const bills=(ccBillsData&&ccBillsData[a])||[];
                   const latestBill=bills.length>0?bills[bills.length-1]:null;
                   // Detect paid: CC→Bank payment after bill end
                   const isPaid=latestBill?active.filter(t=>
@@ -2478,9 +2471,8 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,
                     (t.from_account===a||t.to_account===a)&&
                     t.created_at.slice(0,10)>latestBill.billEnd
                   ).length>0:false;
-                  // Unbilled = spends after latest bill's end (locked date)
-                  const sd=(()=>{try{return parseInt(JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}')[a]||'1');}catch{return 1;}})();
-                  const d=new Date();const ls=new Date(d.getFullYear(),d.getMonth(),sd);if(ls>d)ls.setMonth(ls.getMonth()-1);
+                  // Unbilled = spends after latest bill's end
+                  const d=new Date();const ls=new Date(d.getFullYear(),d.getMonth(),1);if(ls>d)ls.setMonth(ls.getMonth()-1);
                   const unbilledFrom=latestBill?latestBill.billEnd:ls.toISOString().slice(0,10);
                   const allCCTxns=active.filter(t=>t.from_account===a&&(t.type==='Expense'||t.type==='UA Expense'));
                   const unbilled=allCCTxns.filter(t=>t.created_at.slice(0,10)>unbilledFrom).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
