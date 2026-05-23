@@ -951,6 +951,7 @@ function App() {
           showToast((isIncome?'↑ Income':'↓ Expense')+' ₹'+fmt(Math.abs(diff))+' — Suspense entry created');
         }}/>}
         {!loading&&tab==='investments'&&<InvestmentsScreen investments={investments} setInvestments={setInvestments} showToast={showToast}/>}
+        {!loading&&tab==='cc_bill'&&<CCBillScreen txns={txns} customAccounts={customAccounts} setTab={setTab} setTxnFilter={setTxnFilter}/> }
         {!loading&&tab==='provision'&&<ProvisionLedger recurring={recurring} txns={txns} allBanks={allBanks} onAddTxn={addTxn} onAddRecurring={addRecurring} onDeleteRecurring={deleteRecurring} onUpdateRecurring={updateRecurring} showToast={showToast} provisionStates={provisionStates}/>}
         {!loading&&tab==='udhari'&&<UdhariScreen udhari={udhari} onAdd={handleSettleUdhari} onDelete={deleteUdhari} allAccounts={allAccounts} allBanks={allBanks} externalView={udhariView} onViewChange={v=>{setUdhariView(v);}}/>}
         {!loading&&(tab==='statement'||tab==='site_ledger')&&<LedgerStatementScreen txns={txns} allBanks={allBanksH} allCC={allCCH} allCatsH={allCatsH} opening={opening} showToast={showToast} initLedger={tab==='site_ledger'?'Site Cash':null}/>}
@@ -967,7 +968,7 @@ function App() {
 
       {/* Side menu */}
       {menuOpen&&<div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.85)',zIndex:200,display:'flex',flexDirection:'column',justifyContent:'flex-start'}} onClick={e=>e.target===e.currentTarget&&setMenuOpen(false)}><div style={{background:'var(--bg)',borderRadius:'0 0 16px 16px',border:'1px solid var(--border)',padding:'16px',maxHeight:'80vh',overflowY:'auto'}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}><span style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--text2)',letterSpacing:'0.08em'}}>MENU</span><button onClick={()=>setMenuOpen(false)} style={{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text2)',padding:'4px 10px',fontSize:11,fontFamily:'var(--mono)',cursor:'pointer'}}>✕</button></div>
-        {[{label:'Dashboard',icon:'◈',id:'dash'},{label:'Add Entry',icon:'+',id:'add'},{label:'Transaction Log',icon:'≡',id:'txns'},{label:'Income & Cashflow',icon:'💹',id:'cashflow'},{label:'Investments',icon:'📈',id:'investments'},{label:'Ledger Statement',icon:'📒',id:'ledger_statement'},{label:'Udhari Ledger',icon:'◎',id:'udhari'}].map(item=>(<div key={item.id} onClick={()=>{setTab(item.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span><span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span></div>))}
+        {[{label:'Dashboard',icon:'◈',id:'dash'},{label:'Add Entry',icon:'+',id:'add'},{label:'Transaction Log',icon:'≡',id:'txns'},{label:'Income & Cashflow',icon:'💹',id:'cashflow'},{label:'Investments',icon:'📈',id:'investments'},{label:'Ledger Statement',icon:'📒',id:'ledger_statement'},{label:'CC Bill Reconcile',icon:'💳',id:'cc_bill'},{label:'Udhari Ledger',icon:'◎',id:'udhari'}].map(item=>(<div key={item.id} onClick={()=>{setTab(item.id);setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',borderBottom:'1px solid var(--border)',cursor:'pointer',borderRadius:8}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--green)',width:24,textAlign:'center'}}>{item.icon}</span><span style={{fontSize:13,color:'var(--text)'}}>{item.label}</span></div>))}
         <div onClick={()=>{setTab('settings');setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8,marginTop:4}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--text3)',width:24,textAlign:'center'}}>⚙</span><span style={{fontSize:13,color:'var(--text2)'}}>Settings & Setup</span></div>
         <div onClick={()=>{db.auth.signOut();setMenuOpen(false);}} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 8px',cursor:'pointer',borderRadius:8,marginTop:4,borderTop:'1px solid var(--border)'}}><span style={{fontFamily:'var(--mono)',fontSize:16,color:'var(--red)',width:24,textAlign:'center'}}>↩</span><span style={{fontSize:13,color:'var(--red)'}}>Sign Out ({session?.user?.email})</span></div>
       </div></div>}
@@ -1346,9 +1347,311 @@ function ProvisionLedger({recurring,txns,allBanks,onAddTxn,onAddRecurring,onDele
   );
 }
 
+
+/* ── CCBillScreen v2.0 ─────────────────────────────────────────
+   Storage: jbf_cc_bills  → { [cc]: [ { billStart, billEnd, bankAmt, appAmt, diff, dueDate, reconciledAt, txnCount } ] }
+   A bill is "paid" when a CC→Bank payment exists AFTER billEnd.
+   Unbilled = spends AFTER the most recent saved billEnd (or last stmt date).
+──────────────────────────────────────────────────────────────── */
+function CCBillScreen({txns,customAccounts,setTab,setTxnFilter}){
+  const ccAccounts=[...SEED_CC,...(customAccounts||[]).filter(a=>a.type==='cc').map(a=>a.name)];
+  const today=new Date();const todayStr=today.toISOString().slice(0,10);
+
+  /* ── Storage helpers: bills history array ── */
+  const getBills=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');return v[cc]||[];}catch{return[];}};
+  const saveBills=(cc,arr)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');v[cc]=arr;localStorage.setItem('jbf_cc_bills',JSON.stringify(v));}catch{}};
+  const getStmtDay=cc=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');return parseInt(v[cc]||'1');}catch{return 1;}};
+  const saveStmtDay=(cc,day)=>{try{const v=JSON.parse(localStorage.getItem('jbf_cc_stmt_days')||'{}');v[cc]=day;localStorage.setItem('jbf_cc_stmt_days',JSON.stringify(v));}catch{}};
+
+  /* ── Legacy migration: if old jbf_cc_reconciled exists, import it ── */
+  React.useEffect(()=>{
+    try{
+      const old=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');
+      const newStore=JSON.parse(localStorage.getItem('jbf_cc_bills')||'{}');
+      Object.entries(old).forEach(([cc,r])=>{
+        if(!newStore[cc]&&r&&r.billEnd){
+          newStore[cc]=[{billStart:r.billStart||r.billEnd,billEnd:r.billEnd,bankAmt:r.bankAmt||0,appAmt:r.appAmt||0,diff:r.diff||0,dueDate:'',reconciledAt:r.reconciledAt||'',txnCount:r.txnCount||0}];
+          localStorage.setItem('jbf_cc_bills',JSON.stringify(newStore));
+        }
+      });
+    }catch{}
+  },[]);
+
+  const [selCC,setSelCC]=useState(ccAccounts[0]||'');
+  const [ccTab,setCCTab]=useState('unbilled');
+  const [stmtDayStr,setStmtDayStr]=useState(()=>String(getStmtDay(ccAccounts[0]||'')));
+  const [stmtAmt,setStmtAmt]=useState('');
+  const [dueDate,setDueDate]=useState('');
+  const [reconSaved,setReconSaved]=useState(false);
+  const stmtDay=Math.max(1,Math.min(28,parseInt(stmtDayStr)||1));
+
+  /* ── Derive bill period defaults from stmt day ── */
+  const getLastStmtDate=()=>{const d=new Date(today.getFullYear(),today.getMonth(),stmtDay);if(d>today)return new Date(today.getFullYear(),today.getMonth()-1,stmtDay);return d;};
+  const lastStmt=getLastStmtDate();
+  const lastStmtStr=lastStmt.toISOString().slice(0,10);
+  const nextStmt=new Date(lastStmt.getFullYear(),lastStmt.getMonth()+1,stmtDay);
+  const stmtGenerated=lastStmt.getMonth()===today.getMonth()&&lastStmt.getFullYear()===today.getFullYear();
+  const prevBillStart=new Date(lastStmt.getFullYear(),lastStmt.getMonth()-1,stmtDay);
+  const prevBillStartStr=prevBillStart.toISOString().slice(0,10);
+
+  /* bills = saved history for selCC; latestBill = most recent saved bill */
+  const [bills,setBillsState]=useState(()=>getBills(ccAccounts[0]||''));
+  const latestBill=bills.length>0?bills[bills.length-1]:null;
+
+  /* Bill period for the NEW bill being reconciled = starts from last saved billEnd */
+  const defaultBillStart=latestBill?latestBill.billEnd:prevBillStartStr;
+  const defaultBillEnd=latestBill
+    ?(()=>{const le=new Date(latestBill.billEnd);return new Date(le.getFullYear(),le.getMonth()+1,stmtDay).toISOString().slice(0,10);})()
+    :lastStmtStr;
+
+  const [billStart,setBillStart]=useState(defaultBillStart);
+  const [billEnd,setBillEnd]=useState(defaultBillEnd);
+
+  /* Refresh state when CC changes */
+  const handleSelCC=cc=>{
+    setSelCC(cc);
+    setStmtDayStr(String(getStmtDay(cc)));
+    setStmtAmt('');setDueDate('');setReconSaved(false);
+    const b=getBills(cc);
+    setBillsState(b);
+    const lb=b.length>0?b[b.length-1]:null;
+    const sd=getStmtDay(cc);
+    const gs=()=>{const d=new Date(today.getFullYear(),today.getMonth(),sd);if(d>today)return new Date(today.getFullYear(),today.getMonth()-1,sd);return d;};
+    const ls=gs();
+    if(lb){
+      const le=new Date(lb.billEnd);
+      setBillStart(lb.billEnd);
+      setBillEnd(new Date(le.getFullYear(),le.getMonth()+1,sd).toISOString().slice(0,10));
+    } else {
+      const pb=new Date(ls.getFullYear(),ls.getMonth()-1,sd);
+      setBillStart(pb.toISOString().slice(0,10));
+      setBillEnd(ls.toISOString().slice(0,10));
+    }
+  };
+  const handleStmtDaySave=()=>saveStmtDay(selCC,stmtDay);
+
+  /* ── CC spends ── */
+  const ccSpends=txns.filter(t=>t.status!=='voided'&&t.from_account===selCC&&(t.type==='Expense'||t.type==='UA Expense'));
+
+  /* ── UNBILLED: spends AFTER latest saved bill's end (locked) ── */
+  const unbilledFrom=latestBill?latestBill.billEnd:lastStmtStr;
+  const unbilled=ccSpends.filter(t=>t.created_at.slice(0,10)>unbilledFrom);
+  const unbilledTotal=unbilled.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+
+  /* ── BILLED (new period being reconciled) ── */
+  const billedTxns=ccSpends.filter(t=>{const d=t.created_at.slice(0,10);return d>billStart&&d<=billEnd;});
+  const billedTotal=billedTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const sa=parseFloat(stmtAmt)||0;const diff=sa-billedTotal;const hasStmt=stmtAmt!==''&&sa>0;
+
+  /* ── Is the latest saved bill already paid? ──
+     Paid = a CC→Bank or Bank→CC payment exists dated AFTER the bill's billEnd */
+  const latestBillPaid=latestBill?(()=>{
+    const payAfter=txns.filter(t=>
+      t.status!=='voided'&&
+      (t.type==='CC→Bank'||t.type==='Bank→CC'||t.type==='Bank→Bank')&&
+      (t.from_account===selCC||t.to_account===selCC)&&
+      t.created_at.slice(0,10)>latestBill.billEnd
+    );
+    return payAfter.length>0;
+  })():false;
+
+  /* ── Save new reconciliation ── */
+  const handleSaveRecon=()=>{
+    if(!hasStmt)return;
+    const entry={billStart,billEnd,bankAmt:sa,appAmt:billedTotal,diff,dueDate,reconciledAt:new Date().toISOString(),txnCount:billedTxns.length};
+    const updated=[...bills,entry];
+    saveBills(selCC,updated);
+    setBillsState(updated);
+    /* Also save to legacy key so dashboard still works */
+    try{const v=JSON.parse(localStorage.getItem('jbf_cc_reconciled')||'{}');v[selCC]={billStart,billEnd,bankAmt:sa,appAmt:billedTotal,diff,reconciledAt:entry.reconciledAt,txnCount:billedTxns.length};localStorage.setItem('jbf_cc_reconciled',JSON.stringify(v));}catch{}
+    setReconSaved(true);
+    setStmtAmt('');setDueDate('');
+    /* Advance period for next bill */
+    const le=new Date(billEnd);
+    setBillStart(billEnd);
+    setBillEnd(new Date(le.getFullYear(),le.getMonth()+1,stmtDay).toISOString().slice(0,10));
+  };
+
+  const iS={background:'var(--bg2)',border:'1px solid var(--border2)',borderRadius:8,padding:'9px 12px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:12,outline:'none',width:'100%'};
+  const tabSel=active=>({flex:1,padding:'9px 0',fontFamily:'var(--mono)',fontSize:11,fontWeight:active?700:400,letterSpacing:'0.06em',textTransform:'uppercase',border:'none',borderBottom:active?'2px solid var(--green)':'2px solid transparent',background:'none',color:active?'var(--green)':'var(--text3)',cursor:'pointer'});
+  const ord=n=>n===1?'st':n===2?'nd':n===3?'rd':'th';
+
+  return(<div className="fade-in">
+    {/* CC Selector */}
+    <p className="sec-label">Credit Card</p>
+    <div style={{padding:'0 16px 4px'}}><select value={selCC} onChange={e=>handleSelCC(e.target.value)} style={iS}>{ccAccounts.map(a=><option key={a}>{a}</option>)}</select></div>
+
+    {/* Statement Day */}
+    <div style={{margin:'10px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,padding:'12px 14px',display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+      <div style={{flex:1}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)',textTransform:'uppercase',marginBottom:4}}>Statement Generates on (day of month)</div>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}>
+          <input type="number" min="1" max="28" value={stmtDayStr} onChange={e=>setStmtDayStr(e.target.value)} onBlur={handleStmtDaySave} style={{...iS,width:70,textAlign:'center',fontSize:18,fontWeight:700}}/>
+          <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',lineHeight:1.5}}>
+            Last stmt: <span style={{color:'var(--text2)'}}>{fmtDate(lastStmt)}</span><br/>
+            Next stmt: <span style={{color:'var(--amber)'}}>{fmtDate(nextStmt)}</span>
+          </div>
+        </div>
+      </div>
+      <div style={{background:stmtGenerated?'var(--green-bg)':'var(--amber-bg)',border:'1px solid '+(stmtGenerated?'var(--green)':'var(--amber)'),borderRadius:8,padding:'6px 12px',fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:stmtGenerated?'var(--green)':'var(--amber)',whiteSpace:'nowrap'}}>
+        {stmtGenerated?'✓ Stmt Generated':'⏳ Not Yet'}
+      </div>
+    </div>
+
+    {/* Latest saved bill banner */}
+    {latestBill&&<div style={{margin:'8px 16px 0',background:latestBillPaid?'var(--green-bg)':'var(--red-bg)',border:'1px solid '+(latestBillPaid?'var(--green)':'var(--red)'),borderRadius:8,padding:'8px 12px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+      <div>
+        <div style={{fontFamily:'var(--mono)',fontSize:9,color:latestBillPaid?'var(--green)':'var(--red)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{latestBillPaid?'✓ Bill Paid':'⚠ Bill Due'}</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginTop:2}}>{fmtDate(latestBill.billStart)} → {fmtDate(latestBill.billEnd)}</div>
+        {latestBill.dueDate&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:latestBillPaid?'var(--text3)':'var(--red)',marginTop:1}}>Due: {fmtDate(latestBill.dueDate)}</div>}
+      </div>
+      <div style={{textAlign:'right'}}>
+        <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase'}}>Bill Amt</div>
+        <div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:700,color:latestBillPaid?'var(--green)':'var(--red)'}}>{fmtAmt(latestBill.bankAmt)}</div>
+      </div>
+    </div>}
+
+    {/* Tab bar */}
+    <div style={{display:'flex',borderBottom:'1px solid var(--border)',marginTop:12,padding:'0 16px'}}>
+      <button style={tabSel(ccTab==='unbilled')} onClick={()=>setCCTab('unbilled')}>Unbilled{unbilledTotal>0?` · ${fmtAmt(unbilledTotal)}`:''}</button>
+      <button style={tabSel(ccTab==='bills')} onClick={()=>setCCTab('bills')}>Bills{bills.length>0?` · ${bills.length}`:''}</button>
+      <button style={tabSel(ccTab==='reconcile')} onClick={()=>setCCTab('reconcile')}>Reconcile{stmtGenerated?'':' (not yet)'}</button>
+    </div>
+
+    {/* ── UNBILLED TAB ── */}
+    {ccTab==='unbilled'&&(<div>
+      <div style={{margin:'12px 16px 0',background:'var(--bg2)',border:'1px solid var(--amber)',borderRadius:10,padding:'14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+          <div onClick={()=>{if(unbilledTotal>0&&setTab&&setTxnFilter){setTxnFilter({account:selCC,type:null,dateRange:{start:unbilledFrom,end:todayStr},category:null});setTab('txns');}}} style={{cursor:unbilledTotal>0?'pointer':'default'}}>
+            <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--amber)',textTransform:'uppercase',letterSpacing:'0.08em',marginBottom:4}}>Current Cycle · Unbilled Spends</div>
+            <div style={{fontFamily:'var(--mono)',fontSize:24,fontWeight:800,color:'var(--amber)'}}>{fmtAmt(unbilledTotal)}</div>
+          </div>
+        </div>
+        <div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text3)'}}>
+          Since {fmtDate(unbilledFrom)} · {unbilled.length} txns · Next stmt: {fmtDate(nextStmt)}
+          {latestBill&&<span style={{color:'var(--green)',marginLeft:6}}>· From last reconciled date</span>}
+        </div>
+      </div>
+      {unbilled.length>0
+        ?<div style={{margin:'12px 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
+          {[...unbilled].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>(
+            <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+              <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)}</div></div>
+              <div><div style={{fontSize:11,color:'var(--text2)',fontFamily:'var(--mono)'}}>{t.category}</div></div>
+              <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--amber)'}}>−{fmtAmt(t.amount)}</div></div>
+            </div>
+          ))}
+          <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',background:'var(--amber-bg)',fontWeight:700}}><div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>TOTAL UNBILLED</div><div/><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:'var(--amber)'}}>−{fmtAmt(unbilledTotal)}</div></div>
+        </div>
+        :<div className="empty">No unbilled charges since {fmtDate(unbilledFrom)}. 🎉</div>}
+    </div>)}
+
+    {/* ── BILLS TAB — history of reconciled bills ── */}
+    {ccTab==='bills'&&(<div>
+      {bills.length===0&&<div className="empty">No reconciled bills yet for {selCC}.<br/>Use the Reconcile tab to add your first bill.</div>}
+      {[...bills].reverse().map((b,i)=>{
+        const isPaid=txns.filter(t=>
+          t.status!=='voided'&&
+          (t.type==='CC→Bank'||t.type==='Bank→CC'||t.type==='Bank→Bank')&&
+          (t.from_account===selCC||t.to_account===selCC)&&
+          t.created_at.slice(0,10)>b.billEnd
+        ).length>0;
+        const billTxns=txns.filter(t=>t.status!=='voided'&&t.from_account===selCC&&(t.type==='Expense'||t.type==='UA Expense')&&t.created_at.slice(0,10)>b.billStart&&t.created_at.slice(0,10)<=b.billEnd);
+        return(<div key={i} style={{margin:'12px 16px',border:'1px solid '+(isPaid?'var(--border)':'var(--red)'),borderRadius:10,overflow:'hidden'}}>
+          {/* Bill header */}
+          <div style={{padding:'10px 14px',background:isPaid?'var(--bg3)':'var(--red-bg)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:isPaid?'var(--green)':'var(--red)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{isPaid?'✓ Paid':'⚠ Outstanding'}</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)',marginTop:2}}>{fmtDate(b.billStart)} → {fmtDate(b.billEnd)}</div>
+              {b.dueDate&&<div style={{fontFamily:'var(--mono)',fontSize:10,color:isPaid?'var(--text3)':'var(--red)',marginTop:1}}>Due: {fmtDate(b.dueDate)}</div>}
+            </div>
+            <div style={{textAlign:'right'}}>
+              <div style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--text3)',textTransform:'uppercase',marginBottom:2}}>Bill Amount</div>
+              <div style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:isPaid?'var(--text)':'var(--red)'}}>{fmtAmt(b.bankAmt)}</div>
+              {b.diff!==0&&<div style={{fontFamily:'var(--mono)',fontSize:9,color:b.diff>0?'var(--red)':'var(--green)'}}>{b.diff>0?'▲':'▼'} {fmtAmt(Math.abs(b.diff))} diff</div>}
+            </div>
+          </div>
+          {/* Transactions in this bill */}
+          {billTxns.length>0&&<>
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'6px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
+            {[...billTxns].sort((a,bT)=>new Date(bT.created_at)-new Date(a.created_at)).map((t,ti)=>(
+              <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'9px 12px',borderBottom:'1px solid var(--border)',background:ti%2===0?'var(--bg2)':'var(--bg)'}}>
+                <div style={{minWidth:0}}><div style={{fontSize:11,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:1}}>{fmtDate(t.created_at)}</div></div>
+                <div><div style={{fontSize:10,color:'var(--text2)',fontFamily:'var(--mono)'}}>{t.category}</div></div>
+                <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:600,color:'var(--red)'}}>−{fmtAmt(t.amount)}</div></div>
+              </div>
+            ))}
+            <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'9px 12px',background:'var(--red-bg)',fontWeight:700}}><div style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--text2)'}}>APP TRACKED</div><div/><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:12,color:'var(--red)'}}>−{fmtAmt(b.appAmt)}</div></div>
+          </>}
+        </div>);
+      })}
+    </div>)}
+
+    {/* ── RECONCILE TAB ── */}
+    {ccTab==='reconcile'&&(<div>
+      {!stmtGenerated&&<div style={{margin:'12px 16px',background:'var(--amber-bg)',border:'1px solid var(--amber)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--amber)'}}>
+        ⏳ Statement not yet generated for this cycle. Generates on the <strong>{stmtDay}{ord(stmtDay)}</strong> of each month.
+      </div>}
+
+      <p className="sec-label" style={{marginTop:8}}>Bill Period</p>
+      <div style={{padding:'0 16px',display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+        <input type="date" value={billStart} onChange={e=>{setBillStart(e.target.value);setReconSaved(false);}} style={{...iS,flex:1,minWidth:130}}/>
+        <span style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)'}}>to</span>
+        <input type="date" value={billEnd} onChange={e=>{setBillEnd(e.target.value);setReconSaved(false);}} style={{...iS,flex:1,minWidth:130}}/>
+      </div>
+
+      <p className="sec-label" style={{marginTop:8}}>Payment Due Date</p>
+      <div style={{padding:'0 16px'}}>
+        <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} style={iS} placeholder="Optional — when bill is due"/>
+      </div>
+
+      <p className="sec-label" style={{marginTop:8}}>Bank Statement Amount (₹)</p>
+      <div style={{padding:'0 16px'}}><input type="number" inputMode="decimal" placeholder="Enter total bill amount from bank" value={stmtAmt} onChange={e=>{setStmtAmt(e.target.value);setReconSaved(false);}} style={{...iS,fontSize:16,fontWeight:600}}/></div>
+
+      {/* Reconciliation summary */}
+      <div style={{margin:'16px 16px 0',background:'var(--bg2)',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+        <div style={{padding:'10px 14px',background:'var(--bg3)',borderBottom:'1px solid var(--border)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span style={{fontFamily:'var(--mono)',fontSize:10,fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'0.08em'}}>{selCC} · {billedTxns.length} txns in period</span>
+          {billedTxns.length>0&&<button onClick={()=>{const html=`<!DOCTYPE html><html><head><title>${selCC} Bill Statement</title><style>*{margin:0;padding:0;box-sizing:border-box;}body{font-family:'IBM Plex Mono',monospace;font-size:10px;padding:20px;}h1{font-size:14px;margin-bottom:4px;}h2{font-size:11px;font-weight:400;color:#666;margin-bottom:16px;}table{width:100%;border-collapse:collapse;margin-top:12px;}th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}th{background:#f5f5f5;font-weight:600;font-size:9px;text-transform:uppercase;}td{font-size:10px;}.amt{text-align:right;}.desc{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}</style></head><body><h1>${selCC} — Bill Statement</h1><h2>${fmtDate(billStart)} to ${fmtDate(billEnd)}${dueDate?' · Due: '+fmtDate(dueDate):''}</h2><table><thead><tr><th>Date</th><th>Description</th><th>Category</th><th class="amt">Spend (₹)</th></tr></thead><tbody>${[...billedTxns].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(t=>`<tr><td>${fmtDate(t.created_at)}</td><td class="desc">${t.particulars||t.category}</td><td>${t.category}</td><td class="amt">${fmtAmt(t.amount)}</td></tr>`).join('')}<tr style="background:#ffebee;font-weight:600;"><td colspan="3">TOTAL BILL</td><td class="amt">₹${fmtAmt(billedTotal)}</td></tr></tbody></table></body></html>`;const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();}} style={{background:'var(--blue)',color:'#fff',border:'none',borderRadius:6,padding:'4px 10px',fontFamily:'var(--mono)',fontSize:9,fontWeight:600,cursor:'pointer'}}>🖨 Print</button>}
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>App Tracked Spends</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:'var(--text)'}}>{fmtAmt(billedTotal)}</span></div>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:13,color:'var(--text2)'}}>Bank Statement Amount</span><span style={{fontFamily:'var(--mono)',fontSize:16,fontWeight:700,color:hasStmt?'var(--text)':'var(--text3)'}}>{hasStmt?fmtAmt(sa):'—'}</span></div>
+        {hasStmt&&<div style={{padding:'14px',background:diff===0?'var(--green-bg)':diff>0?'var(--red-bg)':'var(--green-bg)',borderTop:'2px solid '+(diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)')}}><div style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:600,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4}}>{diff===0?'✓ Perfectly Matched!':diff>0?'Unaccounted Bank Charges':'Cashbacks / Refunds'}</div><div style={{fontFamily:'var(--mono)',fontSize:22,fontWeight:800,color:diff===0?'var(--green)':diff>0?'var(--red)':'var(--green)'}}>{diff===0?fmtAmt(0):diff>0?'+'+fmtAmt(diff):'−'+fmtAmt(Math.abs(diff))}</div></div>}
+        {!hasStmt&&<div style={{padding:'14px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text3)',textAlign:'center'}}>Enter bank statement amount above to see reconciliation.</div>}
+      </div>
+
+      {/* Save button */}
+      {hasStmt&&<div style={{padding:'12px 16px 0'}}>
+        {reconSaved
+          ?<div style={{background:'var(--green-bg)',border:'1px solid var(--green)',borderRadius:10,padding:'12px 14px',fontFamily:'var(--mono)',fontSize:12,color:'var(--green)',textAlign:'center',fontWeight:600}}>
+            ✓ Bill Saved · Visible in Bills tab · Next period loaded
+          </div>
+          :<button onClick={handleSaveRecon} style={{width:'100%',background:'var(--green)',color:'#000',fontFamily:'var(--mono)',fontSize:13,fontWeight:700,border:'none',borderRadius:10,padding:'13px',cursor:'pointer',letterSpacing:'0.05em'}}>
+            ✓ Save Bill &amp; Reconciliation
+          </button>}
+      </div>}
+
+      {/* Bill period transactions preview */}
+      {billedTxns.length>0&&<div style={{margin:'16px 16px 24px',border:'1px solid var(--border)',borderRadius:10,overflow:'hidden'}}>
+        <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'8px 12px',background:'var(--bg3)',borderBottom:'1px solid var(--border)'}}><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Description</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase'}}>Category</span><span style={{fontSize:9,color:'var(--text3)',fontFamily:'var(--mono)',textTransform:'uppercase',textAlign:'right'}}>Spend</span></div>
+        {[...billedTxns].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at)).map((t,i)=>(
+          <div key={t.id} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',borderBottom:'1px solid var(--border)',background:i%2===0?'var(--bg2)':'var(--bg)'}}>
+            <div style={{minWidth:0}}><div style={{fontSize:12,color:'var(--text)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{t.particulars||t.category}</div><div style={{fontSize:10,color:'var(--text3)',fontFamily:'var(--mono)',marginTop:2}}>{fmtDate(t.created_at)}</div></div>
+            <div><div style={{fontSize:11,color:'var(--text2)',fontFamily:'var(--mono)'}}>{t.category}</div></div>
+            <div style={{textAlign:'right'}}><div style={{fontFamily:'var(--mono)',fontSize:13,fontWeight:600,color:'var(--red)'}}>−{fmtAmt(t.amount)}</div></div>
+          </div>
+        ))}
+        <div onClick={()=>{if(billedTotal>0&&setTab&&setTxnFilter){setTxnFilter({account:selCC,type:null,dateRange:{start:billStart,end:billEnd},category:null});setTab('txns');}}} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',gap:8,padding:'10px 12px',background:'var(--red-bg)',fontWeight:700,cursor:billedTotal>0?'pointer':'default'}}><div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--text2)'}}>TOTAL IN PERIOD</div><div/><div style={{textAlign:'right',fontFamily:'var(--mono)',fontSize:13,color:'var(--red)'}}>−{fmtAmt(billedTotal)}</div></div>
+      </div>}
+      {billedTxns.length===0&&billStart&&billEnd&&<div className="empty">No transactions for {selCC} between {fmtDate(billStart)} and {fmtDate(billEnd)}.</div>}
+    </div>)}
+  </div>);
+}
+
 /* ── Header ── */
 function Header({liquid,tab,onMenu,isOnline,offlineCount,onHeaderAction,headerActionLabel}){
-  const titles={add:'Add Entry',txns:'Transactions',dash:'Dashboard',settings:'Settings',udhari:'Udhari Ledger',provision:'Envelopes',statement:'Ledger Statement',site_ledger:'Ledger Statement',investments:'Investments',ledger_statement:'Ledger Statement'};
+  const titles={add:'Add Entry',txns:'Transactions',dash:'Dashboard',settings:'Settings',udhari:'Udhari Ledger',provision:'Envelopes',statement:'Ledger Statement',site_ledger:'Ledger Statement',investments:'Investments',cc_bill:'CC Bill Reconcile',ledger_statement:'Ledger Statement'};
   return(
     <div className="header">
       <button onClick={onMenu} style={{background:'none',border:'none',color:'var(--text2)',cursor:'pointer',padding:'4px 6px',borderRadius:6,display:'flex',flexDirection:'column',gap:4}}>
