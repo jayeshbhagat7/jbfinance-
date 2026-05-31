@@ -195,6 +195,70 @@ function TabBar({ tab, setTab }) {
   );
 }
 
+/* ════════════════════════ Expense Pie Chart ════════════════════════ */
+const CHART_COLORS = ['#059669', '#2563eb', '#d97706', '#dc2626', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
+function ExpenseChart({ txns }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+
+  const now = new Date();
+  const mKey = now.toISOString().slice(0, 7);
+
+  const topCats = useMemo(() => {
+    const cats = {};
+    txns.filter((t) => t.status !== 'voided' && t.type === 'Expense' && t.tower !== 'SITE' && t.domain !== 'Site' && (t.created_at || '').slice(0, 7) === mKey)
+      .forEach((t) => { const c = t.category || 'Misc'; cats[c] = round2((cats[c] || 0) + Number(t.amount)); });
+    return Object.entries(cats).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  }, [txns, mKey]);
+
+  const totalSpent = round2(topCats.reduce((s, [, v]) => s + v, 0));
+
+  useEffect(() => {
+    if (!canvasRef.current || topCats.length === 0) return;
+    if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+    chartRef.current = new Chart(canvasRef.current, {
+      type: 'doughnut',
+      data: {
+        labels: topCats.map(([c]) => c),
+        datasets: [{ data: topCats.map(([, v]) => v), backgroundColor: CHART_COLORS.slice(0, topCats.length), borderColor: 'rgba(0,0,0,0.2)', borderWidth: 2 }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: true, cutout: '65%',
+        plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ₹' + Math.round(ctx.parsed).toLocaleString('en-IN') } } },
+      },
+    });
+    return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+  }, [topCats]);
+
+  if (topCats.length === 0) return null;
+
+  return (
+    <div className="section">
+      <div className="section-title">Expense breakdown · {now.toLocaleString('default', { month: 'short' })}</div>
+      <div className="card pad">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <div style={{ width: 140, height: 140, position: 'relative', flexShrink: 0 }}>
+            <canvas ref={canvasRef} />
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', pointerEvents: 'none' }}>
+              <span className="mono muted" style={{ fontSize: 9 }}>TOTAL</span>
+              <span className="mono" style={{ fontSize: 14, fontWeight: 700 }}>{fmtCompact(totalSpent)}</span>
+            </div>
+          </div>
+          <div className="stack" style={{ flex: 1, gap: 6 }}>
+            {topCats.map(([cat, amt], i) => (
+              <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ width: 10, height: 10, borderRadius: 3, background: CHART_COLORS[i], flexShrink: 0 }} />
+                <span className="mono" style={{ fontSize: 10, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat}</span>
+                <span className="mono" style={{ fontSize: 10, fontWeight: 600 }}>{fmtCompact(amt)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════ Dashboard ════════════════════════ */
 function Dashboard({ d, derived, setTab }) {
   const { liquid, totalCC, netBlocked, spendable, udhariOut, groups, health } = derived;
@@ -255,6 +319,8 @@ function Dashboard({ d, derived, setTab }) {
           ))}
         </div>
       </div>
+
+      <ExpenseChart txns={d.txns} />
 
       <div className="section">
         <div className="section-title"><span>Recent</span><span className="pill" onClick={() => setTab('log')}>View all</span></div>
