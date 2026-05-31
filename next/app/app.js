@@ -139,7 +139,7 @@ function Login() {
 
 /* ════════════════════════ Data layer ════════════════════════ */
 function useData(session) {
-  const [state, setState] = useState({ txns: [], opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, loading: true });
+  const [state, setState] = useState({ txns: [], opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, customSites: [], customTeam: [], loading: true });
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -154,7 +154,7 @@ function useData(session) {
         if (!data || data.length < PAGE) break;
         from += PAGE;
       }
-      const out = { txns, opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, loading: false };
+      const out = { txns, opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, customSites: [], customTeam: [], loading: false };
       try { const { data } = await db.from('recurring').select('*'); out.recurring = data || []; } catch (e) {}
       try { const { data } = await db.from('udhari').select('*'); out.udhari = data || []; } catch (e) {}
       try {
@@ -163,6 +163,8 @@ function useData(session) {
         if (g('opening_balances')) try { out.opening = JSON.parse(g('opening_balances').value); } catch (e) {}
         if (g('custom_accounts')) try { out.customAccounts = JSON.parse(g('custom_accounts').value); } catch (e) {}
         if (g('site_openings')) try { out.siteOpenings = JSON.parse(g('site_openings').value); } catch (e) {}
+        if (g('custom_sites')) try { out.customSites = JSON.parse(g('custom_sites').value); } catch (e) {}
+        if (g('custom_team')) try { out.customTeam = JSON.parse(g('custom_team').value); } catch (e) {}
       } catch (e) {}
       setState(out);
     } catch (e) {
@@ -638,6 +640,137 @@ function ProvisionScreen({ provisionStates, allBanks, onAccrue, onFlush, onCreat
   );
 }
 
+/* ════════════════════════ Site Add ════════════════════════ */
+const SITE_CATS_DEFAULT = ['Misc', 'Transportation', 'Labour Salary', 'KHARCHI', 'Medical', 'Hardware', 'Maintenance', 'Food', 'Udhari', 'Stationary', 'Fuel', 'Travelling'];
+const SITE_MEMBERS_DEFAULT = ['PH', 'Milton', 'PP', 'Sohail', 'Anjar', 'Sikhu'];
+
+function SiteAddSheet({ onSave, onClose, allBanks, allCC, customSites, customTeam }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const sites = (customSites && customSites.length) ? customSites : ['WWC'];
+  const members = [...new Set([...SITE_MEMBERS_DEFAULT, ...(customTeam || [])])];
+  const allSiteAccounts = ['Site Cash', ...allBanks.filter((a) => a !== 'Cash' && a !== 'Site Cash'), ...allCC];
+
+  const [site, setSite] = useState(sites[0] || '');
+  const [type, setType] = useState('Expense'); // 'Expense' | 'Site Transfer'
+  const [amt, setAmt] = useState('');
+  const [desc, setDesc] = useState('');
+  const [date, setDate] = useState(today);
+  const [saving, setSaving] = useState(false);
+
+  // Expense fields
+  const [cat, setCat] = useState('Misc');
+  const [payFrom, setPayFrom] = useState('Site Cash');
+
+  // Transfer fields
+  const [dir, setDir] = useState('given'); // 'given' | 'received'
+  const [person, setPerson] = useState(members[0] || '');
+  const [account, setAccount] = useState('Site Cash');
+
+  const canSave = parseFloat(amt) > 0 && site && (type === 'Expense' ? !!payFrom : !!person);
+
+  const save = async () => {
+    if (!canSave || saving) return;
+    setSaving(true);
+    const created_at = date === today ? new Date().toISOString() : date + 'T06:30:00.000Z';
+    let txn;
+    if (type === 'Expense') {
+      txn = {
+        domain: 'Site', type: 'Expense', amount: round2(parseFloat(amt)),
+        category: cat, from_account: payFrom, to_account: null,
+        particulars: desc || 'Site Expense', site_name: site,
+        site_user: null, party_name: null, direction: undefined,
+        status: 'complete', source: 'app-v3', created_at,
+      };
+    } else {
+      // Site Transfer: given = funding a handler; received = handler returns money
+      if (dir === 'given') {
+        txn = {
+          domain: 'Site', type: 'Site Transfer', amount: round2(parseFloat(amt)),
+          category: 'Site Transfer', from_account: account, to_account: null,
+          particulars: desc || ('Given to ' + person), site_name: site,
+          site_user: person, party_name: person, direction: 'given',
+          status: 'complete', source: 'app-v3', created_at,
+        };
+      } else {
+        txn = {
+          domain: 'Site', type: 'Site Transfer', amount: round2(parseFloat(amt)),
+          category: 'Site Transfer', from_account: person, to_account: account,
+          particulars: desc || ('Received from ' + person), site_name: site,
+          site_user: person, party_name: person, direction: 'received',
+          status: 'complete', source: 'app-v3', created_at,
+        };
+      }
+    }
+    await onSave(txn);
+    setSaving(false); onClose();
+  };
+
+  return (
+    <div className="sheet-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="sheet">
+        <div className="spread" style={{ padding: '14px 16px', borderBottom: '1px solid var(--line)' }}>
+          <span className="eyebrow">Site entry</span>
+          <button className="pill" onClick={onClose}>✕ Close</button>
+        </div>
+        <div className="stack" style={{ padding: 16 }}>
+          {/* Site selector */}
+          <div className="field"><label>Site</label>
+            <div className="cluster">{sites.map((s) => <span key={s} className={'pill' + (site === s ? ' sel' : '')} onClick={() => setSite(s)}>{s}</span>)}</div>
+          </div>
+
+          {/* Type */}
+          <div className="cluster">
+            <span className={'pill' + (type === 'Expense' ? ' sel' : '')} onClick={() => setType('Expense')}>💸 Expense</span>
+            <span className={'pill' + (type === 'Site Transfer' ? ' sel' : '')} onClick={() => setType('Site Transfer')}>↔ Transfer</span>
+          </div>
+
+          {/* Amount */}
+          <input className="input input-amount" type="number" inputMode="decimal" placeholder="0" value={amt} onChange={(e) => setAmt(e.target.value)} autoFocus />
+
+          {/* Expense fields */}
+          {type === 'Expense' && (<>
+            <div className="field"><label>Category</label>
+              <select className="input" value={cat} onChange={(e) => setCat(e.target.value)}>
+                {SITE_CATS_DEFAULT.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>Paid from</label>
+              <div className="cluster">{allSiteAccounts.map((a) => <span key={a} className={'pill' + (payFrom === a ? ' sel' : '')} onClick={() => setPayFrom(a)}>{a}</span>)}</div>
+            </div>
+          </>)}
+
+          {/* Transfer fields */}
+          {type === 'Site Transfer' && (<>
+            <div className="cluster">
+              <span className={'pill' + (dir === 'given' ? ' sel amber' : '')} onClick={() => setDir('given')}>Given →</span>
+              <span className={'pill' + (dir === 'received' ? ' sel' : '')} onClick={() => setDir('received')}>← Received</span>
+            </div>
+            <div className="field"><label>Person</label>
+              <select className="input" value={person} onChange={(e) => setPerson(e.target.value)}>
+                {members.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div className="field"><label>{dir === 'given' ? 'Paid from' : 'Received in'}</label>
+              <div className="cluster">{['Site Cash', 'Cash', ...allBanks.filter((a) => a !== 'Cash')].map((a) => <span key={a} className={'pill' + (account === a ? ' sel' : '')} onClick={() => setAccount(a)}>{a}</span>)}</div>
+            </div>
+            <div className="mono info" style={{ fontSize: 11 }}>
+              {dir === 'given' ? account + ' → ' + (person || '…') : (person || '…') + ' → ' + account}
+            </div>
+          </>)}
+
+          <div className="field"><label>Note</label><input className="input" value={desc} placeholder="Optional" onChange={(e) => setDesc(e.target.value)} /></div>
+          <div className="field"><label>Date</label><input className="input" type="date" max={today} value={date} onChange={(e) => setDate(e.target.value)} /></div>
+          {date !== today && <span className="mono warn" style={{ fontSize: 10 }}>Backdated entry</span>}
+
+          <button className="btn btn-primary btn-block" disabled={!canSave || saving} onClick={save}>
+            {saving ? 'Saving…' : canSave ? 'Save ' + fmtAmt(parseFloat(amt) || 0) : 'Fill required fields'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════ Site Ledger (Tally report) ════════════════════════ */
 function SiteLedgerReport({ txns, siteOpenings }) {
   const sites = useMemo(() => listSites(txns), [txns]);
@@ -713,6 +846,7 @@ function App() {
   const [unlocked, setUnlocked] = useState(false);
   const [tab, setTab] = useState('dash');
   const [quickAdd, setQuickAdd] = useState(false);
+  const [siteAdd, setSiteAdd] = useState(false);
   const [toast, setToast] = useState(null);
   const [theme, setTheme] = useState(() => localStorage.getItem('jbf_theme') || 'terminal');
 
@@ -840,12 +974,13 @@ function App() {
         {!d.loading && tab === 'udhari' && <UdhariScreen udhari={d.udhari} allBanks={allBanks} onAdd={addUdhari} onDelete={deleteUdhari} />}
         {!d.loading && tab === 'provision' && <ProvisionScreen provisionStates={derived.provisionStates} allBanks={allBanks} onAccrue={accrue} onFlush={flush} onCreate={addEnvelope} onDelete={deleteEnvelope} />}
         {!d.loading && tab === 'site_ledger' && <SiteLedgerReport txns={d.txns} siteOpenings={d.siteOpenings} />}
-        {!d.loading && tab === 'add' && <div className="section"><button className="btn btn-primary btn-block" onClick={() => setQuickAdd(true)}>+ New entry</button></div>}
+        {!d.loading && tab === 'add' && <div className="section stack"><button className="btn btn-primary btn-block" onClick={() => setQuickAdd(true)}>+ Personal entry</button><button className="btn btn-ghost btn-block" onClick={() => setSiteAdd(true)}>+ Site entry</button></div>}
         {!d.loading && tab === 'more' && <More session={session} theme={theme} setTheme={setTheme} setTab={setTab} />}
       </main>
 
       {tab !== 'add' && <button className="fab" aria-label="Add" onClick={() => setQuickAdd(true)}>＋</button>}
       {quickAdd && <AddSheet onSave={addTxn} onClose={() => setQuickAdd(false)} allBanks={allBanks} allCC={allCC} allAccounts={allAccounts} />}
+      {siteAdd && <SiteAddSheet onSave={addTxn} onClose={() => setSiteAdd(false)} allBanks={allBanks} allCC={allCC} customSites={d.customSites} customTeam={d.customTeam} />}
       <TabBar tab={tab} setTab={setTab} />
       {toast && <div className="toast">{toast}</div>}
     </Boundary>
