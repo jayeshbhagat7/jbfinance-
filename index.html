@@ -710,6 +710,11 @@ function App() {
   }, [isOnline]);
 
   const loadData = useCallback(async ()=>{
+    /* Guard: don't fetch until authenticated. With RLS enabled an anonymous
+       fetch returns empty, so fetching before login would leave the UI blank
+       until a manual reload. Re-running when `session` changes (see deps below)
+       ensures data loads right after sign-in. */
+    if(!session){ return; }
     setLoading(true);
     try {
       /* cursor-based pagination — fetches ALL transactions in 500-row pages
@@ -779,7 +784,7 @@ function App() {
         }
       }
     } catch(e){ console.warn('auto-backfill:',e.message); }
-  },[]);
+  },[session]);
 
   useEffect(()=>{loadData();},[loadData]);
 
@@ -893,13 +898,13 @@ function App() {
   }
   showToast('✓ Corrected');loadData();
 };
-  const saveOpening = async ob=>{await db.from('settings').upsert({key:'opening_balances',value:JSON.stringify(ob)});setOpening(ob);showToast('✓ Balances saved');};
-  const saveCustomAccounts = async list=>{await db.from('settings').upsert({key:'custom_accounts',value:JSON.stringify(list)});setCustomAccounts(list);showToast('✓ Accounts updated');};
-  const saveBudgets = async bg=>{await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)});setBudgets(bg);showToast('✓ Budgets saved');};
-  const saveCustomSites = async list=>{await db.from('settings').upsert({key:'custom_sites',value:JSON.stringify(list)});setCustomSites(list);showToast('✓ Sites updated');};
-  const saveCustomTeam = async list=>{await db.from('settings').upsert({key:'custom_team',value:JSON.stringify(list)});setCustomTeam(list);showToast('✓ Team updated');};
-  const saveCustomSiteCats = async list=>{await db.from('settings').upsert({key:'custom_site_cats',value:JSON.stringify(list)});setCustomSiteCats(list);showToast('✓ Site categories updated');};
-  const saveCustomCategories = async list=>{await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(list)});setCustomCategories(list);showToast('✓ Categories updated');};
+  const saveOpening = async ob=>{await db.from('settings').upsert({key:'opening_balances',value:JSON.stringify(ob)},{onConflict:'key'});setOpening(ob);showToast('✓ Balances saved');};
+  const saveCustomAccounts = async list=>{await db.from('settings').upsert({key:'custom_accounts',value:JSON.stringify(list)},{onConflict:'key'});setCustomAccounts(list);showToast('✓ Accounts updated');};
+  const saveBudgets = async bg=>{await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)},{onConflict:'key'});setBudgets(bg);showToast('✓ Budgets saved');};
+  const saveCustomSites = async list=>{await db.from('settings').upsert({key:'custom_sites',value:JSON.stringify(list)},{onConflict:'key'});setCustomSites(list);showToast('✓ Sites updated');};
+  const saveCustomTeam = async list=>{await db.from('settings').upsert({key:'custom_team',value:JSON.stringify(list)},{onConflict:'key'});setCustomTeam(list);showToast('✓ Team updated');};
+  const saveCustomSiteCats = async list=>{await db.from('settings').upsert({key:'custom_site_cats',value:JSON.stringify(list)},{onConflict:'key'});setCustomSiteCats(list);showToast('✓ Site categories updated');};
+  const saveCustomCategories = async list=>{await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(list)},{onConflict:'key'});setCustomCategories(list);showToast('✓ Categories updated');};
   const addCustomCategory = async catObj=>{
     const updated=[...customCategories.filter(c=>c.name!==catObj.name&&!c.archived),{name:catObj.name,emoji:catObj.emoji||'•',it:catObj.it||'',parent:catObj.parent||null}];
     await saveCustomCategories(updated);
@@ -908,7 +913,7 @@ function App() {
     setTheme(t);
     document.documentElement.setAttribute('data-theme',t);
     localStorage.setItem('jbf_theme',t);
-    db.from('settings').upsert({key:'theme',value:t}).catch(()=>{});
+    db.from('settings').upsert({key:'theme',value:t},{onConflict:'key'}).catch(()=>{});
   };
   /* ── UDHARI HANDLERS ── */
   const handleSettleUdhari = async entry => {
@@ -3833,21 +3838,21 @@ function DataBackupPanel(){
         rows.forEach(r=>{
           ob[r.Account]=r.OpeningDate?{amount:parseFloat(r.Amount)||0,opening_date:r.OpeningDate}:parseFloat(r.Amount)||0;
         });
-        await db.from('settings').upsert({key:'opening_balances',value:JSON.stringify(ob)});
+        await db.from('settings').upsert({key:'opening_balances',value:JSON.stringify(ob)},{onConflict:'key'});
       }
       
       if(wb.SheetNames.includes('Accounts')){
         const sheet=wb.Sheets['Accounts'];
         const rows=XLSX.utils.sheet_to_json(sheet);
         const accounts=rows.map(r=>({name:r.Name,type:r.Type,archived:r.Archived==='Yes'}));
-        await db.from('settings').upsert({key:'custom_accounts',value:JSON.stringify(accounts)});
+        await db.from('settings').upsert({key:'custom_accounts',value:JSON.stringify(accounts)},{onConflict:'key'});
       }
       
       if(wb.SheetNames.includes('Categories')){
         const sheet=wb.Sheets['Categories'];
         const rows=XLSX.utils.sheet_to_json(sheet);
         const cats=rows.map(r=>({name:r.Name,emoji:r.Emoji,it:r.ITSection||'',archived:r.Archived==='Yes'}));
-        await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(cats)});
+        await db.from('settings').upsert({key:'custom_categories',value:JSON.stringify(cats)},{onConflict:'key'});
       }
       
       if(wb.SheetNames.includes('Budgets')){
@@ -3855,7 +3860,7 @@ function DataBackupPanel(){
         const rows=XLSX.utils.sheet_to_json(sheet);
         const bg={};
         rows.forEach(r=>bg[r.Category]=parseFloat(r.Limit)||0);
-        await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)});
+        await db.from('settings').upsert({key:'budgets',value:JSON.stringify(bg)},{onConflict:'key'});
       }
       
       setStatus(`✅ Restore complete! Imported ${imported} records. Reload app.`);
