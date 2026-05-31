@@ -407,10 +407,11 @@ function AddSheet({ onSave, onClose, allBanks, allCC, allAccounts }) {
 }
 
 /* ════════════════════════ More menu ════════════════════════ */
-function More({ session, theme, setTheme }) {
-  const links = [
+function More({ session, theme, setTheme, setTab }) {
+  const v3 = [['Udhari Ledger', 'udhari'], ['Provision Envelopes', 'provision']];
+  const classic = [
     ['Income & Cashflow', 'cashflow'], ['Investments', 'investments'], ['Ledger Statement', 'ledger_statement'],
-    ['CC Bill Reconcile', 'cc_bill'], ['Udhari Ledger', 'udhari'], ['Provision Envelopes', 'provision'], ['Settings & Setup', 'settings'],
+    ['CC Bill Reconcile', 'cc_bill'], ['Site Ledger & Site Add', 'site'], ['Settings & Setup', 'settings'],
   ];
   return (
     <div className="fade-in section">
@@ -422,17 +423,215 @@ function More({ session, theme, setTheme }) {
           ))}
         </div>
       </div>
+
+      <div className="section-title" style={{ marginTop: 20 }}>Ledgers</div>
+      <div className="card">
+        {v3.map(([label, id]) => (
+          <div className="row" key={id} style={{ cursor: 'pointer' }} onClick={() => setTab(id)}>
+            <span className="title">{label}</span><span className="pill sel" style={{ fontSize: 9, padding: '2px 8px' }}>v3</span>
+          </div>
+        ))}
+      </div>
+
       <div className="section-title" style={{ marginTop: 20 }}>Not yet redesigned — classic app</div>
       <div className="card">
-        {links.map(([label, id]) => (
+        {classic.map(([label, id]) => (
           <a className="row" key={id} href={CLASSIC_URL} style={{ textDecoration: 'none', color: 'inherit' }}>
             <span className="title">{label}</span><span className="muted mono" style={{ fontSize: 11 }}>open ↗</span>
           </a>
         ))}
       </div>
+
       <div className="section" style={{ paddingLeft: 0, paddingRight: 0 }}>
         <button className="btn btn-danger btn-block" onClick={() => db.auth.signOut()}>Sign out ({session?.user?.email})</button>
       </div>
+    </div>
+  );
+}
+
+/* ════════════════════════ Udhari ════════════════════════ */
+function UdhariScreen({ udhari, allBanks, onAdd, onDelete }) {
+  const [view, setView] = useState('list');
+  const [sel, setSel] = useState(null);
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = useState({ person_name: '', amount: '', direction: 'given', mode: 'Cash', txn_date: today });
+  const [saving, setSaving] = useState(false);
+
+  const persons = {};
+  udhari.forEach((u) => {
+    if (!persons[u.person_name]) persons[u.person_name] = { given: 0, received: 0, entries: [] };
+    if (u.direction === 'given') persons[u.person_name].given += Number(u.amount) || 0;
+    if (u.direction === 'received') persons[u.person_name].received += Number(u.amount) || 0;
+    persons[u.person_name].entries.push(u);
+  });
+  const people = Object.entries(persons).map(([name, p]) => ({ name, out: round2(p.given - p.received), ...p }))
+    .sort((a, b) => b.out - a.out);
+  const totalOut = round2(people.reduce((s, p) => s + Math.max(0, p.out), 0));
+
+  const save = async () => {
+    if (!form.person_name.trim() || !(parseFloat(form.amount) > 0) || saving) return;
+    setSaving(true);
+    await onAdd(form);
+    setForm({ person_name: '', amount: '', direction: 'given', mode: 'Cash', txn_date: today });
+    setSaving(false); setView('list');
+  };
+
+  if (view === 'add') {
+    return (
+      <div className="fade-in section stack">
+        <div className="spread"><span className="pill" onClick={() => setView('list')}>← Back</span><span className="eyebrow">New udhari</span></div>
+        <div className="cluster">
+          <span className={'pill' + (form.direction === 'given' ? ' sel amber' : '')} onClick={() => setForm((f) => ({ ...f, direction: 'given' }))}>▲ I gave</span>
+          <span className={'pill' + (form.direction === 'received' ? ' sel' : '')} onClick={() => setForm((f) => ({ ...f, direction: 'received' }))}>▼ Got back</span>
+        </div>
+        <div className="field"><label>Person</label><input className="input" placeholder="Name" value={form.person_name} onChange={(e) => setForm((f) => ({ ...f, person_name: e.target.value }))} /></div>
+        <div className="field"><label>Amount</label><input className="input" type="number" inputMode="decimal" placeholder="0" value={form.amount} onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))} /></div>
+        <div className="field"><label>Account</label>
+          <div className="cluster">{allBanks.map((a) => <span key={a} className={'pill' + (form.mode === a ? ' sel' : '')} onClick={() => setForm((f) => ({ ...f, mode: a }))}>{a}</span>)}</div>
+        </div>
+        <div className="field"><label>Date</label><input className="input" type="date" max={today} value={form.txn_date} onChange={(e) => setForm((f) => ({ ...f, txn_date: e.target.value }))} /></div>
+        <button className="btn btn-primary btn-block" disabled={saving || !form.person_name.trim() || !(parseFloat(form.amount) > 0)} onClick={save}>
+          {saving ? 'Saving…' : 'Save ' + (form.direction === 'given' ? 'given' : 'received')}
+        </button>
+      </div>
+    );
+  }
+
+  if (view === 'person' && sel && persons[sel]) {
+    const p = persons[sel]; const out = round2(p.given - p.received);
+    const entries = [...p.entries].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return (
+      <div className="fade-in">
+        <div className="section spread">
+          <span className="pill" onClick={() => setView('list')}>← Back</span>
+          <span className="pill sel" onClick={() => { setForm((f) => ({ ...f, person_name: sel })); setView('add'); }}>+ Entry</span>
+        </div>
+        <div className="section"><div className="card pad">
+          <div className="title" style={{ fontSize: 16, fontWeight: 600 }}>{sel}</div>
+          <div className={'mono ' + (out > 0 ? 'warn' : out < 0 ? 'pos' : 'muted')} style={{ fontSize: 12, marginTop: 4 }}>
+            {out > 0 ? 'owes you ' + fmtAmt(out) : out < 0 ? 'you owe ' + fmtAmt(Math.abs(out)) : 'settled ✓'}
+          </div>
+          <div className="tiles three" style={{ marginTop: 12 }}>
+            <div className="tile"><div className="label">Given</div><div className="value warn">{fmtCompact(p.given)}</div></div>
+            <div className="tile"><div className="label">Received</div><div className="value pos">{fmtCompact(p.received)}</div></div>
+            <div className="tile"><div className="label">Balance</div><div className="value">{fmtCompact(Math.abs(out))}</div></div>
+          </div>
+        </div></div>
+        <div className="section"><div className="card">
+          {entries.map((e) => (
+            <div className="row" key={e.id}>
+              <div className="left">
+                <div className={'title ' + (e.direction === 'given' ? 'warn' : 'pos')}>{e.direction === 'given' ? '▲ Gave' : '▼ Got back'} {fmtAmt(e.amount)}</div>
+                <div className="sub">{fmtDate(e.created_at)} · {e.mode}{e.notes ? ' · ' + e.notes : ''}</div>
+              </div>
+              <button className="pill" style={{ padding: '2px 8px', fontSize: 9 }} onClick={() => onDelete(e.id)}>✕</button>
+            </div>
+          ))}
+        </div></div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fade-in">
+      <div className="section">
+        <div className="card pad spread">
+          <span className="eyebrow">Total outstanding</span>
+          <span className="mono warn" style={{ fontSize: 15, fontWeight: 700 }}>{fmtAmt(totalOut)}</span>
+        </div>
+      </div>
+      <div className="section">
+        <div className="section-title"><span>People</span><span className="pill sel" onClick={() => setView('add')}>+ New</span></div>
+        <div className="card">
+          {people.length === 0 && <div className="empty">No udhari yet</div>}
+          {people.map((p) => (
+            <div className="row" key={p.name} style={{ cursor: 'pointer' }} onClick={() => { setSel(p.name); setView('person'); }}>
+              <div className="left">
+                <div className="title">{p.name}</div>
+                <div className="sub">Gave {fmtCompact(p.given)}{p.received > 0 ? ' · Back ' + fmtCompact(p.received) : ''}</div>
+              </div>
+              <div className={'amt ' + (p.out > 0 ? 'warn' : p.out < 0 ? 'pos' : 'muted')}>{p.out > 0 ? fmtAmt(p.out) : p.out < 0 ? '−' + fmtAmt(Math.abs(p.out)) : '✓'}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════ Provision envelopes ════════════════════════ */
+function ProvisionScreen({ provisionStates, allBanks, onAccrue, onFlush, onCreate, onDelete }) {
+  const [showNew, setShowNew] = useState(false);
+  const [form, setForm] = useState({ name: '', target_amount: '', already_saved: '', account: '', notes: '' });
+  const [accrueFor, setAccrueFor] = useState(null);
+  const [accAmt, setAccAmt] = useState('');
+  const [accFrom, setAccFrom] = useState('');
+
+  const create = async () => {
+    if (!form.name || !form.target_amount) return;
+    await onCreate(form);
+    setForm({ name: '', target_amount: '', already_saved: '', account: '', notes: '' });
+    setShowNew(false);
+  };
+  const doAccrue = async (ps) => {
+    if (!(parseFloat(accAmt) > 0)) return;
+    await onAccrue(ps, accAmt, accFrom || allBanks[0]);
+    setAccrueFor(null); setAccAmt(''); setAccFrom('');
+  };
+
+  return (
+    <div className="fade-in section">
+      <div className="section-title" style={{ paddingTop: 0 }}>
+        <span>Provision envelopes</span>
+        <span className="pill sel" onClick={() => setShowNew((s) => !s)}>+ New</span>
+      </div>
+
+      {showNew && (
+        <div className="card pad stack" style={{ marginBottom: 12 }}>
+          <input className="input" placeholder="Name (e.g. Emergency Fund)" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input className="input" type="number" placeholder="Target ₹" value={form.target_amount} onChange={(e) => setForm((f) => ({ ...f, target_amount: e.target.value }))} />
+          <input className="input" type="number" placeholder="Already saved ₹ (optional)" value={form.already_saved} onChange={(e) => setForm((f) => ({ ...f, already_saved: e.target.value }))} />
+          <select className="input" value={form.account} onChange={(e) => setForm((f) => ({ ...f, account: e.target.value }))}>
+            <option value="">Account (optional)</option>{allBanks.map((b) => <option key={b} value={b}>{b}</option>)}
+          </select>
+          <button className="btn btn-primary btn-block" disabled={!form.name || !form.target_amount} onClick={create}>Create envelope</button>
+        </div>
+      )}
+
+      {provisionStates.length === 0 && <div className="empty">No envelopes yet</div>}
+
+      {provisionStates.map((ps) => (
+        <div className="card pad" key={ps.prov.id} style={{ marginBottom: 12 }}>
+          <div className="spread">
+            <div><div className="mono" style={{ fontSize: 13, fontWeight: 700 }}>{ps.prov.name}</div>
+              {ps.prov.notes && <div className="sub">{ps.prov.notes}</div>}</div>
+            <span className="mono" style={{ fontWeight: 700, color: ps.pct >= 100 ? 'var(--green)' : ps.pct > 50 ? 'var(--amber)' : 'var(--red)' }}>{ps.pct}%</span>
+          </div>
+          <div className="bar" style={{ marginTop: 10 }}><span style={{ width: ps.pct + '%', background: ps.pct >= 100 ? 'var(--green)' : ps.pct > 50 ? 'var(--amber)' : 'var(--red)' }} /></div>
+          <div className="tiles three" style={{ marginTop: 12 }}>
+            <div className="tile"><div className="label">Target</div><div className="value">{fmtCompact(ps.A)}</div></div>
+            <div className="tile"><div className="label">Saved</div><div className="value pos">{fmtCompact(ps.B)}</div></div>
+            <div className="tile"><div className="label">Net blocked</div><div className="value info">{fmtCompact(ps.C)}</div></div>
+          </div>
+          <div className="cluster" style={{ marginTop: 12 }}>
+            <span className="pill sel" onClick={() => { setAccrueFor(ps.prov.id); setAccFrom(ps.prov.account || allBanks[0] || 'Cash'); }}>+ Accrue</span>
+            <span className="pill sel amber" onClick={() => onFlush(ps)}>Flush</span>
+            <span className="pill" onClick={() => onDelete(ps.prov.id)}>✕ Delete</span>
+          </div>
+          {accrueFor === ps.prov.id && (
+            <div className="stack" style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--line)' }}>
+              <div className="cluster">
+                <input className="input" style={{ flex: 1 }} type="number" placeholder="Amount ₹" value={accAmt} onChange={(e) => setAccAmt(e.target.value)} />
+                <select className="input" style={{ flex: 1 }} value={accFrom} onChange={(e) => setAccFrom(e.target.value)}>{allBanks.map((b) => <option key={b} value={b}>{b}</option>)}</select>
+              </div>
+              <div className="cluster">
+                <button className="btn btn-primary" style={{ flex: 1 }} onClick={() => doAccrue(ps)}>Save</button>
+                <button className="btn btn-ghost" onClick={() => setAccrueFor(null)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -476,7 +675,7 @@ function App() {
     const udhariOut = computeUdhariOut(d.udhari);
     const groups = computeLedgerGroups(balances, allBanksH, allCCH);
     const health = computeBooksHealth(d.txns);
-    return { balances, liquid, totalCC, netBlocked, spendable, udhariOut, groups, health };
+    return { balances, liquid, totalCC, netBlocked, spendable, udhariOut, groups, health, provisionStates };
   }, [d.opening, d.txns, d.recurring, d.udhari, allBanks, allCC, allBanksH, allCCH]);
 
   const addTxn = useCallback(async (txn) => {
@@ -500,6 +699,60 @@ function App() {
     if (!error) { showToast('↩ Voided'); reload(); } else showToast('⚠ ' + error.message);
   }, [reload]);
 
+  /* Udhari (memory-only ledger — no balance impact) */
+  const addUdhari = useCallback(async (entry) => {
+    const created_at = entry.txn_date ? entry.txn_date + 'T06:30:00.000Z' : new Date().toISOString();
+    const payload = {
+      person_name: entry.person_name.trim(), amount: round2(parseFloat(entry.amount)),
+      direction: entry.direction, mode: entry.mode || 'Cash', notes: entry.notes || null,
+      created_at, user_id: session?.user?.id || null,
+    };
+    const { error } = await db.from('udhari').insert([payload]);
+    if (!error) { showToast('✓ Udhari saved — ' + entry.person_name); reload(); }
+    else showToast('⚠ ' + (error.message || 'DB error'));
+  }, [session, reload]);
+
+  const deleteUdhari = useCallback(async (id) => {
+    const { error } = await db.from('udhari').delete().eq('id', id);
+    if (!error) { showToast('↩ Entry removed'); reload(); } else showToast('⚠ ' + error.message);
+  }, [reload]);
+
+  /* Provision envelopes (recurring rows) + virtual accrue/flush txns */
+  const addEnvelope = useCallback(async (form) => {
+    const payload = {
+      name: form.name, target_amount: round2(parseFloat(form.target_amount) || 0),
+      already_saved: round2(parseFloat(form.already_saved) || 0), account: form.account || null,
+      frequency: form.frequency || 'monthly', notes: form.notes || null,
+      is_provision: true, active: true, user_id: session?.user?.id || null,
+    };
+    const { error } = await db.from('recurring').insert([payload]);
+    if (!error) { showToast('✓ Envelope created'); reload(); } else showToast('⚠ ' + (error.message || 'DB error'));
+  }, [session, reload]);
+
+  const deleteEnvelope = useCallback(async (id) => {
+    const { error } = await db.from('recurring').delete().eq('id', id);
+    if (!error) { showToast('↩ Deleted'); reload(); } else showToast('⚠ ' + error.message);
+  }, [reload]);
+
+  const accrue = useCallback(async (ps, amount, from) => {
+    await addTxn({
+      domain: 'Personal', type: 'Provision_Accrue', amount: round2(parseFloat(amount)),
+      from_account: from || allBanks[0] || 'Cash', category: ps.prov.name,
+      particulars: '[ENV:' + ps.prov.id + '] Accrue → ' + ps.prov.name,
+      status: 'complete', source: 'provision', created_at: new Date().toISOString(),
+    });
+  }, [addTxn, allBanks]);
+
+  const flush = useCallback(async (ps) => {
+    if (ps.C <= 0) { showToast('⚠ Nothing to flush'); return; }
+    await addTxn({
+      domain: 'Personal', type: 'Provision_Flush', amount: round2(ps.C),
+      from_account: ps.prov.account || allBanks[0] || 'Cash', category: ps.prov.name,
+      particulars: '[ENV:' + ps.prov.id + '] Flush → ' + ps.prov.name,
+      status: 'complete', source: 'provision', created_at: new Date().toISOString(),
+    });
+  }, [addTxn, allBanks]);
+
   if (!unlocked) return <PinGate onUnlock={() => setUnlocked(true)} />;
   if (authLoading) return <div className="empty" style={{ paddingTop: 80 }}>Authenticating…</div>;
   if (!session) return <Login />;
@@ -507,15 +760,17 @@ function App() {
   return (
     <Boundary>
       <header className="app-header">
-        <div className="brand"><span className="dot" /> JB Finance</div>
+        <div className="brand" style={{ cursor: 'pointer' }} onClick={() => setTab('dash')}><span className="dot" /> JB Finance</div>
         <div className="bal">{fmtCompact(derived.spendable)}</div>
       </header>
       <main className="main">
         {d.loading && <div className="empty">Loading…</div>}
         {!d.loading && tab === 'dash' && <Dashboard d={d} derived={derived} setTab={setTab} />}
         {!d.loading && tab === 'log' && <Log d={d} onVoid={voidTxn} />}
+        {!d.loading && tab === 'udhari' && <UdhariScreen udhari={d.udhari} allBanks={allBanks} onAdd={addUdhari} onDelete={deleteUdhari} />}
+        {!d.loading && tab === 'provision' && <ProvisionScreen provisionStates={derived.provisionStates} allBanks={allBanks} onAccrue={accrue} onFlush={flush} onCreate={addEnvelope} onDelete={deleteEnvelope} />}
         {!d.loading && tab === 'add' && <div className="section"><button className="btn btn-primary btn-block" onClick={() => setQuickAdd(true)}>+ New entry</button></div>}
-        {!d.loading && tab === 'more' && <More session={session} theme={theme} setTheme={setTheme} />}
+        {!d.loading && tab === 'more' && <More session={session} theme={theme} setTheme={setTheme} setTab={setTab} />}
       </main>
 
       {tab !== 'add' && <button className="fab" aria-label="Add" onClick={() => setQuickAdd(true)}>＋</button>}
