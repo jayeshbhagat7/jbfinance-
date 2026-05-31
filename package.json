@@ -1,0 +1,10 @@
+{
+  "name": "jbfinance",
+  "version": "3.0.0-next",
+  "private": true,
+  "description": "JB Finance — personal CFO OS & construction-site ledger (PWA)",
+  "scripts": {
+    "test": "node --test next/tests/*.test.js"
+  },
+  "license": "UNLICENSED"
+}

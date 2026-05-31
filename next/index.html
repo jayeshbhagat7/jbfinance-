@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#050705">
+<title>JB Finance v3</title>
+<script>(function(){var t=localStorage.getItem('jbf_theme')||'terminal';if(t!=='terminal'&&t!=='carbon')t='terminal';document.documentElement.setAttribute('data-theme',t);})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+<div id="root">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100dvh;gap:14px;background:var(--bg-1)">
+    <div class="mono" style="font-size:18px;font-weight:700;color:var(--green);letter-spacing:.12em">JB FINANCE</div>
+    <div class="eyebrow">v3 · loading…</div>
+    <div class="bar" style="width:140px"><span style="width:60%"></span></div>
+  </div>
+</div>
+
+<!-- Tested ledger engine (plain scripts → window.JBF). Order matters: deps first. -->
+<script src="engine/format.js"></script>
+<script src="engine/constants.js"></script>
+<script src="engine/ledger-master.js"></script>
+<script src="engine/balances.js"></script>
+
+<!-- Vendor (loaded by the browser from CDN; pinned majors) -->
+<script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script>window.process = { env: { NODE_ENV: 'production' } };</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+<!-- App (JSX, transpiled in-browser for now; a build step can precompile later) -->
+<script type="text/babel" data-presets="react" src="app/app.js"></script>
+</body>
+</html>
