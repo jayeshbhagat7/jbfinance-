@@ -139,7 +139,7 @@ function Login() {
 
 /* ════════════════════════ Data layer ════════════════════════ */
 function useData(session) {
-  const [state, setState] = useState({ txns: [], opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, customSites: [], customTeam: [], loading: true });
+  const [state, setState] = useState({ txns: [], opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, customSites: [], customTeam: [], budgets: {}, loading: true });
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -154,7 +154,7 @@ function useData(session) {
         if (!data || data.length < PAGE) break;
         from += PAGE;
       }
-      const out = { txns, opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, customSites: [], customTeam: [], loading: false };
+      const out = { txns, opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, customSites: [], customTeam: [], budgets: {}, loading: false };
       try { const { data } = await db.from('recurring').select('*'); out.recurring = data || []; } catch (e) {}
       try { const { data } = await db.from('udhari').select('*'); out.udhari = data || []; } catch (e) {}
       try {
@@ -165,6 +165,7 @@ function useData(session) {
         if (g('site_openings')) try { out.siteOpenings = JSON.parse(g('site_openings').value); } catch (e) {}
         if (g('custom_sites')) try { out.customSites = JSON.parse(g('custom_sites').value); } catch (e) {}
         if (g('custom_team')) try { out.customTeam = JSON.parse(g('custom_team').value); } catch (e) {}
+        if (g('budgets')) try { out.budgets = JSON.parse(g('budgets').value); } catch (e) {}
       } catch (e) {}
       setState(out);
     } catch (e) {
@@ -412,10 +413,9 @@ function AddSheet({ onSave, onClose, allBanks, allCC, allAccounts }) {
 
 /* ════════════════════════ More menu ════════════════════════ */
 function More({ session, theme, setTheme, setTab }) {
-  const v3 = [['Udhari Ledger', 'udhari'], ['Provision Envelopes', 'provision'], ['Site Ledger (Tally)', 'site_ledger']];
+  const v3 = [['Udhari Ledger', 'udhari'], ['Provision Envelopes', 'provision'], ['Site Ledger (Tally)', 'site_ledger'], ['Cashflow & Budget', 'cashflow'], ['Investments', 'investments'], ['Ledger Statement', 'ledger'], ['Settings', 'settings']];
   const classic = [
-    ['Income & Cashflow', 'cashflow'], ['Investments', 'investments'], ['Ledger Statement', 'ledger_statement'],
-    ['CC Bill Reconcile', 'cc_bill'], ['Site entry (Add)', 'site'], ['Settings & Setup', 'settings'],
+    ['CC Bill Reconcile', 'cc_bill'],
   ];
   return (
     <div className="fade-in section">
@@ -839,6 +839,467 @@ function SiteLedgerReport({ txns, siteOpenings }) {
   );
 }
 
+/* ════════════════════════ Cashflow Screen ════════════════════════ */
+function CashflowScreen({ txns, budgets, onSaveBudgets, liquid, allBanks }) {
+  const now = new Date();
+  const [mOff, setMOff] = useState(0);
+  const [editBudgets, setEditBudgets] = useState(null);
+
+  const selDate = new Date(now.getFullYear(), now.getMonth() + mOff, 1);
+  const mKey = selDate.toISOString().slice(0, 7);
+  const mLabel = selDate.toLocaleString('default', { month: 'short', year: 'numeric' });
+
+  const monthTxns = useMemo(() => txns.filter((t) => t.status !== 'voided' && (t.created_at || '').slice(0, 7) === mKey), [txns, mKey]);
+
+  const income = round2(monthTxns.filter((t) => t.type === 'Income').reduce((s, t) => s + Number(t.amount), 0));
+  const expense = round2(monthTxns.filter((t) => t.type === 'Expense').reduce((s, t) => s + Number(t.amount), 0));
+  const ccPay = round2(monthTxns.filter((t) => t.type === 'CC\u2192Bank' || t.type === 'Bank\u2192CC').reduce((s, t) => s + Number(t.amount), 0));
+  const net = round2(income - expense);
+
+  const trend = useMemo(() => {
+    const out = [];
+    for (let i = 5; i >= 0; i--) {
+      const d2 = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const k = d2.toISOString().slice(0, 7);
+      const inc = txns.filter((t) => t.status !== 'voided' && t.type === 'Income' && (t.created_at || '').slice(0, 7) === k).reduce((s, t) => s + Number(t.amount), 0);
+      const exp = txns.filter((t) => t.status !== 'voided' && t.type === 'Expense' && (t.created_at || '').slice(0, 7) === k).reduce((s, t) => s + Number(t.amount), 0);
+      out.push({ label: d2.toLocaleString('default', { month: 'short' }), inc: round2(inc), exp: round2(exp) });
+    }
+    return out;
+  }, [txns]);
+  const maxTrend = Math.max(1, ...trend.map((t) => Math.max(t.inc, t.exp)));
+
+  const catSpend = useMemo(() => {
+    const m = {};
+    monthTxns.filter((t) => t.type === 'Expense').forEach((t) => { const c = t.category || 'Other'; m[c] = round2((m[c] || 0) + Number(t.amount)); });
+    return m;
+  }, [monthTxns]);
+
+  const budgetCats = Object.keys(budgets).length ? Object.keys(budgets) : Object.keys(catSpend);
+  const totalBudgeted = round2(budgetCats.reduce((s, c) => s + (budgets[c] || 0), 0));
+  const totalSpent = round2(Object.values(catSpend).reduce((s, v) => s + v, 0));
+  const toAssign = round2(income - totalBudgeted);
+
+  const saveBg = async () => { if (editBudgets) { await onSaveBudgets(editBudgets); setEditBudgets(null); } };
+
+  return (
+    <div className="fade-in">
+      <div className="section">
+        <div className="spread">
+          <button className="pill" onClick={() => setMOff((o) => o - 1)}>&lt; Prev</button>
+          <span className="eyebrow">{mLabel}</span>
+          <button className="pill" disabled={mOff >= 0} onClick={() => setMOff((o) => o + 1)}>Next &gt;</button>
+        </div>
+      </div>
+      <div className="section">
+        <div className="tiles three">
+          <div className="tile"><div className="label">Income</div><div className="value pos">{fmtCompact(income)}</div></div>
+          <div className="tile"><div className="label">Expense</div><div className="value neg">{fmtCompact(expense)}</div></div>
+          <div className="tile"><div className="label">Net</div><div className={'value ' + (net >= 0 ? 'pos' : 'neg')}>{fmtCompact(net)}</div></div>
+        </div>
+      </div>
+      <div className="section">
+        <div className="section-title">6-month trend</div>
+        <div className="card pad">
+          {trend.map((t) => (
+            <div key={t.label} style={{ marginBottom: 8 }}>
+              <div className="spread"><span className="mono muted" style={{ fontSize: 10 }}>{t.label}</span><span className="mono" style={{ fontSize: 10 }}>{fmtCompact(t.inc)} / {fmtCompact(t.exp)}</span></div>
+              <div className="bar"><span style={{ width: Math.round((t.inc / maxTrend) * 100) + '%', background: 'var(--green)' }} /></div>
+              <div className="bar" style={{ marginTop: 3 }}><span style={{ width: Math.round((t.exp / maxTrend) * 100) + '%', background: 'var(--red)' }} /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="section">
+        <div className="section-title"><span>Budget envelopes</span><span className="pill sel" onClick={() => setEditBudgets(editBudgets ? null : { ...budgets })}>{editBudgets ? 'Cancel' : 'Edit'}</span></div>
+        <div className="card pad">
+          <div className="spread" style={{ marginBottom: 10 }}>
+            <span className="mono muted" style={{ fontSize: 11 }}>To Assign</span>
+            <span className={'mono ' + (toAssign >= 0 ? 'pos' : 'neg')} style={{ fontWeight: 700 }}>{fmtAmt(toAssign)}</span>
+          </div>
+          {budgetCats.map((c) => {
+            const limit = editBudgets ? (editBudgets[c] || 0) : (budgets[c] || 0);
+            const spent = catSpend[c] || 0;
+            const pct = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : (spent > 0 ? 100 : 0);
+            return (
+              <div key={c} style={{ marginBottom: 10 }}>
+                <div className="spread">
+                  <span className="mono" style={{ fontSize: 11 }}>{c}</span>
+                  <span className="mono" style={{ fontSize: 11 }}>{fmtCompact(spent)} / {fmtCompact(limit)}</span>
+                </div>
+                <div className="bar"><span style={{ width: pct + '%', background: pct >= 100 ? 'var(--red)' : pct > 75 ? 'var(--amber)' : 'var(--green)' }} /></div>
+                {editBudgets && <input className="input" type="number" style={{ marginTop: 4, fontSize: 12 }} value={editBudgets[c] || ''} placeholder="0" onChange={(e) => setEditBudgets((b) => ({ ...b, [c]: round2(parseFloat(e.target.value) || 0) }))} />}
+              </div>
+            );
+          })}
+          {editBudgets && <button className="btn btn-primary btn-block" style={{ marginTop: 12 }} onClick={saveBg}>Save budgets</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════ Investments Screen ════════════════════════ */
+function InvestmentsScreen({ session, showToast, reload }) {
+  const [holdings, setHoldings] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [form, setForm] = useState({ asset_name: '', asset_type: 'Equity', buy_date: '', qty: '', buy_price: '', current_price: '' });
+  const [saving, setSaving] = useState(false);
+
+  const loadH = useCallback(async () => {
+    setLoading(true);
+    const { data } = await db.from('investments').select('*').order('buy_date', { ascending: false });
+    setHoldings(data || []);
+    setLoading(false);
+  }, []);
+  useEffect(() => { loadH(); }, [loadH]);
+
+  const totalInvested = round2(holdings.reduce((s, h) => s + Number(h.qty) * Number(h.buy_price), 0));
+  const currentValue = round2(holdings.reduce((s, h) => s + Number(h.qty) * Number(h.current_price || h.buy_price), 0));
+  const pnl = round2(currentValue - totalInvested);
+
+  const addHolding = async () => {
+    if (!form.asset_name || !(parseFloat(form.qty) > 0) || !(parseFloat(form.buy_price) > 0)) return;
+    setSaving(true);
+    const payload = {
+      asset_name: form.asset_name.trim(), asset_type: form.asset_type,
+      buy_date: form.buy_date || new Date().toISOString().slice(0, 10),
+      qty: round2(parseFloat(form.qty)), buy_price: round2(parseFloat(form.buy_price)),
+      current_price: round2(parseFloat(form.current_price) || parseFloat(form.buy_price)),
+    };
+    const { error } = await db.from('investments').insert([payload]);
+    if (!error) { showToast('✓ Holding added'); setForm({ asset_name: '', asset_type: 'Equity', buy_date: '', qty: '', buy_price: '', current_price: '' }); setShowAdd(false); loadH(); }
+    else showToast('⚠ ' + (error.message || 'Error'));
+    setSaving(false);
+  };
+
+  const updatePrice = async (id, price) => {
+    const { error } = await db.from('investments').update({ current_price: round2(parseFloat(price) || 0) }).eq('id', id);
+    if (!error) loadH(); else showToast('⚠ ' + error.message);
+  };
+
+  const deleteH = async (id) => {
+    const { error } = await db.from('investments').delete().eq('id', id);
+    if (!error) { showToast('↩ Deleted'); loadH(); } else showToast('⚠ ' + error.message);
+  };
+
+  const daysSince = (d2) => { if (!d2) return 0; return Math.floor((Date.now() - new Date(d2).getTime()) / 86400000); };
+
+  return (
+    <div className="fade-in">
+      <div className="section">
+        <div className="tiles three">
+          <div className="tile"><div className="label">Invested</div><div className="value">{fmtCompact(totalInvested)}</div></div>
+          <div className="tile"><div className="label">Current</div><div className="value pos">{fmtCompact(currentValue)}</div></div>
+          <div className="tile"><div className="label">P&L</div><div className={'value ' + (pnl >= 0 ? 'pos' : 'neg')}>{fmtCompact(pnl)}</div></div>
+        </div>
+      </div>
+      <div className="section">
+        <div className="section-title"><span>Holdings ({holdings.length})</span><span className="pill sel" onClick={() => setShowAdd(!showAdd)}>{showAdd ? 'Cancel' : '+ Add'}</span></div>
+        {showAdd && (
+          <div className="card pad stack" style={{ marginBottom: 12 }}>
+            <input className="input" placeholder="Asset name" value={form.asset_name} onChange={(e) => setForm((f) => ({ ...f, asset_name: e.target.value }))} />
+            <div className="cluster">
+              {['Equity', 'SGB', 'Mutual Fund'].map((t) => <span key={t} className={'pill' + (form.asset_type === t ? ' sel' : '')} onClick={() => setForm((f) => ({ ...f, asset_type: t }))}>{t}</span>)}
+            </div>
+            <input className="input" type="date" value={form.buy_date} onChange={(e) => setForm((f) => ({ ...f, buy_date: e.target.value }))} />
+            <input className="input" type="number" placeholder="Qty" value={form.qty} onChange={(e) => setForm((f) => ({ ...f, qty: e.target.value }))} />
+            <input className="input" type="number" placeholder="Buy price" value={form.buy_price} onChange={(e) => setForm((f) => ({ ...f, buy_price: e.target.value }))} />
+            <input className="input" type="number" placeholder="Current price" value={form.current_price} onChange={(e) => setForm((f) => ({ ...f, current_price: e.target.value }))} />
+            <button className="btn btn-primary btn-block" disabled={saving || !form.asset_name || !(parseFloat(form.qty) > 0)} onClick={addHolding}>{saving ? 'Saving...' : 'Add holding'}</button>
+          </div>
+        )}
+        <div className="card">
+          {loading && <div className="empty">Loading...</div>}
+          {!loading && holdings.length === 0 && <div className="empty">No holdings yet</div>}
+          {holdings.map((h) => {
+            const inv = round2(Number(h.qty) * Number(h.buy_price));
+            const cur = round2(Number(h.qty) * Number(h.current_price || h.buy_price));
+            const pl = round2(cur - inv);
+            const days = daysSince(h.buy_date);
+            const badge = days >= 365 ? 'LTCG' : 'STCG';
+            return (
+              <div className="row" key={h.id}>
+                <div className="left">
+                  <div className="title">{h.asset_name} <span className={'badge ' + (days >= 365 ? 'ok' : 'warn')} style={{ fontSize: 9, padding: '1px 6px' }}>{badge}</span></div>
+                  <div className="sub">{h.asset_type} · {h.qty} @ {fmtAmt(h.buy_price)} · {fmtDate(h.buy_date)}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div className={'amt ' + (pl >= 0 ? 'pos' : 'neg')}>{pl >= 0 ? '+' : ''}{fmtAmt(pl)}</div>
+                  <div className="cluster" style={{ marginTop: 4, justifyContent: 'flex-end' }}>
+                    <input className="input" type="number" style={{ width: 70, fontSize: 10, padding: '2px 4px' }} defaultValue={h.current_price} onBlur={(e) => updatePrice(h.id, e.target.value)} />
+                    <span className="pill" style={{ fontSize: 9, padding: '2px 6px' }} onClick={() => deleteH(h.id)}>✕</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════ Settings Screen ════════════════════════ */
+function SettingsScreen({ d, allBanks, allCC, allBanksH, allCCH, session, showToast, reload, theme, setTheme }) {
+  const [openBal, setOpenBal] = useState(() => ({ ...d.opening }));
+  const [customAccs, setCustomAccs] = useState(() => [...d.customAccounts]);
+  const [newAcc, setNewAcc] = useState({ name: '', type: 'bank' });
+  const [customSites, setCustomSites] = useState(() => [...(d.customSites || [])]);
+  const [newSite, setNewSite] = useState('');
+  const [customTeam, setCustomTeam] = useState(() => [...(d.customTeam || [])]);
+  const [newMember, setNewMember] = useState('');
+
+  const saveOpening = async () => {
+    await db.from('settings').upsert({ key: 'opening_balances', value: JSON.stringify(openBal) }, { onConflict: 'key' });
+    showToast('✓ Opening balances saved'); reload();
+  };
+
+  const saveCustomAccounts = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_accounts', value: JSON.stringify(list) }, { onConflict: 'key' });
+    showToast('✓ Accounts saved'); reload();
+  };
+
+  const addAccount = async () => {
+    if (!newAcc.name.trim()) return;
+    const updated = [...customAccs, { name: newAcc.name.trim(), type: newAcc.type }];
+    setCustomAccs(updated);
+    setNewAcc({ name: '', type: 'bank' });
+    await saveCustomAccounts(updated);
+  };
+
+  const removeAccount = async (idx) => {
+    const updated = customAccs.filter((_, i) => i !== idx);
+    setCustomAccs(updated);
+    await saveCustomAccounts(updated);
+  };
+
+  const saveSites = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_sites', value: JSON.stringify(list) }, { onConflict: 'key' });
+    showToast('✓ Sites saved'); reload();
+  };
+
+  const addSite = async () => {
+    if (!newSite.trim()) return;
+    const updated = [...customSites, newSite.trim()];
+    setCustomSites(updated);
+    setNewSite('');
+    await saveSites(updated);
+  };
+
+  const removeSite = async (idx) => {
+    const updated = customSites.filter((_, i) => i !== idx);
+    setCustomSites(updated);
+    await saveSites(updated);
+  };
+
+  const saveTeam = async (list) => {
+    await db.from('settings').upsert({ key: 'custom_team', value: JSON.stringify(list) }, { onConflict: 'key' });
+    showToast('✓ Team saved'); reload();
+  };
+
+  const addMember = async () => {
+    if (!newMember.trim()) return;
+    const updated = [...customTeam, newMember.trim()];
+    setCustomTeam(updated);
+    setNewMember('');
+    await saveTeam(updated);
+  };
+
+  const removeMember = async (idx) => {
+    const updated = customTeam.filter((_, i) => i !== idx);
+    setCustomTeam(updated);
+    await saveTeam(updated);
+  };
+
+  return (
+    <div className="fade-in">
+      <div className="section">
+        <div className="section-title">Appearance</div>
+        <div className="card pad">
+          <div className="cluster">
+            {['terminal', 'carbon'].map((t) => <span key={t} className={'pill' + (theme === t ? ' sel' : '')} onClick={() => setTheme(t)}>{t}</span>)}
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">Opening balances</div>
+        <div className="card pad stack">
+          {[...allBanksH, ...allCCH].map((acc) => (
+            <div key={acc} className="spread" style={{ marginBottom: 6 }}>
+              <span className="mono" style={{ fontSize: 12, flex: 1 }}>{acc}</span>
+              <input className="input" type="number" style={{ width: 100, fontSize: 12 }} value={openBal[acc] || ''} placeholder="0" onChange={(e) => setOpenBal((o) => ({ ...o, [acc]: round2(parseFloat(e.target.value) || 0) }))} />
+            </div>
+          ))}
+          <button className="btn btn-primary btn-block" onClick={saveOpening}>Save opening balances</button>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">Custom accounts</div>
+        <div className="card pad stack">
+          {customAccs.map((a, i) => (
+            <div key={i} className="spread">
+              <span className="mono" style={{ fontSize: 12 }}>{a.name} <span className="muted">({a.type})</span></span>
+              <span className="pill" style={{ fontSize: 9 }} onClick={() => removeAccount(i)}>✕</span>
+            </div>
+          ))}
+          <div className="cluster">
+            <input className="input" style={{ flex: 1 }} placeholder="Account name" value={newAcc.name} onChange={(e) => setNewAcc((a) => ({ ...a, name: e.target.value }))} />
+            <select className="input" style={{ width: 80 }} value={newAcc.type} onChange={(e) => setNewAcc((a) => ({ ...a, type: e.target.value }))}>
+              <option value="bank">Bank</option><option value="cc">CC</option>
+            </select>
+            <button className="btn btn-primary" onClick={addAccount}>+</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">Custom sites</div>
+        <div className="card pad stack">
+          {customSites.map((s, i) => (
+            <div key={i} className="spread">
+              <span className="mono" style={{ fontSize: 12 }}>{s}</span>
+              <span className="pill" style={{ fontSize: 9 }} onClick={() => removeSite(i)}>✕</span>
+            </div>
+          ))}
+          <div className="cluster">
+            <input className="input" style={{ flex: 1 }} placeholder="Site name" value={newSite} onChange={(e) => setNewSite(e.target.value)} />
+            <button className="btn btn-primary" onClick={addSite}>+</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">Team members</div>
+        <div className="card pad stack">
+          {customTeam.map((m, i) => (
+            <div key={i} className="spread">
+              <span className="mono" style={{ fontSize: 12 }}>{m}</span>
+              <span className="pill" style={{ fontSize: 9 }} onClick={() => removeMember(i)}>✕</span>
+            </div>
+          ))}
+          <div className="cluster">
+            <input className="input" style={{ flex: 1 }} placeholder="Member name" value={newMember} onChange={(e) => setNewMember(e.target.value)} />
+            <button className="btn btn-primary" onClick={addMember}>+</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="section">
+        <button className="btn btn-danger btn-block" onClick={() => db.auth.signOut()}>Sign out ({session?.user?.email})</button>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════ Ledger Statement Screen ════════════════════════ */
+function LedgerStatementScreen({ txns, allBanksH, allCCH, opening }) {
+  const allLedgers = useMemo(() => {
+    const cats = [...new Set(txns.filter((t) => t.category).map((t) => t.category))];
+    return [...allBanksH, ...allCCH, 'Site Cash', ...cats.sort()];
+  }, [txns, allBanksH, allCCH]);
+
+  const [ledger, setLedger] = useState(allLedgers[0] || '');
+  const [period, setPeriod] = useState('all');
+
+  const filtered = useMemo(() => {
+    let list = txns.filter((t) => t.status !== 'voided');
+    if (period !== 'all') {
+      list = list.filter((t) => (t.created_at || '').slice(0, 7) === period);
+    }
+    return list.filter((t) =>
+      t.from_account === ledger || t.to_account === ledger || t.category === ledger ||
+      t.dr_ledger === ledger || t.cr_ledger === ledger
+    ).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+  }, [txns, ledger, period]);
+
+  const months = useMemo(() => {
+    const s = new Set();
+    txns.forEach((t) => { if (t.created_at) s.add(t.created_at.slice(0, 7)); });
+    return [...s].sort().reverse();
+  }, [txns]);
+
+  const rows = useMemo(() => {
+    let bal = round2(opening[ledger] || 0);
+    return filtered.map((t) => {
+      let dr = 0, cr = 0;
+      if (t.dr_ledger === ledger) dr = Number(t.amount);
+      else if (t.cr_ledger === ledger) cr = Number(t.amount);
+      else if (t.to_account === ledger || (t.type === 'Income' && t.to_account === ledger)) dr = Number(t.amount);
+      else if (t.from_account === ledger) cr = Number(t.amount);
+      else if (t.category === ledger && t.type === 'Expense') dr = Number(t.amount);
+      else if (t.category === ledger && t.type === 'Income') cr = Number(t.amount);
+      else dr = Number(t.amount);
+      bal = round2(bal + dr - cr);
+      return { ...t, dr: round2(dr), cr: round2(cr), bal };
+    });
+  }, [filtered, opening, ledger]);
+
+  const closingBal = rows.length ? rows[rows.length - 1].bal : round2(opening[ledger] || 0);
+
+  const exportCSV = () => {
+    const header = 'Date,Particulars,Dr,Cr,Balance\n';
+    const body = rows.map((r) => [fmtDate(r.created_at), (r.particulars || r.category || r.type || '').replace(/,/g, ' '), r.dr, r.cr, r.bal].join(',')).join('\n');
+    const blob = new Blob([header + body], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = ledger + '_statement.csv'; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="fade-in">
+      <div className="section">
+        <div className="section-title" style={{ paddingTop: 0 }}>Ledger Statement</div>
+        <div className="field"><label>Ledger</label>
+          <select className="input" value={ledger} onChange={(e) => setLedger(e.target.value)}>
+            {allLedgers.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </div>
+        <div className="field"><label>Period</label>
+          <select className="input" value={period} onChange={(e) => setPeriod(e.target.value)}>
+            <option value="all">All time</option>
+            {months.map((m) => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="spread">
+          <span className="mono" style={{ fontSize: 12 }}>Opening: <span className="pos">{fmtAmt(opening[ledger] || 0)}</span></span>
+          <span className="mono" style={{ fontSize: 12 }}>Closing: <span className={'pos'}>{fmtAmt(closingBal)}</span></span>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title"><span>{rows.length} entries</span><span className="pill sel" onClick={exportCSV}>CSV ↓</span></div>
+        <div className="card">
+          {rows.length === 0 && <div className="empty">No entries for this ledger</div>}
+          {rows.map((r, i) => (
+            <div className="row" key={r.id || i}>
+              <div className="left">
+                <div className="title">{r.particulars || r.category || r.type}</div>
+                <div className="sub">{fmtDate(r.created_at)}</div>
+              </div>
+              <div style={{ textAlign: 'right', minWidth: 110 }}>
+                <div className="mono" style={{ fontSize: 11 }}>
+                  {r.dr > 0 && <span className="pos">Dr {fmtAmt(r.dr)}</span>}
+                  {r.cr > 0 && <span className="neg" style={{ marginLeft: r.dr > 0 ? 6 : 0 }}>Cr {fmtAmt(r.cr)}</span>}
+                </div>
+                <div className="mono muted" style={{ fontSize: 10 }}>Bal {fmtAmt(r.bal)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 /* ════════════════════════ App root ════════════════════════ */
 function App() {
   const [session, setSession] = useState(null);
@@ -879,8 +1340,13 @@ function App() {
     const udhariOut = computeUdhariOut(d.udhari);
     const groups = computeLedgerGroups(balances, allBanksH, allCCH);
     const health = computeBooksHealth(d.txns);
-    return { balances, liquid, totalCC, netBlocked, spendable, udhariOut, groups, health, provisionStates };
-  }, [d.opening, d.txns, d.recurring, d.udhari, allBanks, allCC, allBanksH, allCCH]);
+    return { balances, liquid, totalCC, netBlocked, spendable, udhariOut, groups, health, provisionStates, budgets: d.budgets || {} };
+  }, [d.opening, d.txns, d.recurring, d.udhari, d.budgets, allBanks, allCC, allBanksH, allCCH]);
+
+  const saveBudgets = useCallback(async (bg) => {
+    await db.from('settings').upsert({ key: 'budgets', value: JSON.stringify(bg) }, { onConflict: 'key' });
+    showToast('✓ Budgets saved'); reload();
+  }, [reload]);
 
   const addTxn = useCallback(async (txn) => {
     const de = tallyMiddleware(txn, allBanks, allCC);
@@ -974,6 +1440,10 @@ function App() {
         {!d.loading && tab === 'udhari' && <UdhariScreen udhari={d.udhari} allBanks={allBanks} onAdd={addUdhari} onDelete={deleteUdhari} />}
         {!d.loading && tab === 'provision' && <ProvisionScreen provisionStates={derived.provisionStates} allBanks={allBanks} onAccrue={accrue} onFlush={flush} onCreate={addEnvelope} onDelete={deleteEnvelope} />}
         {!d.loading && tab === 'site_ledger' && <SiteLedgerReport txns={d.txns} siteOpenings={d.siteOpenings} />}
+        {!d.loading && tab === 'cashflow' && <CashflowScreen txns={d.txns} budgets={derived.budgets || {}} onSaveBudgets={saveBudgets} liquid={derived.liquid} allBanks={allBanks} />}
+        {!d.loading && tab === 'investments' && <InvestmentsScreen session={session} showToast={showToast} reload={reload} />}
+        {!d.loading && tab === 'settings' && <SettingsScreen d={d} allBanks={allBanks} allCC={allCC} allBanksH={allBanksH} allCCH={allCCH} session={session} showToast={showToast} reload={reload} theme={theme} setTheme={setTheme} />}
+        {!d.loading && tab === 'ledger' && <LedgerStatementScreen txns={d.txns} allBanksH={allBanksH} allCCH={allCCH} opening={d.opening} />}
         {!d.loading && tab === 'add' && <div className="section stack"><button className="btn btn-primary btn-block" onClick={() => setQuickAdd(true)}>+ Personal entry</button><button className="btn btn-ghost btn-block" onClick={() => setSiteAdd(true)}>+ Site entry</button></div>}
         {!d.loading && tab === 'more' && <More session={session} theme={theme} setTheme={setTheme} setTab={setTab} />}
       </main>
