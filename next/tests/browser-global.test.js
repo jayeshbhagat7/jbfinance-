@@ -9,7 +9,7 @@ const vm = require('node:vm');
 
 function loadBrowserEngine() {
   const dir = path.join(__dirname, '..', 'engine');
-  const files = ['format.js', 'constants.js', 'ledger-master.js', 'balances.js'];
+  const files = ['format.js', 'constants.js', 'ledger-master.js', 'balances.js', 'site.js'];
   const sandbox = {};
   sandbox.self = sandbox;            // browser-like global
   sandbox.window = sandbox;          // not used, but realistic
@@ -23,7 +23,7 @@ function loadBrowserEngine() {
 
 test('engine assembles on a browser global (window.JBF) in load order', () => {
   const JBF = loadBrowserEngine();
-  for (const fn of ['tallyMiddleware', 'computeBalances', 'computeProvisions', 'computeLiquid', 'computeLedgerGroups', 'computeBooksHealth', 'fmtAmt', 'round2', 'SEED_BANKS', 'CATEGORIES']) {
+  for (const fn of ['tallyMiddleware', 'computeBalances', 'computeProvisions', 'computeLiquid', 'computeLedgerGroups', 'computeBooksHealth', 'computeSiteLedger', 'listSites', 'fmtAmt', 'round2', 'SEED_BANKS', 'CATEGORIES']) {
     assert.ok(JBF[fn] !== undefined, 'missing JBF.' + fn);
   }
 });

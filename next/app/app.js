@@ -13,6 +13,7 @@ const {
   tallyMiddleware, fmt, fmtAmt, fmtCompact, fmtDate, round2,
   computeBalances, computeProvisions, computeLiquid, computeTotalCC,
   computeUdhariOut, computeBooksHealth, computeLedgerGroups,
+  computeSiteLedger, listSites,
 } = E;
 
 /* Same backend as the production app (Supabase anon key — public by design, RLS-guarded) */
@@ -138,7 +139,7 @@ function Login() {
 
 /* ════════════════════════ Data layer ════════════════════════ */
 function useData(session) {
-  const [state, setState] = useState({ txns: [], opening: {}, customAccounts: [], recurring: [], udhari: [], loading: true });
+  const [state, setState] = useState({ txns: [], opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, loading: true });
 
   const load = useCallback(async () => {
     if (!session) return;
@@ -153,7 +154,7 @@ function useData(session) {
         if (!data || data.length < PAGE) break;
         from += PAGE;
       }
-      const out = { txns, opening: {}, customAccounts: [], recurring: [], udhari: [], loading: false };
+      const out = { txns, opening: {}, customAccounts: [], recurring: [], udhari: [], siteOpenings: {}, loading: false };
       try { const { data } = await db.from('recurring').select('*'); out.recurring = data || []; } catch (e) {}
       try { const { data } = await db.from('udhari').select('*'); out.udhari = data || []; } catch (e) {}
       try {
@@ -161,6 +162,7 @@ function useData(session) {
         const g = (k) => (data || []).find((r) => r.key === k);
         if (g('opening_balances')) try { out.opening = JSON.parse(g('opening_balances').value); } catch (e) {}
         if (g('custom_accounts')) try { out.customAccounts = JSON.parse(g('custom_accounts').value); } catch (e) {}
+        if (g('site_openings')) try { out.siteOpenings = JSON.parse(g('site_openings').value); } catch (e) {}
       } catch (e) {}
       setState(out);
     } catch (e) {
@@ -408,10 +410,10 @@ function AddSheet({ onSave, onClose, allBanks, allCC, allAccounts }) {
 
 /* ════════════════════════ More menu ════════════════════════ */
 function More({ session, theme, setTheme, setTab }) {
-  const v3 = [['Udhari Ledger', 'udhari'], ['Provision Envelopes', 'provision']];
+  const v3 = [['Udhari Ledger', 'udhari'], ['Provision Envelopes', 'provision'], ['Site Ledger (Tally)', 'site_ledger']];
   const classic = [
     ['Income & Cashflow', 'cashflow'], ['Investments', 'investments'], ['Ledger Statement', 'ledger_statement'],
-    ['CC Bill Reconcile', 'cc_bill'], ['Site Ledger & Site Add', 'site'], ['Settings & Setup', 'settings'],
+    ['CC Bill Reconcile', 'cc_bill'], ['Site entry (Add)', 'site'], ['Settings & Setup', 'settings'],
   ];
   return (
     <div className="fade-in section">
@@ -636,6 +638,74 @@ function ProvisionScreen({ provisionStates, allBanks, onAccrue, onFlush, onCreat
   );
 }
 
+/* ════════════════════════ Site Ledger (Tally report) ════════════════════════ */
+function SiteLedgerReport({ txns, siteOpenings }) {
+  const sites = useMemo(() => listSites(txns), [txns]);
+  const [site, setSite] = useState('');
+  useEffect(() => { if (!site && sites.length) setSite(sites[0]); }, [sites]);
+
+  const r = useMemo(
+    () => computeSiteLedger(txns, { site: site || null, openings: (siteOpenings && siteOpenings[site]) || {} }),
+    [txns, site, siteOpenings]
+  );
+  const maxCat = r.categories.length ? r.categories[0].total : 1;
+
+  return (
+    <div className="fade-in">
+      <div className="section">
+        <div className="section-title" style={{ paddingTop: 0 }}>Site Ledger · Tally</div>
+        <div className="cluster">
+          {sites.length === 0 && <span className="muted mono" style={{ fontSize: 12 }}>No site transactions yet</span>}
+          {sites.map((s) => <span key={s} className={'pill' + (site === s ? ' sel' : '')} onClick={() => setSite(s)}>{s}</span>)}
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="tiles three">
+          <div className="tile"><div className="label">Received</div><div className="value pos">{fmtCompact(r.totalReceived)}</div></div>
+          <div className="tile"><div className="label">Spent</div><div className="value neg">{fmtCompact(r.totalSpent)}</div></div>
+          <div className="tile"><div className="label">Net</div><div className="value">{fmtCompact(r.netPosition)}</div></div>
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">Handlers ({r.users.length})</div>
+        <div className="card">
+          {r.users.length === 0 && <div className="empty">No handler activity</div>}
+          {r.users.map((u) => (
+            <div className="row" key={u.name}>
+              <div className="left">
+                <div className="title">{u.name}</div>
+                <div className="sub">open {fmtCompact(u.opening)} · recv {fmtCompact(u.received)} · spent {fmtCompact(u.spent)}{u.given ? ' · returned ' + fmtCompact(u.given) : ''}</div>
+              </div>
+              <div className={'amt ' + (u.closing < 0 ? 'neg' : 'pos')}>{fmtAmt(u.closing)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="section">
+        <div className="section-title">By category</div>
+        <div className="card pad stack">
+          {r.categories.length === 0 && <div className="empty">No expenses</div>}
+          {r.categories.map((c) => (
+            <div key={c.category}>
+              <div className="spread" style={{ marginBottom: 5 }}>
+                <span className="mono" style={{ fontSize: 12 }}>{c.category}</span>
+                <span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>{fmtAmt(c.total)}</span>
+              </div>
+              <div className="bar"><span style={{ width: Math.round((c.total / maxCat) * 100) + '%' }} /></div>
+            </div>
+          ))}
+        </div>
+        <p className="mono muted" style={{ fontSize: 10, marginTop: 10 }}>
+          Opening balances per handler come from settings key <span className="info">site_openings</span> (per site). Funds in (+), spend (−), returns (−).
+        </p>
+      </div>
+    </div>
+  );
+}
+
 /* ════════════════════════ App root ════════════════════════ */
 function App() {
   const [session, setSession] = useState(null);
@@ -769,6 +839,7 @@ function App() {
         {!d.loading && tab === 'log' && <Log d={d} onVoid={voidTxn} />}
         {!d.loading && tab === 'udhari' && <UdhariScreen udhari={d.udhari} allBanks={allBanks} onAdd={addUdhari} onDelete={deleteUdhari} />}
         {!d.loading && tab === 'provision' && <ProvisionScreen provisionStates={derived.provisionStates} allBanks={allBanks} onAccrue={accrue} onFlush={flush} onCreate={addEnvelope} onDelete={deleteEnvelope} />}
+        {!d.loading && tab === 'site_ledger' && <SiteLedgerReport txns={d.txns} siteOpenings={d.siteOpenings} />}
         {!d.loading && tab === 'add' && <div className="section"><button className="btn btn-primary btn-block" onClick={() => setQuickAdd(true)}>+ New entry</button></div>}
         {!d.loading && tab === 'more' && <More session={session} theme={theme} setTheme={setTheme} setTab={setTab} />}
       </main>
