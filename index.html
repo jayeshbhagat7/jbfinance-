@@ -606,7 +606,8 @@ function LoginScreen(){
 
 /* ── APP ── */
 function App() {
-  const [tab,setTab]                         = useState('dash');
+  const [tab,setTabRaw]                      = useState(()=>sessionStorage.getItem('jbf_tab')||'dash');
+  const setTab = t => { sessionStorage.setItem('jbf_tab',t); setTabRaw(t); };
   const [txns,setTxns]                       = useState([]);
   const [investments,setInvestments]         = useState([]);
   const [opening,setOpening]                 = useState({});
@@ -624,6 +625,7 @@ function App() {
   const [quickAdd,setQuickAdd]               = useState(false);
   const [udhariView,setUdhariView]           = useState('list');
   const [loading,setLoading]                 = useState(true);
+  const hasLoaded = useRef(false);
   const [globalSearch,setGlobalSearch]       = useState('');
   const [addPrefill,setAddPrefill]           = useState(null);
   const [theme,setTheme]                     = useState(()=>localStorage.getItem('jbf_theme')||'terminal');
@@ -715,7 +717,7 @@ function App() {
        until a manual reload. Re-running when `session` changes (see deps below)
        ensures data loads right after sign-in. */
     if(!session){ return; }
-    setLoading(true);
+    if(!hasLoaded.current) setLoading(true);
     try {
       /* cursor-based pagination — fetches ALL transactions in 500-row pages
          so data is never silently truncated when txn count exceeds 500            */
@@ -760,6 +762,7 @@ function App() {
       }
     } catch(e){console.error('loadData error:',e);showToast('⚠ Load failed: '+e.message);}
     setLoading(false);
+    hasLoaded.current = true;
 
     /* ── AUTO BACKFILL: fills NULL dr_ledger/cr_ledger for pre-DE rows ──
        Checks settings flag 'backfill_done'. Once all rows filled, never runs again. */
@@ -784,9 +787,9 @@ function App() {
         }
       }
     } catch(e){ console.warn('auto-backfill:',e.message); }
-  },[session]);
+  },[session?.user?.id]);
 
-  useEffect(()=>{loadData();},[loadData]);
+  useEffect(()=>{loadData();},[session?.user?.id]);
 
   /* ── DYNAMIC ACCOUNT LISTS (zero hardcoding in UI) ── */
   /* Active = non-archived; used in ADD dropdowns */
@@ -886,7 +889,7 @@ function App() {
   };
    const voidAndCorrect = async (orig,corr) => {
   // Pehle correction insert karo
-  const c={type:corr.type||orig.type,amount:corr.amount,category:corr.category,from_account:corr.from_account!==undefined?corr.from_account:orig.from_account,to_account:corr.to_account!==undefined?corr.to_account:orig.to_account,particulars:corr.particulars,tower:corr.tower!==undefined?corr.tower:orig.tower,domain:corr.domain!==undefined?corr.domain:orig.domain,site_name:corr.site_name!==undefined?corr.site_name:orig.site_name,party_name:corr.party_name!==undefined?corr.party_name:orig.party_name,site_user:corr.party_name!==undefined?corr.party_name:orig.site_user,it_section:orig.it_section,direction:corr.direction!==undefined?corr.direction:orig.direction,status:'complete',source:'app-correction',correction_of:orig.id,created_at:corr.created_at||orig.created_at};
+  const c={type:corr.type||orig.type,amount:corr.amount,category:corr.category,from_account:corr.from_account!==undefined?corr.from_account:orig.from_account,to_account:corr.to_account!==undefined?corr.to_account:orig.to_account,particulars:corr.particulars,tower:corr.tower!==undefined?corr.tower:orig.tower,domain:corr.domain!==undefined?corr.domain:orig.domain,site_name:corr.site_name!==undefined?corr.site_name:orig.site_name,party_name:corr.party_name!==undefined?corr.party_name:orig.party_name,site_user:corr.party_name!==undefined?corr.party_name:orig.site_user,it_section:orig.it_section,direction:corr.direction!==undefined?corr.direction:orig.direction,status:'complete',source:'app-correction',correction_of:orig.id,created_at:corr.created_at||orig.created_at,user_id:session?.user?.id||null};
   const{data:inserted,error:insertErr}=await db.from('transactions').insert([c]).select();
   if(insertErr){showToast('⚠ Save failed — entry unchanged');return;}
   // Sirf tab void karo jab insert successful ho
@@ -3373,7 +3376,8 @@ function DataBackupPanel(){
             tower:row.Tower||null,
             domain:row.Domain||null,
             status:row.Status||'complete',
-            archived:row.Archived==='Yes'
+            archived:row.Archived==='Yes',
+            user_id:(await db.auth.getSession()).data?.session?.user?.id||null
           };
           await db.from('transactions').insert([txn]);
           imported++;
