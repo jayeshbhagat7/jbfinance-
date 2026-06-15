@@ -155,7 +155,24 @@ const { useState, useEffect, useCallback, useRef } = React;
 const { createClient } = supabase;
 const SUPA_URL = 'https://ayzlaumbrntpqfemnxao.supabase.co';
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF5emxhdW1icm50cHFmZW1ueGFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQxNjQwNTAsImV4cCI6MjA4OTc0MDA1MH0.VEYId6dpxCvmTArXq-FVZqy5WTgl0QTcLamYMovaqgE';
-const db = createClient(SUPA_URL, SUPA_KEY);
+const db = createClient(SUPA_URL, SUPA_KEY, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: false,
+    storageKey: 'jbf_auth_session',
+  }
+});
+
+// Auto-refresh session on 401 errors
+const dbQuery = async (fn) => {
+  const result = await fn();
+  if(result.error?.message?.includes('JWT') || result.status === 401){
+    await db.auth.refreshSession();
+    return await fn(); // retry once after refresh
+  }
+  return result;
+};
 
 /* ── CONSTANTS ── */
 const SEED_BANKS = ['Cash','KB','UB','YB'];
@@ -644,8 +661,27 @@ function App() {
   const [pinUnlocked,setPinUnlocked] = useState(false); // PIN gate
 
   useEffect(()=>{
-    db.auth.getSession().then(({data:{session}})=>{setSession(session);setAuthLoading(false);});
-    const{data:{subscription}}=db.auth.onAuthStateChange((_,session)=>{setSession(session);});
+    db.auth.getSession().then(async({data:{session},error})=>{
+      if(session){
+        // proactively refresh if token expires within 5 minutes
+        const exp=session.expires_at;
+        const now=Math.floor(Date.now()/1000);
+        if(exp && (exp - now) < 300){
+          const{data}=await db.auth.refreshSession();
+          setSession(data.session);
+        } else {
+          setSession(session);
+        }
+      } else {
+        setSession(null);
+      }
+      setAuthLoading(false);
+    });
+    const{data:{subscription}}=db.auth.onAuthStateChange((event,session)=>{
+      if(event==='TOKEN_REFRESHED'||event==='SIGNED_IN'){setSession(session);}
+      else if(event==='SIGNED_OUT'){setSession(null);}
+      else if(session){setSession(session);}
+    });
     /* Listen for service worker update */
     const onSwUpdate=()=>showToast('🔄 Update ready — reopen app to apply');
     window.addEventListener('jbf-sw-update',onSwUpdate);
@@ -2364,9 +2400,12 @@ function DashScreen({balances,txns,liquid,allBanks,allCC,allCCAll,budgets,
   const spendable=trueSpendable!==undefined?trueSpendable:Math.max(0,liquid-totalCC);
 
   const safeCol=safeToSpend<0?'var(--red)':safeToSpend<10000?'var(--amber)':'var(--green)';
-  const cats={};thisMonth.filter(t=>t.type==='Expense'&&t.tower!=='SITE'&&t.domain!=='Site').forEach(t=>{const c=t.category||'Misc';cats[c]=(cats[c]||0)+(+t.amount);});
-  const topCats=Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,6);
   const COLORS=['#059669','#2563eb','#d97706','#dc2626','#7c3aed','#0891b2'];
+  const topCats=React.useMemo(()=>{
+    const cats={};
+    thisMonth.filter(t=>t.type==='Expense'&&t.tower!=='SITE'&&t.domain!=='Site').forEach(t=>{const c=t.category||'Misc';cats[c]=(cats[c]||0)+(+t.amount);});
+    return Object.entries(cats).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  },[txns,month,year]);
 
   const handleAuditSync=async()=>{
     const inputStr=window.prompt(`🔍 AUDIT SYNC\n\nApp Calculated Bank Balance: ₹${fmt(liquid)}\n\nEnter your REAL total bank balance (excluding CCs):`, fmt(liquid).replace(/,/g,''));
